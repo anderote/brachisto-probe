@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brachisto-Probe - Dyson Sphere Construction Game</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Loading Screen -->
+        <div id="loading-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a0a; display: flex; align-items: center; justify-content: center; z-index: 10000; color: #4a9eff;">
+            <div style="text-align: center;">
+                <h1 style="font-size: 32px; margin-bottom: 20px;">Brachisto-Probe</h1>
+                <div class="loading" style="margin: 0 auto;"></div>
+                <p style="margin-top: 20px;">Loading game...</p>
+            </div>
+        </div>
+        
+        <!-- Compact Resource Display - Top -->
+        <div id="compact-resources" class="compact-resources"></div>
+        
+        <!-- Main Visualization Area -->
+        <div id="visualization-container">
+            <canvas id="game-canvas"></canvas>
+            <div id="game-overlay">
+                <div class="game-title">
+                    <h1>Brachisto-Probe</h1>
+                </div>
+            </div>
+            <!-- Left Side Metrics Panel -->
+            <div id="metrics-panel" class="metrics-panel-container"></div>
+            <!-- Left Side Probe Summary Panel -->
+            <div id="probe-summary-panel" class="probe-summary-panel-container"></div>
+        </div>
+        
+        <!-- Command Panel - Separate Column -->
+        <div id="command-panel-column" class="command-panel-column">
+            <div id="command-panel-content"></div>
+        </div>
+        
+        <!-- Right Sidebar with Tabs -->
+        <div id="game-sidebar" class="game-sidebar">
+            <div class="sidebar-header">
+                <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
+                    <span id="sidebar-toggle-icon">◀</span>
+                </button>
+            </div>
+            <div class="sidebar-content">
+                <div class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="build">Build</button>
+                    <button class="tab-btn" data-tab="research">Research</button>
+                    <button class="tab-btn" data-tab="manage">Manage</button>
+                    <button class="tab-btn" data-tab="transfers">Transfers</button>
+                </div>
+                <div class="tab-content active" id="tab-build"></div>
+                <div class="tab-content" id="tab-research"></div>
+                <div class="tab-content" id="tab-manage"></div>
+                <div class="tab-content" id="tab-transfers"></div>
+            </div>
+        </div>
+        
+        <!-- Bottom: Orbital Zone Selector (floating) -->
+        <div id="orbital-zone-selector" class="orbital-zone-selector"></div>
+        
+        <!-- Zone Info Panel (shown when zone is selected) -->
+        <div id="zone-info-panel" class="zone-info-panel" style="display: none;"></div>
+        
+        <!-- Bottom Left: Time Display and Speed Controls -->
+        <div id="time-controls" class="time-controls"></div>
+        
+        <!-- Bottom: Scripting Window (collapsible, collapsed by default) - Hidden for now -->
+        <div id="scripting-window" class="scripting-window collapsed" style="display: none;">
+            <div class="scripting-header">
+                <span>Scripting Console</span>
+                <button id="scripting-toggle">Show</button>
+            </div>
+            <div class="scripting-content">
+                <textarea id="script-input" placeholder="Enter Python-like commands here..."></textarea>
+                <div id="script-output"></div>
+                <button id="script-execute">Execute</button>
+            </div>
+        </div>
+        
+        <!-- Legacy containers (hidden, for backward compatibility during transition) -->
+        <div id="research-panel" class="research-panel" style="display: none;"></div>
+        <div id="resource-display" class="resource-display" style="display: none;"></div>
+        <div id="purchase-panel" class="purchase-panel" style="display: none;"></div>
+        <div id="probe-allocation-panel" class="probe-allocation-panel" style="display: none;"></div>
+        
+        <!-- Login/Register Modal (Hidden for now) -->
+        <div id="auth-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h2>Brachisto-Probe</h2>
+                <div id="auth-forms">
+                    <div id="login-form">
+                        <h3>Login</h3>
+                        <input type="text" id="login-username" placeholder="Username">
+                        <input type="password" id="login-password" placeholder="Password">
+                        <button id="login-btn">Login</button>
+                        <p>Don't have an account? <a href="#" id="show-register">Register</a></p>
+                    </div>
+                    <div id="register-form" style="display: none;">
+                        <h3>Register</h3>
+                        <input type="text" id="register-username" placeholder="Username">
+                        <input type="email" id="register-email" placeholder="Email">
+                        <input type="password" id="register-password" placeholder="Password">
+                        <button id="register-btn">Register</button>
+                        <p>Already have an account? <a href="#" id="show-login">Login</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Leaderboard Modal -->
+        <div id="leaderboard-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h2>Leaderboard</h2>
+                <div id="leaderboard-content"></div>
+                <button id="close-leaderboard">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Game Scripts -->
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/game/config.js"></script>
+    <script src="/static/js/game/data_loader.js"></script>
+    <script src="/static/js/game/storage.js"></script>
+    <script src="/static/js/game/engine.js"></script>
+    <script src="/static/js/game/resources.js"></script>
+    <script src="/static/js/game/upgrades.js"></script>
+    <script src="/static/js/visualization/scene.js"></script>
+    <script src="/static/js/visualization/starfield.js"></script>
+    <script src="/static/js/visualization/solar_system.js"></script>
+    <script src="/static/js/visualization/structures.js"></script>
+    <script src="/static/js/visualization/probes.js"></script>
+    <script src="/static/js/visualization/dyson_sphere.js"></script>
+    <script src="/static/js/ui/sidebar.js"></script>
+    <script src="/static/js/ui/purchase_panel.js"></script>
+    <script src="/static/js/ui/research_panel.js"></script>
+    <script src="/static/js/ui/command_panel.js"></script>
+    <script src="/static/js/ui/production_panel.js"></script>
+    <script src="/static/js/ui/manage_panel.js"></script>
+    <script src="/static/js/ui/metrics_panel.js"></script>
+    <script src="/static/js/ui/probe_summary_panel.js"></script>
+    <script src="/static/js/ui/transfer_panel.js"></script>
+    <script src="/static/js/ui/resource_display.js"></script>
+    <script src="/static/js/ui/probe_allocation.js"></script>
+    <script src="/static/js/ui/orbital_zone_selector.js"></script>
+    <script src="/static/js/ui/energy_display.js"></script>
+    <script src="/static/js/ui/scripting_window.js"></script>
+    <script src="/static/js/ui/leaderboard.js"></script>
+    <script src="/static/js/ui/time_controls.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
+

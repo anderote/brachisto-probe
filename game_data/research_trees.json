@@ -1,0 +1,1351 @@
+{
+  "research_trees": {
+    "propulsion_systems": {
+      "name": "Propulsion Systems",
+      "description": "Research improving propulsion efficiency reduces energy costs for orbital access, building, and resource collection. Each upgrade improves dexterity energy efficiency.",
+      "category": "propulsion",
+      "tiers": [
+        {
+          "id": "hydrazine_rockets",
+          "name": "Hydrazine Rockets",
+          "description": "Basic monopropellant hydrazine rocket systems. Provides simple, reliable thrust for orbital maneuvers. Reduces energy cost for accessing higher orbits and using dexterity for operations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.20,
+          "max_research_rate_metal": 1000,
+          "max_research_rate_energy": 500,
+          "tranche_cost_metal": 500,
+          "tranche_cost_energy": 250,
+          "unlocks": ["hydrogen_rockets"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.20,
+            "dexterity_energy_cost_reduction": 0.15,
+            "build_energy_cost_reduction": 0.10
+          }
+        },
+        {
+          "id": "hydrogen_rockets",
+          "name": "Hydrogen Rockets",
+          "description": "High-efficiency liquid hydrogen-oxygen rocket engines. Superior specific impulse compared to hydrazine, reducing propellant mass requirements.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.025,
+          "total_bonus": 0.25,
+          "max_research_rate_metal": 2000,
+          "max_research_rate_energy": 1000,
+          "tranche_cost_metal": 1000,
+          "tranche_cost_energy": 500,
+          "unlocks": ["methalox_rockets"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.25,
+            "dexterity_energy_cost_reduction": 0.20,
+            "build_energy_cost_reduction": 0.15,
+            "specific_impulse_improvement": 0.30
+          }
+        },
+        {
+          "id": "methalox_rockets",
+          "name": "Methalox Rockets",
+          "description": "Methane-oxygen rocket engines optimized for in-situ resource utilization. Can be refueled using local materials, reducing logistics costs.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.03,
+          "total_bonus": 0.30,
+          "max_research_rate_metal": 3500,
+          "max_research_rate_energy": 1750,
+          "tranche_cost_metal": 2000,
+          "tranche_cost_energy": 1000,
+          "unlocks": ["vacuum_rated_nozzles"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.30,
+            "dexterity_energy_cost_reduction": 0.25,
+            "build_energy_cost_reduction": 0.20,
+            "in_situ_refueling": true,
+            "propellant_cost_reduction": 0.25
+          }
+        },
+        {
+          "id": "vacuum_rated_nozzles",
+          "name": "Vacuum-Rated Nozzles",
+          "description": "Optimized rocket nozzles designed for vacuum operation. Maximum expansion ratio extracts every joule of energy from propellant exhaust.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.035,
+          "total_bonus": 0.35,
+          "max_research_rate_metal": 5000,
+          "max_research_rate_energy": 2500,
+          "tranche_cost_metal": 3500,
+          "tranche_cost_energy": 1750,
+          "unlocks": ["thermal_fission_drive"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.35,
+            "dexterity_energy_cost_reduction": 0.30,
+            "build_energy_cost_reduction": 0.25,
+            "vacuum_efficiency_bonus": 0.40,
+            "exhaust_velocity_improvement": 0.35
+          }
+        },
+        {
+          "id": "thermal_fission_drive",
+          "name": "Thermal Fission Drive",
+          "description": "Nuclear thermal propulsion using fission reactor heat to expel propellant at extreme velocities. Massive improvement in specific impulse and thrust.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.04,
+          "total_bonus": 0.40,
+          "max_research_rate_metal": 8000,
+          "max_research_rate_energy": 4000,
+          "tranche_cost_metal": 6000,
+          "tranche_cost_energy": 3000,
+          "unlocks": ["frc_fusion_drive"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.40,
+            "dexterity_energy_cost_reduction": 0.35,
+            "build_energy_cost_reduction": 0.30,
+            "nuclear_thermal_efficiency": 0.50,
+            "thrust_to_weight_improvement": 0.40
+          }
+        },
+        {
+          "id": "frc_fusion_drive",
+          "name": "FRC Fusion Drive",
+          "description": "Field-Reversed Configuration fusion drive. Compact toroidal plasma configuration enables efficient fusion propulsion with high power density.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.045,
+          "total_bonus": 0.45,
+          "max_research_rate_metal": 12000,
+          "max_research_rate_energy": 6000,
+          "tranche_cost_metal": 10000,
+          "tranche_cost_energy": 5000,
+          "unlocks": ["magnetic_mirror_fusion_drive"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.45,
+            "dexterity_energy_cost_reduction": 0.40,
+            "build_energy_cost_reduction": 0.35,
+            "fusion_power_density": 0.55,
+            "plasma_confinement_efficiency": 0.45
+          }
+        },
+        {
+          "id": "magnetic_mirror_fusion_drive",
+          "name": "Magnetic Mirror Fusion Drive",
+          "description": "Advanced magnetic mirror confinement for fusion propulsion. Superior plasma stability and exhaust control enable precise thrust management.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.05,
+          "total_bonus": 0.50,
+          "max_research_rate_metal": 20000,
+          "max_research_rate_energy": 10000,
+          "tranche_cost_metal": 18000,
+          "tranche_cost_energy": 9000,
+          "unlocks": ["electrostatic_inertial_confinement"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.50,
+            "dexterity_energy_cost_reduction": 0.45,
+            "build_energy_cost_reduction": 0.40,
+            "magnetic_confinement_optimization": 0.60,
+            "thrust_control_precision": 0.50
+          }
+        },
+        {
+          "id": "electrostatic_inertial_confinement",
+          "name": "Electrostatic Inertial Confinement Fusion Drive",
+          "description": "Fusion propulsion using electrostatic forces for inertial confinement. Eliminates massive magnetic coils, reducing system mass dramatically.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.055,
+          "total_bonus": 0.55,
+          "max_research_rate_metal": 35000,
+          "max_research_rate_energy": 17500,
+          "tranche_cost_metal": 30000,
+          "tranche_cost_energy": 15000,
+          "unlocks": ["antimatter_matter_drive"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.55,
+            "dexterity_energy_cost_reduction": 0.50,
+            "build_energy_cost_reduction": 0.45,
+            "mass_reduction_bonus": 0.65,
+            "electrostatic_confinement": 0.55
+          }
+        },
+        {
+          "id": "antimatter_matter_drive",
+          "name": "Antimatter-Matter Drive",
+          "description": "Ultimate chemical propulsion using matter-antimatter annihilation. Maximum energy density release provides near-light-speed exhaust velocities.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.06,
+          "total_bonus": 0.60,
+          "max_research_rate_metal": 60000,
+          "max_research_rate_energy": 30000,
+          "tranche_cost_metal": 50000,
+          "tranche_cost_energy": 25000,
+          "unlocks": ["mhd_inertial_mass_reduction"],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.60,
+            "dexterity_energy_cost_reduction": 0.55,
+            "build_energy_cost_reduction": 0.50,
+            "annihilation_efficiency": 0.70,
+            "exhaust_velocity_ultra_high": 0.80
+          }
+        },
+        {
+          "id": "mhd_inertial_mass_reduction",
+          "name": "Magnetohydrodynamic Inertial Mass Reduction Drive",
+          "description": "Revolutionary propulsion system manipulating spacetime geometry to reduce effective inertial mass. Enables rapid acceleration with minimal energy expenditure.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.065,
+          "total_bonus": 0.65,
+          "max_research_rate_metal": 100000,
+          "max_research_rate_energy": 50000,
+          "tranche_cost_metal": 90000,
+          "tranche_cost_energy": 45000,
+          "unlocks": [],
+          "effects": {
+            "orbital_transfer_energy_reduction": 0.65,
+            "dexterity_energy_cost_reduction": 0.60,
+            "build_energy_cost_reduction": 0.55,
+            "inertial_mass_reduction": 0.75,
+            "spacetime_manipulation": true,
+            "ultimate_propulsion_efficiency": 0.70
+          }
+        }
+      ]
+    },
+    "locomotion_systems": {
+      "name": "Locomotion Systems",
+      "description": "Research improving fine movement and positioning systems reduces energy costs for building and mining, while increasing carrying capacity at each orbital altitude.",
+      "category": "locomotion",
+      "tiers": [
+        {
+          "id": "cold_gas_thrusters",
+          "name": "Cold Gas Thrusters",
+          "description": "Simple compressed gas thrusters for precise attitude control and small movements. Low complexity, reliable fine positioning.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.20,
+          "max_research_rate_metal": 800,
+          "max_research_rate_energy": 400,
+          "tranche_cost_metal": 400,
+          "tranche_cost_energy": 200,
+          "unlocks": ["hall_effect_thrusters"],
+          "effects": {
+            "build_energy_cost_reduction": 0.20,
+            "mining_energy_cost_reduction": 0.15,
+            "carrying_capacity_multiplier": 1.10,
+            "positioning_precision": 0.15
+          }
+        },
+        {
+          "id": "hall_effect_thrusters",
+          "name": "Hall Effect Thrusters",
+          "description": "Electric propulsion using crossed electric and magnetic fields to accelerate ions. High efficiency for continuous operation and precise control.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.025,
+          "total_bonus": 0.25,
+          "max_research_rate_metal": 1500,
+          "max_research_rate_energy": 750,
+          "tranche_cost_metal": 800,
+          "tranche_cost_energy": 400,
+          "unlocks": ["heavy_ion_thrusters"],
+          "effects": {
+            "build_energy_cost_reduction": 0.25,
+            "mining_energy_cost_reduction": 0.20,
+            "carrying_capacity_multiplier": 1.20,
+            "ion_thrust_efficiency": 0.30,
+            "continuous_operation_bonus": 0.25
+          }
+        },
+        {
+          "id": "heavy_ion_thrusters",
+          "name": "Heavy Ion Thrusters",
+          "description": "Advanced ion engines using heavier ions for increased thrust density. Superior power-to-thrust ratio enables higher acceleration rates.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.03,
+          "total_bonus": 0.30,
+          "max_research_rate_metal": 3000,
+          "max_research_rate_energy": 1500,
+          "tranche_cost_metal": 2000,
+          "tranche_cost_energy": 1000,
+          "unlocks": ["plasma_rf_thrusters"],
+          "effects": {
+            "build_energy_cost_reduction": 0.30,
+            "mining_energy_cost_reduction": 0.25,
+            "carrying_capacity_multiplier": 1.35,
+            "thrust_density_improvement": 0.40,
+            "acceleration_bonus": 0.30
+          }
+        },
+        {
+          "id": "plasma_rf_thrusters",
+          "name": "Plasma RF Thrusters",
+          "description": "Radio frequency antennas ionize and accelerate propellant without electrodes. Eliminates erosion, enabling extremely long operational lifetimes.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.035,
+          "total_bonus": 0.35,
+          "max_research_rate_metal": 5000,
+          "max_research_rate_energy": 2500,
+          "tranche_cost_metal": 4000,
+          "tranche_cost_energy": 2000,
+          "unlocks": ["em_drive_momentum"],
+          "effects": {
+            "build_energy_cost_reduction": 0.35,
+            "mining_energy_cost_reduction": 0.30,
+            "carrying_capacity_multiplier": 1.50,
+            "electrodeless_operation": true,
+            "lifetime_multiplier": 0.50
+          }
+        },
+        {
+          "id": "em_drive_momentum",
+          "name": "EM Drive Momentum Conserver",
+          "description": "Controversial but effective electromagnetic drive that appears to violate conservation of momentum. Provides reactionless thrust through quantum vacuum fluctuations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.04,
+          "total_bonus": 0.40,
+          "max_research_rate_metal": 8000,
+          "max_research_rate_energy": 4000,
+          "tranche_cost_metal": 7000,
+          "tranche_cost_energy": 3500,
+          "unlocks": ["quantized_inertial_capacitor"],
+          "effects": {
+            "build_energy_cost_reduction": 0.40,
+            "mining_energy_cost_reduction": 0.35,
+            "carrying_capacity_multiplier": 1.70,
+            "reactionless_thrust": true,
+            "quantum_vacuum_interaction": 0.45
+          }
+        },
+        {
+          "id": "quantized_inertial_capacitor",
+          "name": "Quantized Inertial Capacitor Bank",
+          "description": "Energy storage system that exploits quantum mechanical properties to store inertial energy. Enables rapid energy release for high-impulse maneuvers.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.045,
+          "total_bonus": 0.45,
+          "max_research_rate_metal": 12000,
+          "max_research_rate_energy": 6000,
+          "tranche_cost_metal": 12000,
+          "tranche_cost_energy": 6000,
+          "unlocks": ["casimir_microstructure_surface"],
+          "effects": {
+            "build_energy_cost_reduction": 0.45,
+            "mining_energy_cost_reduction": 0.40,
+            "carrying_capacity_multiplier": 1.90,
+            "quantum_energy_storage": 0.50,
+            "impulse_maneuver_capability": 0.45
+          }
+        },
+        {
+          "id": "casimir_microstructure_surface",
+          "name": "Casimir Microstructure Surface Array",
+          "description": "Nano-engineered surfaces exploiting Casimir forces for micro-positioning. Enables atomic-scale precision in movement and manipulation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.05,
+          "total_bonus": 0.50,
+          "max_research_rate_metal": 20000,
+          "max_research_rate_energy": 10000,
+          "tranche_cost_metal": 20000,
+          "tranche_cost_energy": 10000,
+          "unlocks": ["unruh_horizon_higgs"],
+          "effects": {
+            "build_energy_cost_reduction": 0.50,
+            "mining_energy_cost_reduction": 0.45,
+            "carrying_capacity_multiplier": 2.15,
+            "atomic_precision_movement": true,
+            "casimir_force_control": 0.55
+          }
+        },
+        {
+          "id": "unruh_horizon_higgs",
+          "name": "Unruh Horizon Higgs Attractor",
+          "description": "Ultimate locomotion system manipulating Higgs field interactions through Unruh radiation effects. Enables movement that appears to violate conservation laws through fundamental field manipulation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.055,
+          "total_bonus": 0.55,
+          "max_research_rate_metal": 35000,
+          "max_research_rate_energy": 17500,
+          "tranche_cost_metal": 35000,
+          "tranche_cost_energy": 17500,
+          "unlocks": [],
+          "effects": {
+            "build_energy_cost_reduction": 0.55,
+            "mining_energy_cost_reduction": 0.50,
+            "carrying_capacity_multiplier": 2.45,
+            "higgs_field_manipulation": true,
+            "unruh_radiation_control": 0.60,
+            "fundamental_field_interaction": true
+          }
+        }
+      ]
+    },
+    "acds": {
+      "name": "Attitude Control and Determination Systems",
+      "description": "ACDS research increases mining and building rates while lowering dexterity energy costs. Advanced control systems enable precise probe positioning and orientation.",
+      "category": "control",
+      "tiers": [
+        {
+          "id": "gravity_boom",
+          "name": "Gravity Boom",
+          "description": "Simple extendable boom creating gravity gradient for passive attitude stabilization. Low-energy method for maintaining orientation using tidal forces.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.20,
+          "max_research_rate_metal": 1000,
+          "max_research_rate_energy": 500,
+          "tranche_cost_metal": 500,
+          "tranche_cost_energy": 250,
+          "unlocks": ["magnetorquer"],
+          "effects": {
+            "mining_rate_multiplier": 1.15,
+            "building_rate_multiplier": 1.15,
+            "dexterity_energy_cost_reduction": 0.20,
+            "passive_stabilization": 0.20
+          }
+        },
+        {
+          "id": "magnetorquer",
+          "name": "Magnetorquer",
+          "description": "Magnetic coils interacting with planetary and solar magnetic fields for attitude control. Efficient torque generation without propellant expenditure.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.025,
+          "total_bonus": 0.25,
+          "max_research_rate_metal": 2000,
+          "max_research_rate_energy": 1000,
+          "tranche_cost_metal": 1000,
+          "tranche_cost_energy": 500,
+          "unlocks": ["reaction_wheel"],
+          "effects": {
+            "mining_rate_multiplier": 1.20,
+            "building_rate_multiplier": 1.20,
+            "dexterity_energy_cost_reduction": 0.25,
+            "magnetic_control_efficiency": 0.30,
+            "propellant_free_control": true
+          }
+        },
+        {
+          "id": "reaction_wheel",
+          "name": "Reaction Wheel",
+          "description": "Spinning flywheels storing angular momentum for precise attitude control. Enables fine orientation adjustments without external forces.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.03,
+          "total_bonus": 0.30,
+          "max_research_rate_metal": 3500,
+          "max_research_rate_energy": 1750,
+          "tranche_cost_metal": 2000,
+          "tranche_cost_energy": 1000,
+          "unlocks": ["solar_sail"],
+          "effects": {
+            "mining_rate_multiplier": 1.30,
+            "building_rate_multiplier": 1.30,
+            "dexterity_energy_cost_reduction": 0.30,
+            "precision_control": 0.35,
+            "momentum_storage": 0.30
+          }
+        },
+        {
+          "id": "solar_sail",
+          "name": "Solar Sail",
+          "description": "Large reflective surfaces using photon pressure for propulsion and attitude control. Provides continuous acceleration and orientation control from sunlight.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.035,
+          "total_bonus": 0.35,
+          "max_research_rate_metal": 5000,
+          "max_research_rate_energy": 2500,
+          "tranche_cost_metal": 4000,
+          "tranche_cost_energy": 2000,
+          "unlocks": ["spin_polaron_field"],
+          "effects": {
+            "mining_rate_multiplier": 1.40,
+            "building_rate_multiplier": 1.40,
+            "dexterity_energy_cost_reduction": 0.35,
+            "photon_propulsion": 0.40,
+            "continuous_acceleration": true
+          }
+        },
+        {
+          "id": "spin_polaron_field",
+          "name": "Spin-Polaron Field Effect Emitter",
+          "description": "Advanced system manipulating electron spin states to create controllable fields for attitude control. Quantum-mechanical orientation management.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.04,
+          "total_bonus": 0.40,
+          "max_research_rate_metal": 8000,
+          "max_research_rate_energy": 4000,
+          "tranche_cost_metal": 7000,
+          "tranche_cost_energy": 3500,
+          "unlocks": ["einstein_cartan_torsion"],
+          "effects": {
+            "mining_rate_multiplier": 1.50,
+            "building_rate_multiplier": 1.50,
+            "dexterity_energy_cost_reduction": 0.40,
+            "quantum_field_control": 0.45,
+            "spin_state_manipulation": 0.40
+          }
+        },
+        {
+          "id": "einstein_cartan_torsion",
+          "name": "Einstein-Cartan Torsion Array",
+          "description": "Control system exploiting spacetime torsion in Einstein-Cartan theory. Enables attitude control through geometric manipulation of spacetime itself.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.045,
+          "total_bonus": 0.45,
+          "max_research_rate_metal": 12000,
+          "max_research_rate_energy": 6000,
+          "tranche_cost_metal": 12000,
+          "tranche_cost_energy": 6000,
+          "unlocks": ["mach_effector"],
+          "effects": {
+            "mining_rate_multiplier": 1.65,
+            "building_rate_multiplier": 1.65,
+            "dexterity_energy_cost_reduction": 0.45,
+            "spacetime_torsion_control": 0.50,
+            "geometric_manipulation": 0.45
+          }
+        },
+        {
+          "id": "mach_effector",
+          "name": "Mach Effector",
+          "description": "Attitude control system based on Mach's principle, manipulating inertial frame interactions. Controls orientation through universe-scale field interactions.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.05,
+          "total_bonus": 0.50,
+          "max_research_rate_metal": 20000,
+          "max_research_rate_energy": 10000,
+          "tranche_cost_metal": 20000,
+          "tranche_cost_energy": 10000,
+          "unlocks": ["invariant_manifold_attractors"],
+          "effects": {
+            "mining_rate_multiplier": 1.80,
+            "building_rate_multiplier": 1.80,
+            "dexterity_energy_cost_reduction": 0.50,
+            "mach_principle_utilization": 0.55,
+            "universe_scale_interaction": 0.50
+          }
+        },
+        {
+          "id": "invariant_manifold_attractors",
+          "name": "Invariant Manifold Attractors",
+          "description": "Ultimate control system using invariant manifolds in phase space to maintain stable orientations. Exploits nonlinear dynamics for perfect attitude stability.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.055,
+          "total_bonus": 0.55,
+          "max_research_rate_metal": 35000,
+          "max_research_rate_energy": 17500,
+          "tranche_cost_metal": 35000,
+          "tranche_cost_energy": 17500,
+          "unlocks": [],
+          "effects": {
+            "mining_rate_multiplier": 2.00,
+            "building_rate_multiplier": 2.00,
+            "dexterity_energy_cost_reduction": 0.55,
+            "invariant_manifold_control": 0.60,
+            "perfect_stability": true,
+            "nonlinear_dynamics_optimization": 0.55
+          }
+        }
+      ]
+    },
+    "robotic_systems": {
+      "name": "Robotic Systems",
+      "description": "Research improving robotic manipulation capabilities increases mining and building rates while lowering dexterity energy costs. Better tools and control systems enable more efficient operations.",
+      "category": "robotics",
+      "tiers": [
+        {
+          "id": "manipulator_arms",
+          "name": "Manipulator Arms",
+          "description": "Basic robotic arms with multiple degrees of freedom for grasping and manipulation. Essential for construction and mining operations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.025,
+          "total_bonus": 0.25,
+          "max_research_rate_metal": 1500,
+          "max_research_rate_energy": 750,
+          "tranche_cost_metal": 800,
+          "tranche_cost_energy": 400,
+          "unlocks": ["end_effectors"],
+          "effects": {
+            "mining_rate_multiplier": 1.20,
+            "building_rate_multiplier": 1.20,
+            "dexterity_energy_cost_reduction": 0.25,
+            "manipulation_precision": 0.20
+          }
+        },
+        {
+          "id": "end_effectors",
+          "name": "End-Effectors",
+          "description": "Specialized tool heads for different tasks - drills, grippers, welders, cutters. Optimized end-effectors dramatically improve task-specific efficiency.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.03,
+          "total_bonus": 0.30,
+          "max_research_rate_metal": 3000,
+          "max_research_rate_energy": 1500,
+          "tranche_cost_metal": 2000,
+          "tranche_cost_energy": 1000,
+          "unlocks": ["modular_tool_heads"],
+          "effects": {
+            "mining_rate_multiplier": 1.35,
+            "building_rate_multiplier": 1.35,
+            "dexterity_energy_cost_reduction": 0.30,
+            "tool_efficiency": 0.35,
+            "task_specialization": 0.30
+          }
+        },
+        {
+          "id": "modular_tool_heads",
+          "name": "Modular Tool Heads",
+          "description": "Rapid-swap tool head system allowing single arm to use multiple specialized tools. Eliminates need for separate tools per task, improving versatility.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.035,
+          "total_bonus": 0.35,
+          "max_research_rate_metal": 5000,
+          "max_research_rate_energy": 2500,
+          "tranche_cost_metal": 4000,
+          "tranche_cost_energy": 2000,
+          "unlocks": ["deformable_surface_controllers"],
+          "effects": {
+            "mining_rate_multiplier": 1.50,
+            "building_rate_multiplier": 1.50,
+            "dexterity_energy_cost_reduction": 0.35,
+            "tool_swapping_speed": 0.40,
+            "versatility_bonus": 0.35
+          }
+        },
+        {
+          "id": "deformable_surface_controllers",
+          "name": "Deformable Surface Controllers",
+          "description": "Advanced manipulation systems with soft, deformable surfaces that adapt to object geometry. Enables secure grasping of irregular shapes and fragile materials.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.04,
+          "total_bonus": 0.40,
+          "max_research_rate_metal": 8000,
+          "max_research_rate_energy": 4000,
+          "tranche_cost_metal": 7000,
+          "tranche_cost_energy": 3500,
+          "unlocks": ["metal_liquid_interface"],
+          "effects": {
+            "mining_rate_multiplier": 1.70,
+            "building_rate_multiplier": 1.70,
+            "dexterity_energy_cost_reduction": 0.40,
+            "adaptive_grasping": 0.45,
+            "fragile_material_handling": 0.40
+          }
+        },
+        {
+          "id": "metal_liquid_interface",
+          "name": "Metal-Liquid Interface Manipulators",
+          "description": "Specialized systems for working with molten metals and liquid materials. Enables direct manipulation of materials in liquid state during manufacturing.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.045,
+          "total_bonus": 0.45,
+          "max_research_rate_metal": 12000,
+          "max_research_rate_energy": 6000,
+          "tranche_cost_metal": 12000,
+          "tranche_cost_energy": 6000,
+          "unlocks": ["magnetic_vacuum_arrays"],
+          "effects": {
+            "mining_rate_multiplier": 1.90,
+            "building_rate_multiplier": 1.90,
+            "dexterity_energy_cost_reduction": 0.45,
+            "liquid_manipulation": 0.50,
+            "high_temperature_operation": 0.45
+          }
+        },
+        {
+          "id": "magnetic_vacuum_arrays",
+          "name": "Magnetic Vacuum Arrays",
+          "description": "Magnetic field manipulation systems for non-contact material handling in vacuum. Enables precise control of metallic objects without physical contact.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.05,
+          "total_bonus": 0.50,
+          "max_research_rate_metal": 20000,
+          "max_research_rate_energy": 10000,
+          "tranche_cost_metal": 20000,
+          "tranche_cost_energy": 10000,
+          "unlocks": ["zero_point_field_disruptors"],
+          "effects": {
+            "mining_rate_multiplier": 2.15,
+            "building_rate_multiplier": 2.15,
+            "dexterity_energy_cost_reduction": 0.50,
+            "non_contact_manipulation": true,
+            "magnetic_field_precision": 0.55
+          }
+        },
+        {
+          "id": "zero_point_field_disruptors",
+          "name": "Zero-Point Field Disruptors",
+          "description": "Ultimate manipulation systems that directly interact with zero-point field fluctuations. Enables matter manipulation at quantum level with minimal energy expenditure.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.055,
+          "total_bonus": 0.55,
+          "max_research_rate_metal": 35000,
+          "max_research_rate_energy": 17500,
+          "tranche_cost_metal": 35000,
+          "tranche_cost_energy": 17500,
+          "unlocks": [],
+          "effects": {
+            "mining_rate_multiplier": 2.45,
+            "building_rate_multiplier": 2.45,
+            "dexterity_energy_cost_reduction": 0.55,
+            "quantum_level_manipulation": true,
+            "zero_point_interaction": 0.60,
+            "ultimate_robotic_efficiency": 0.55
+          }
+        }
+      ]
+    },
+    "computer_systems": {
+      "name": "Computer Systems",
+      "description": "Research improving computational capabilities increases dexterity, decreases energy costs for all probes, provides slight factory production bonuses, and increases computing output per percentage of Dyson swarm completed.",
+      "category": "computing",
+      "subcategories": {
+        "processing": {
+          "name": "Processing",
+          "description": "Central processing unit improvements increase computational power and efficiency.",
+          "tiers": [
+            {
+              "id": "edge_compute_node",
+              "name": "Edge Compute Node",
+              "description": "Distributed computing nodes at probe edge for local processing. Reduces latency and enables autonomous decision-making without central coordination.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.02,
+              "total_bonus": 0.20,
+              "max_research_rate_metal": 2000,
+              "max_research_rate_energy": 1000,
+              "tranche_cost_metal": 1000,
+              "tranche_cost_energy": 500,
+              "unlocks": ["fpga_array"],
+              "effects": {
+                "dexterity_multiplier": 1.15,
+                "probe_energy_cost_reduction": 0.15,
+                "factory_production_bonus": 1.05,
+                "dyson_compute_multiplier": 1.10,
+                "autonomous_processing": 0.20
+              }
+            },
+            {
+              "id": "fpga_array",
+              "name": "FPGA Array",
+              "description": "Field-programmable gate arrays optimized for specific tasks. Reconfigurable hardware enables maximum efficiency for different computational workloads.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.025,
+              "total_bonus": 0.25,
+              "max_research_rate_metal": 4000,
+              "max_research_rate_energy": 2000,
+              "tranche_cost_metal": 3000,
+              "tranche_cost_energy": 1500,
+              "unlocks": ["asic_interconnect"],
+              "effects": {
+                "dexterity_multiplier": 1.25,
+                "probe_energy_cost_reduction": 0.20,
+                "factory_production_bonus": 1.08,
+                "dyson_compute_multiplier": 1.20,
+                "reconfigurable_computing": 0.30
+              }
+            },
+            {
+              "id": "asic_interconnect",
+              "name": "ASIC Interconnect",
+              "description": "Application-specific integrated circuits with optimized interconnects. Custom silicon for maximum performance in specific algorithms.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.03,
+              "total_bonus": 0.30,
+              "max_research_rate_metal": 7000,
+              "max_research_rate_energy": 3500,
+              "tranche_cost_metal": 6000,
+              "tranche_cost_energy": 3000,
+              "unlocks": ["silicon_photonic_interconnect"],
+              "effects": {
+                "dexterity_multiplier": 1.35,
+                "probe_energy_cost_reduction": 0.25,
+                "factory_production_bonus": 1.12,
+                "dyson_compute_multiplier": 1.35,
+                "specialized_performance": 0.40
+              }
+            },
+            {
+              "id": "silicon_photonic_interconnect",
+              "name": "Silicon Photonic Interconnect",
+              "description": "Optical interconnects using silicon photonics for ultra-fast data transfer between processing units. Eliminates electrical bottlenecks.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.035,
+              "total_bonus": 0.35,
+              "max_research_rate_metal": 12000,
+              "max_research_rate_energy": 6000,
+              "tranche_cost_metal": 12000,
+              "tranche_cost_energy": 6000,
+              "unlocks": ["optimized_tensor_core"],
+              "effects": {
+                "dexterity_multiplier": 1.50,
+                "probe_energy_cost_reduction": 0.30,
+                "factory_production_bonus": 1.15,
+                "dyson_compute_multiplier": 1.50,
+                "optical_data_transfer": 0.50,
+                "bandwidth_multiplier": 0.45
+              }
+            },
+            {
+              "id": "optimized_tensor_core",
+              "name": "Optimized Tensor Core",
+              "description": "Specialized processing units for tensor operations. Accelerates machine learning, simulation, and complex mathematical computations.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.04,
+              "total_bonus": 0.40,
+              "max_research_rate_metal": 20000,
+              "max_research_rate_energy": 10000,
+              "tranche_cost_metal": 20000,
+              "tranche_cost_energy": 10000,
+              "unlocks": ["photonic_tensor_array"],
+              "effects": {
+                "dexterity_multiplier": 1.65,
+                "probe_energy_cost_reduction": 0.35,
+                "factory_production_bonus": 1.20,
+                "dyson_compute_multiplier": 1.70,
+                "tensor_acceleration": 0.60,
+                "ml_performance": 0.50
+              }
+            },
+            {
+              "id": "photonic_tensor_array",
+              "name": "Photonic Tensor Array",
+              "description": "Optical tensor processing using photonic circuits. Light-speed computation for matrix operations and neural network inference.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.045,
+              "total_bonus": 0.45,
+              "max_research_rate_metal": 35000,
+              "max_research_rate_energy": 17500,
+              "tranche_cost_metal": 35000,
+              "tranche_cost_energy": 17500,
+              "unlocks": ["thermodynamic_sampling_unit"],
+              "effects": {
+                "dexterity_multiplier": 1.80,
+                "probe_energy_cost_reduction": 0.40,
+                "factory_production_bonus": 1.25,
+                "dyson_compute_multiplier": 2.00,
+                "photonic_computing": true,
+                "light_speed_processing": 0.70
+              }
+            },
+            {
+              "id": "thermodynamic_sampling_unit",
+              "name": "Thermodynamic Sampling Unit",
+              "description": "Computational systems exploiting thermodynamic fluctuations for probabilistic sampling. Enables efficient solutions to optimization and sampling problems.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.05,
+              "total_bonus": 0.50,
+              "max_research_rate_metal": 60000,
+              "max_research_rate_energy": 30000,
+              "tranche_cost_metal": 60000,
+              "tranche_cost_energy": 30000,
+              "unlocks": ["adiabatic_reversible_compilers"],
+              "effects": {
+                "dexterity_multiplier": 2.00,
+                "probe_energy_cost_reduction": 0.45,
+                "factory_production_bonus": 1.30,
+                "dyson_compute_multiplier": 2.35,
+                "thermodynamic_computing": 0.55,
+                "probabilistic_optimization": 0.60
+              }
+            },
+            {
+              "id": "adiabatic_reversible_compilers",
+              "name": "Adiabatic Reversible Compilers",
+              "description": "Reversible computing systems that operate adiabatically, minimizing energy dissipation. Theoretical maximum efficiency for computation.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.055,
+              "total_bonus": 0.55,
+              "max_research_rate_metal": 100000,
+              "max_research_rate_energy": 50000,
+              "tranche_cost_metal": 100000,
+              "tranche_cost_energy": 50000,
+              "unlocks": ["trapped_rubidium_phased_gates"],
+              "effects": {
+                "dexterity_multiplier": 2.25,
+                "probe_energy_cost_reduction": 0.50,
+                "factory_production_bonus": 1.35,
+                "dyson_compute_multiplier": 2.75,
+                "reversible_computing": true,
+                "energy_efficiency_maximum": 0.80
+              }
+            },
+            {
+              "id": "trapped_rubidium_phased_gates",
+              "name": "Trapped Rubidium Phased Gate Arrays",
+              "description": "Quantum computing systems using trapped rubidium atoms as qubits. Enables quantum algorithms for optimization and simulation.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.06,
+              "total_bonus": 0.60,
+              "max_research_rate_metal": 170000,
+              "max_research_rate_energy": 85000,
+              "tranche_cost_metal": 170000,
+              "tranche_cost_energy": 85000,
+              "unlocks": ["neuromorphic_analog"],
+              "effects": {
+                "dexterity_multiplier": 2.55,
+                "probe_energy_cost_reduction": 0.55,
+                "factory_production_bonus": 1.40,
+                "dyson_compute_multiplier": 3.20,
+                "quantum_computing": true,
+                "quantum_speedup": 0.70
+              }
+            },
+            {
+              "id": "neuromorphic_analog",
+              "name": "Neuromorphic Analog CPU",
+              "description": "Brain-inspired computing architectures using analog circuits to simulate neural networks. Massive parallelism and energy efficiency for pattern recognition and control.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.065,
+              "total_bonus": 0.65,
+              "max_research_rate_metal": 300000,
+              "max_research_rate_energy": 150000,
+              "tranche_cost_metal": 300000,
+              "tranche_cost_energy": 150000,
+              "unlocks": [],
+              "effects": {
+                "dexterity_multiplier": 2.90,
+                "probe_energy_cost_reduction": 0.60,
+                "factory_production_bonus": 1.45,
+                "dyson_compute_multiplier": 3.70,
+                "neuromorphic_computing": true,
+                "massive_parallelism": 0.75,
+                "brain_inspired_processing": 0.70
+              }
+            }
+          ]
+        },
+        "memory": {
+          "name": "Memory Systems",
+          "description": "Memory system improvements increase data storage capacity and access speeds.",
+          "tiers": [
+            {
+              "id": "heavy_rad_dram",
+              "name": "Heavy-Rad DRAM",
+              "description": "Radiation-hardened dynamic random-access memory. Reliable operation in space environment with high radiation exposure.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.02,
+              "total_bonus": 0.20,
+              "max_research_rate_metal": 1500,
+              "max_research_rate_energy": 750,
+              "tranche_cost_metal": 800,
+              "tranche_cost_energy": 400,
+              "unlocks": ["1nm_process_dram"],
+              "effects": {
+                "dexterity_multiplier": 1.10,
+                "probe_energy_cost_reduction": 0.10,
+                "dyson_compute_multiplier": 1.08,
+                "memory_capacity": 1.15,
+                "radiation_hardening": 0.25
+              }
+            },
+            {
+              "id": "1nm_process_dram",
+              "name": "1nm Process DRAM",
+              "description": "Ultra-dense memory using 1-nanometer fabrication process. Maximum storage density with minimal power consumption.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.025,
+              "total_bonus": 0.25,
+              "max_research_rate_metal": 3000,
+              "max_research_rate_energy": 1500,
+              "tranche_cost_metal": 2000,
+              "tranche_cost_energy": 1000,
+              "unlocks": ["quantum_dot_dram"],
+              "effects": {
+                "dexterity_multiplier": 1.20,
+                "probe_energy_cost_reduction": 0.15,
+                "dyson_compute_multiplier": 1.18,
+                "memory_capacity": 1.30,
+                "storage_density": 0.40
+              }
+            },
+            {
+              "id": "quantum_dot_dram",
+              "name": "Quantum Dot DRAM",
+              "description": "Memory using quantum dots to store individual bits. Enables single-electron storage and ultra-low power operation.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.03,
+              "total_bonus": 0.30,
+              "max_research_rate_metal": 5000,
+              "max_research_rate_energy": 2500,
+              "tranche_cost_metal": 4000,
+              "tranche_cost_energy": 2000,
+              "unlocks": ["neutral_vacancy_diamond"],
+              "effects": {
+                "dexterity_multiplier": 1.30,
+                "probe_energy_cost_reduction": 0.20,
+                "dyson_compute_multiplier": 1.30,
+                "memory_capacity": 1.50,
+                "quantum_storage": 0.45,
+                "ultra_low_power": 0.35
+              }
+            },
+            {
+              "id": "neutral_vacancy_diamond",
+              "name": "Neutral Vacancy Diamond Memory",
+              "description": "Memory using nitrogen-vacancy centers in diamond. Excellent coherence times and radiation resistance for reliable data storage.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.035,
+              "total_bonus": 0.35,
+              "max_research_rate_metal": 8000,
+              "max_research_rate_energy": 4000,
+              "tranche_cost_metal": 7000,
+              "tranche_cost_energy": 3500,
+              "unlocks": ["quantum_dot_memory_array"],
+              "effects": {
+                "dexterity_multiplier": 1.40,
+                "probe_energy_cost_reduction": 0.25,
+                "dyson_compute_multiplier": 1.45,
+                "memory_capacity": 1.75,
+                "coherence_time": 0.50,
+                "quantum_memory": 0.40
+              }
+            },
+            {
+              "id": "quantum_dot_memory_array",
+              "name": "Quantum Dot Memory Array",
+              "description": "Large-scale arrays of quantum dots for massive parallel storage. Enables petabyte-scale memory in compact form factors.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.04,
+              "total_bonus": 0.40,
+              "max_research_rate_metal": 12000,
+              "max_research_rate_energy": 6000,
+              "tranche_cost_metal": 12000,
+              "tranche_cost_energy": 6000,
+              "unlocks": ["dna_rna_cold_storage"],
+              "effects": {
+                "dexterity_multiplier": 1.50,
+                "probe_energy_cost_reduction": 0.30,
+                "dyson_compute_multiplier": 1.65,
+                "memory_capacity": 2.10,
+                "array_parallelism": 0.55,
+                "massive_storage": true
+              }
+            },
+            {
+              "id": "dna_rna_cold_storage",
+              "name": "DNA/RNA Cold-Storage Array",
+              "description": "Biological storage using DNA/RNA molecules for archival data. Extremely high density and longevity for long-term storage.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.045,
+              "total_bonus": 0.45,
+              "max_research_rate_metal": 20000,
+              "max_research_rate_energy": 10000,
+              "tranche_cost_metal": 20000,
+              "tranche_cost_energy": 10000,
+              "unlocks": ["condensed_matter_memory"],
+              "effects": {
+                "dexterity_multiplier": 1.60,
+                "probe_energy_cost_reduction": 0.35,
+                "dyson_compute_multiplier": 1.85,
+                "memory_capacity": 2.50,
+                "archival_storage": true,
+                "biological_storage_density": 0.70
+              }
+            },
+            {
+              "id": "condensed_matter_memory",
+              "name": "Condensed Matter Memory Modules",
+              "description": "Memory using exotic condensed matter states. Topological states provide robust, error-resistant storage with novel properties.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.05,
+              "total_bonus": 0.50,
+              "max_research_rate_metal": 35000,
+              "max_research_rate_energy": 17500,
+              "tranche_cost_metal": 35000,
+              "tranche_cost_energy": 17500,
+              "unlocks": ["compact_bubble_memory"],
+              "effects": {
+                "dexterity_multiplier": 1.70,
+                "probe_energy_cost_reduction": 0.40,
+                "dyson_compute_multiplier": 2.10,
+                "memory_capacity": 3.00,
+                "topological_protection": 0.60,
+                "error_resistance": 0.55
+              }
+            },
+            {
+              "id": "compact_bubble_memory",
+              "name": "Compact Bubble Memory Units",
+              "description": "Magnetic bubble memory with compact form factor. Non-volatile storage with fast access times and high reliability.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.055,
+              "total_bonus": 0.55,
+              "max_research_rate_metal": 60000,
+              "max_research_rate_energy": 30000,
+              "tranche_cost_metal": 60000,
+              "tranche_cost_energy": 30000,
+              "unlocks": ["entangled_memory_gates"],
+              "effects": {
+                "dexterity_multiplier": 1.80,
+                "probe_energy_cost_reduction": 0.45,
+                "dyson_compute_multiplier": 2.40,
+                "memory_capacity": 3.60,
+                "non_volatile_storage": true,
+                "fast_access": 0.65
+              }
+            },
+            {
+              "id": "entangled_memory_gates",
+              "name": "Entangled Memory Gates",
+              "description": "Quantum memory using entangled states for distributed storage. Enables quantum error correction and non-local memory access.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.06,
+              "total_bonus": 0.60,
+              "max_research_rate_metal": 100000,
+              "max_research_rate_energy": 50000,
+              "tranche_cost_metal": 100000,
+              "tranche_cost_energy": 50000,
+              "unlocks": ["holographic_crystal_readouts"],
+              "effects": {
+                "dexterity_multiplier": 1.90,
+                "probe_energy_cost_reduction": 0.50,
+                "dyson_compute_multiplier": 2.75,
+                "memory_capacity": 4.30,
+                "quantum_entanglement_storage": true,
+                "non_local_access": 0.70
+              }
+            },
+            {
+              "id": "holographic_crystal_readouts",
+              "name": "Holographic Crystal Read-Outs",
+              "description": "Ultimate memory using holographic storage in photonic crystals. Massive storage density with parallel read/write operations.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.065,
+              "total_bonus": 0.65,
+              "max_research_rate_metal": 170000,
+              "max_research_rate_energy": 85000,
+              "tranche_cost_metal": 170000,
+              "tranche_cost_energy": 85000,
+              "unlocks": [],
+              "effects": {
+                "dexterity_multiplier": 2.00,
+                "probe_energy_cost_reduction": 0.55,
+                "dyson_compute_multiplier": 3.15,
+                "memory_capacity": 5.20,
+                "holographic_storage": true,
+                "parallel_operations": 0.75,
+                "ultimate_memory_density": 0.80
+              }
+            }
+          ]
+        },
+        "interface": {
+          "name": "Interface Systems",
+          "description": "Interface improvements enable better communication between components and systems.",
+          "tiers": [
+            {
+              "id": "serial_data_bus",
+              "name": "Serial Data Bus",
+              "description": "Basic serial communication protocol for data transfer between system components. Simple, reliable point-to-point communication.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.025,
+              "total_bonus": 0.25,
+              "max_research_rate_metal": 2000,
+              "max_research_rate_energy": 1000,
+              "tranche_cost_metal": 1000,
+              "tranche_cost_energy": 500,
+              "unlocks": ["parallel_interconnect"],
+              "effects": {
+                "dexterity_multiplier": 1.12,
+                "probe_energy_cost_reduction": 0.12,
+                "dyson_compute_multiplier": 1.10,
+                "data_transfer_speed": 1.15,
+                "system_integration": 0.20
+              }
+            },
+            {
+              "id": "parallel_interconnect",
+              "name": "Parallel Interconnect",
+              "description": "Wide parallel bus architecture for simultaneous data transfer across multiple channels. Dramatically increases bandwidth.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.03,
+              "total_bonus": 0.30,
+              "max_research_rate_metal": 4000,
+              "max_research_rate_energy": 2000,
+              "tranche_cost_metal": 3000,
+              "tranche_cost_energy": 1500,
+              "unlocks": ["optical_neural_interface"],
+              "effects": {
+                "dexterity_multiplier": 1.25,
+                "probe_energy_cost_reduction": 0.18,
+                "dyson_compute_multiplier": 1.25,
+                "data_transfer_speed": 1.35,
+                "parallel_bandwidth": 0.35
+              }
+            },
+            {
+              "id": "optical_neural_interface",
+              "name": "Optical Neural Interface",
+              "description": "Optical interfaces mimicking neural connections. High-bandwidth communication using light-based signaling for efficient data transfer.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.035,
+              "total_bonus": 0.35,
+              "max_research_rate_metal": 7000,
+              "max_research_rate_energy": 3500,
+              "tranche_cost_metal": 6000,
+              "tranche_cost_energy": 3000,
+              "unlocks": ["quantum_interface_protocol"],
+              "effects": {
+                "dexterity_multiplier": 1.40,
+                "probe_energy_cost_reduction": 0.25,
+                "dyson_compute_multiplier": 1.45,
+                "data_transfer_speed": 1.60,
+                "optical_communication": 0.45,
+                "neural_inspired": 0.35
+              }
+            },
+            {
+              "id": "quantum_interface_protocol",
+              "name": "Quantum Interface Protocol",
+              "description": "Communication protocols using quantum entanglement for instant data transfer. Eliminates latency for real-time system coordination.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.04,
+              "total_bonus": 0.40,
+              "max_research_rate_metal": 12000,
+              "max_research_rate_energy": 6000,
+              "tranche_cost_metal": 12000,
+              "tranche_cost_energy": 6000,
+              "unlocks": ["telepathic_interface_network"],
+              "effects": {
+                "dexterity_multiplier": 1.55,
+                "probe_energy_cost_reduction": 0.32,
+                "dyson_compute_multiplier": 1.70,
+                "data_transfer_speed": 2.00,
+                "quantum_entanglement_comm": true,
+                "zero_latency": true
+              }
+            },
+            {
+              "id": "telepathic_interface_network",
+              "name": "Telepathic Interface Network",
+              "description": "Ultimate interface system using quantum consciousness simulation for direct thought-based communication. Perfect information transfer without translation overhead.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.045,
+              "total_bonus": 0.45,
+              "max_research_rate_metal": 20000,
+              "max_research_rate_energy": 10000,
+              "tranche_cost_metal": 20000,
+              "tranche_cost_energy": 10000,
+              "unlocks": [],
+              "effects": {
+                "dexterity_multiplier": 1.70,
+                "probe_energy_cost_reduction": 0.40,
+                "dyson_compute_multiplier": 2.00,
+                "data_transfer_speed": 2.50,
+                "consciousness_interface": true,
+                "perfect_information_transfer": true,
+                "thought_based_communication": 0.60
+              }
+            }
+          ]
+        },
+        "transmission": {
+          "name": "Transmission Systems",
+          "description": "Transmission improvements enable faster data communication between probes and systems.",
+          "tiers": [
+            {
+              "id": "radio_frequency_link",
+              "name": "Radio Frequency Link",
+              "description": "Basic RF communication for data transmission between probes. Reliable long-range communication using electromagnetic waves.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.025,
+              "total_bonus": 0.25,
+              "max_research_rate_metal": 1500,
+              "max_research_rate_energy": 750,
+              "tranche_cost_metal": 800,
+              "tranche_cost_energy": 400,
+              "unlocks": ["laser_communication"],
+              "effects": {
+                "dexterity_multiplier": 1.10,
+                "probe_energy_cost_reduction": 0.10,
+                "dyson_compute_multiplier": 1.08,
+                "communication_range": 1.20,
+                "data_rate": 1.15
+              }
+            },
+            {
+              "id": "laser_communication",
+              "name": "Laser Communication",
+              "description": "Optical communication using focused laser beams. High bandwidth and directional communication for efficient data transfer.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.03,
+              "total_bonus": 0.30,
+              "max_research_rate_metal": 3000,
+              "max_research_rate_energy": 1500,
+              "tranche_cost_metal": 2000,
+              "tranche_cost_energy": 1000,
+              "unlocks": ["quantum_entanglement_network"],
+              "effects": {
+                "dexterity_multiplier": 1.20,
+                "probe_energy_cost_reduction": 0.18,
+                "dyson_compute_multiplier": 1.25,
+                "communication_range": 1.40,
+                "data_rate": 1.40,
+                "optical_bandwidth": 0.40
+              }
+            },
+            {
+              "id": "quantum_entanglement_network",
+              "name": "Quantum Entanglement Network",
+              "description": "Communication network using quantum-entangled particles. Enables instant information transfer regardless of distance.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.035,
+              "total_bonus": 0.35,
+              "max_research_rate_metal": 5000,
+              "max_research_rate_energy": 2500,
+              "tranche_cost_metal": 4000,
+              "tranche_cost_energy": 2000,
+              "unlocks": ["quantum_repeater"],
+              "effects": {
+                "dexterity_multiplier": 1.30,
+                "probe_energy_cost_reduction": 0.25,
+                "dyson_compute_multiplier": 1.45,
+                "communication_range": 1.70,
+                "data_rate": 1.75,
+                "instant_communication": true,
+                "quantum_networking": 0.45
+              }
+            },
+            {
+              "id": "quantum_repeater",
+              "name": "Quantum Repeater",
+              "description": "Quantum repeaters extend entanglement networks across vast distances. Enables system-wide quantum communication infrastructure.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.04,
+              "total_bonus": 0.40,
+              "max_research_rate_metal": 8000,
+              "max_research_rate_energy": 4000,
+              "tranche_cost_metal": 7000,
+              "tranche_cost_energy": 3500,
+              "unlocks": ["entanglement_network"],
+              "effects": {
+                "dexterity_multiplier": 1.40,
+                "probe_energy_cost_reduction": 0.32,
+                "dyson_compute_multiplier": 1.70,
+                "communication_range": 2.10,
+                "data_rate": 2.20,
+                "network_extension": 0.50,
+                "quantum_infrastructure": true
+              }
+            },
+            {
+              "id": "entanglement_network",
+              "name": "Entanglement Network",
+              "description": "System-wide quantum entanglement network connecting all probes and systems. Perfect synchronization and coordination across the entire swarm.",
+              "tranches": 10,
+              "bonus_per_tranche": 0.045,
+              "total_bonus": 0.45,
+              "max_research_rate_metal": 12000,
+              "max_research_rate_energy": 6000,
+              "tranche_cost_metal": 12000,
+              "tranche_cost_energy": 6000,
+              "unlocks": [],
+              "effects": {
+                "dexterity_multiplier": 1.50,
+                "probe_energy_cost_reduction": 0.40,
+                "dyson_compute_multiplier": 2.00,
+                "communication_range": 2.60,
+                "data_rate": 2.80,
+                "system_wide_entanglement": true,
+                "perfect_synchronization": true,
+                "ultimate_communication": 0.70
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+

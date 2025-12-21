@@ -1,0 +1,103 @@
+{
+  "description": "Orbital radius system affecting delta-v costs and productivity modifiers",
+  "orbital_zones": [
+    {
+      "id": "mercury",
+      "name": "Mercury Orbit",
+      "radius_au": 0.39,
+      "radius_km": 58000000,
+      "delta_v_penalty": 0.05,
+      "energy_cost_multiplier": 1.2,
+      "productivity_modifier": 1.5,
+      "description": "Closest to the Sun. Highest solar energy density but extreme temperature requirements. High productivity bonus but expensive to reach.",
+      "color": "#8C7853"
+    },
+    {
+      "id": "venus",
+      "name": "Venus Orbit",
+      "radius_au": 0.72,
+      "radius_km": 108000000,
+      "delta_v_penalty": 0.08,
+      "energy_cost_multiplier": 1.1,
+      "productivity_modifier": 1.3,
+      "description": "Inner solar system. High energy availability, good for energy-intensive operations.",
+      "color": "#FFC649"
+    },
+    {
+      "id": "earth",
+      "name": "Earth Orbit",
+      "radius_au": 1.0,
+      "radius_km": 150000000,
+      "delta_v_penalty": 0.10,
+      "energy_cost_multiplier": 1.0,
+      "productivity_modifier": 1.0,
+      "description": "Baseline orbital zone. Balanced conditions, standard reference point for all calculations.",
+      "color": "#6B93D6"
+    },
+    {
+      "id": "mars",
+      "name": "Mars Orbit",
+      "radius_au": 1.52,
+      "radius_km": 228000000,
+      "delta_v_penalty": 0.12,
+      "energy_cost_multiplier": 0.9,
+      "productivity_modifier": 0.9,
+      "description": "Outer inner system. Lower energy density but easier access to asteroid belt resources.",
+      "color": "#CD5C5C"
+    },
+    {
+      "id": "asteroid_belt",
+      "name": "Asteroid Belt",
+      "radius_au": 2.5,
+      "radius_km": 375000000,
+      "delta_v_penalty": 0.15,
+      "energy_cost_multiplier": 0.7,
+      "productivity_modifier": 0.85,
+      "description": "Rich in metals but far from solar energy. Ideal for mining operations but requires energy transport.",
+      "color": "#9E9E9E"
+    },
+    {
+      "id": "jupiter",
+      "name": "Jupiter Orbit",
+      "radius_au": 5.2,
+      "radius_km": 780000000,
+      "delta_v_penalty": 0.25,
+      "energy_cost_multiplier": 0.5,
+      "productivity_modifier": 0.7,
+      "description": "Deep outer system. Massive delta-v requirements. Low solar energy but proximity to gas giant resources.",
+      "color": "#D8CA9D"
+    },
+    {
+      "id": "saturn",
+      "name": "Saturn Orbit",
+      "radius_au": 9.5,
+      "radius_km": 1425000000,
+      "delta_v_penalty": 0.35,
+      "energy_cost_multiplier": 0.3,
+      "productivity_modifier": 0.6,
+      "description": "Far outer system. Extreme distances make construction expensive but offer strategic positioning.",
+      "color": "#FAD5A5"
+    },
+    {
+      "id": "kuiper",
+      "name": "Kuiper Belt",
+      "radius_au": 30.0,
+      "radius_km": 4500000000,
+      "delta_v_penalty": 0.50,
+      "energy_cost_multiplier": 0.1,
+      "productivity_modifier": 0.4,
+      "description": "Outermost reaches. Minimal solar energy, maximum delta-v. Only viable for specialized deep-space compute with extreme efficiency.",
+      "color": "#4B0082"
+    }
+  ],
+  "dyson_sphere_radius_au": 1.0,
+  "dyson_sphere_radius_km": 150000000,
+  "compute_distance_penalty": {
+    "formula": "1 / (1 + (distance_au - 1.0)^2 * 0.1)",
+    "description": "Compute efficiency decreases quadratically with distance from Dyson sphere (1 AU). At 2 AU, efficiency is ~90%. At 5 AU, ~62%."
+  },
+  "construction_distance_bonus": {
+    "formula": "1 + (1.0 - distance_au) * 0.3",
+    "description": "Construction productivity increases when closer to Dyson sphere. Max 30% bonus at 0 AU (Mercury orbit equivalent)."
+  }
+}
