@@ -66,6 +66,9 @@ class GameEngine {
         // Structures by zone: {zoneId: {building_id: count}}
         this.structuresByZone = {};
         
+        // Factory production by zone: {zoneId: {rate: probes/s, metalCost: kg/s}}
+        this.factoryProductionByZone = {};
+        
         // Legacy: keep global structures for backward compatibility
         this.structures = {};
         
@@ -199,16 +202,18 @@ class GameEngine {
                 this.structuresByZone[zoneId] = {};
             }
             
-            // Earth starts with 1 solar array and 1 mining station
+            // Earth starts with 1 solar array, 1 refinery, 1 mobile factory
             if (zoneId === 'earth') {
                 if (!this.structuresByZone[zoneId]) {
                     this.structuresByZone[zoneId] = {};
                 }
                 this.structuresByZone[zoneId]['solar_array_basic'] = 1;
-                this.structuresByZone[zoneId]['basic_mining_station'] = 1;
+                this.structuresByZone[zoneId]['refinery'] = 1;
+                this.structuresByZone[zoneId]['mobile_factory'] = 1;
                 // Also add to legacy global structures
                 this.structures['solar_array_basic'] = 1;
-                this.structures['basic_mining_station'] = 1;
+                this.structures['refinery'] = 1;
+                this.structures['mobile_factory'] = 1;
             }
         }
         
@@ -695,25 +700,21 @@ class GameEngine {
             }
         }
         
-        // Manual probe building (probes building other probes)
-        const manualProbeBuildRateKgS = Math.max(0, probeBuildRateKgS - totalFactoryMetalNeeded);
+        // Process factory production per zone (zone-based factories produce probes in their zone)
+        const factoryProductionByZone = this.factoryProductionByZone || {};
+        let totalFactoryMetalNeededActual = 0.0;
         
-        // Update probe construction for factory production
-        for (const [probeType, rate] of Object.entries(probeRate)) {
-            if (rate > 0) {
-                let metalCostPerProbe;
-                if (probeType === 'probe' && factoryMetalCostPerProbe > 0) {
-                    metalCostPerProbe = factoryMetalCostPerProbe;
-                } else {
-                    const probeData = this._getProbeData(probeType);
-                    metalCostPerProbe = Config.PROBE_MASS;
-                    if (probeData) {
-                        metalCostPerProbe = probeData.base_cost_metal || Config.PROBE_MASS;
-                    }
+        for (const [zoneId, factoryProd] of Object.entries(factoryProductionByZone)) {
+            if (factoryProd.rate > 0) {
+                const probeType = 'probe'; // Single probe type only
+                let metalCostPerProbe = factoryProd.metalCost / factoryProd.rate; // Weighted average for this zone
+                if (metalCostPerProbe <= 0 || !isFinite(metalCostPerProbe)) {
+                    metalCostPerProbe = factoryMetalCostPerProbe || Config.PROBE_MASS;
                 }
                 
                 // Calculate construction progress in kg/s (rate is in probes/s)
-                const constructionRateKgS = rate * metalCostPerProbe;
+                const constructionRateKgS = factoryProd.rate * metalCostPerProbe;
+                totalFactoryMetalNeededActual += constructionRateKgS;
                 
                 // Add progress this tick (throttled by energy and metal)
                 let progressThisTick = constructionRateKgS * deltaTime;
@@ -723,33 +724,29 @@ class GameEngine {
                     progressThisTick = this.metal;
                 }
                 
-                // Add to construction progress
-                if (!(probeType in this.probeConstructionProgress)) {
-                    this.probeConstructionProgress[probeType] = 0.0;
+                // Add to construction progress (use zone-specific progress tracking)
+                const progressKey = `${probeType}_${zoneId}`;
+                if (!(progressKey in this.probeConstructionProgress)) {
+                    this.probeConstructionProgress[progressKey] = 0.0;
                 }
                 
-                this.probeConstructionProgress[probeType] += progressThisTick;
+                this.probeConstructionProgress[progressKey] += progressThisTick;
                 this.metal -= progressThisTick;
                 this.metal = Math.max(0, this.metal);
                 
                 // Check if we've completed a probe
                 let probesBuiltThisTick = 0;
-                while (this.probeConstructionProgress[probeType] >= metalCostPerProbe) {
+                while (this.probeConstructionProgress[progressKey] >= metalCostPerProbe) {
                     // Add probe to global count (legacy)
                     this.probes[probeType] = (this.probes[probeType] || 0) + 1;
                     
-                    // Add probe to default zone - single probe type only
-                    if (!(this.defaultZone in this.probesByZone)) {
-                        this.probesByZone[this.defaultZone] = {
-                            'probe': 0
-                        };
+                    // Add probe to the zone where the factory is located
+                    if (!(zoneId in this.probesByZone)) {
+                        this.probesByZone[zoneId] = {'probe': 0};
                     }
-                    // Only add 'probe' type (ignore any specialized types)
-                    if (probeType === 'probe') {
-                        this.probesByZone[this.defaultZone]['probe'] = (this.probesByZone[this.defaultZone]['probe'] || 0) + 1;
-                    }
+                    this.probesByZone[zoneId]['probe'] = (this.probesByZone[zoneId]['probe'] || 0) + 1;
                     
-                    this.probeConstructionProgress[probeType] -= metalCostPerProbe;
+                    this.probeConstructionProgress[progressKey] -= metalCostPerProbe;
                     probesBuiltThisTick += 1;
                 }
                 
@@ -759,7 +756,11 @@ class GameEngine {
             }
         }
         
-        // Manual probe building (probes building other probes)
+        // Manual probe building (probes building other probes) - zone-based replication
+        // Calculate remaining build rate after factory production
+        const manualProbeBuildRateKgS = Math.max(0, probeBuildRateKgS - totalFactoryMetalNeededActual);
+        
+        // Manual probe building (probes building other probes) - zone-based replication
         if (manualProbeBuildRateKgS > 0) {
             // Default to building 'probe' type
             const probeType = 'probe';
@@ -787,7 +788,70 @@ class GameEngine {
             // Check if we've completed a probe
             let probesBuiltThisTick = 0;
             while (this.probeConstructionProgress[probeType] >= metalCostPerProbe) {
+                // Add probe to global count (legacy)
                 this.probes[probeType] = (this.probes[probeType] || 0) + 1;
+                
+                // Distribute new probes to zones proportionally based on replicate allocation
+                // Find zones with replicating probes and distribute proportionally
+                let totalReplicateAllocation = 0;
+                const zoneReplicateAllocations = {};
+                for (const [zoneId, zoneAllocations] of Object.entries(this.probeAllocationsByZone)) {
+                    const replicateAllocation = zoneAllocations.replicate || {};
+                    const replicateCount = Object.values(replicateAllocation).reduce((a, b) => a + b, 0);
+                    if (replicateCount > 0) {
+                        zoneReplicateAllocations[zoneId] = replicateCount;
+                        totalReplicateAllocation += replicateCount;
+                    }
+                }
+                
+                // If we have zone allocations, distribute proportionally using weighted random
+                if (totalReplicateAllocation > 0) {
+                    // Use cumulative probability to distribute proportionally
+                    let random = Math.random() * totalReplicateAllocation;
+                    let cumulative = 0;
+                    let selectedZone = null;
+                    
+                    for (const [zoneId, count] of Object.entries(zoneReplicateAllocations)) {
+                        cumulative += count;
+                        if (random <= cumulative) {
+                            selectedZone = zoneId;
+                            break;
+                        }
+                    }
+                    
+                    // Fallback to zone with most replicating probes if selection failed
+                    if (!selectedZone) {
+                        let maxZone = null;
+                        let maxCount = 0;
+                        for (const [zoneId, count] of Object.entries(zoneReplicateAllocations)) {
+                            if (count > maxCount) {
+                                maxCount = count;
+                                maxZone = zoneId;
+                            }
+                        }
+                        selectedZone = maxZone || this.defaultZone;
+                    }
+                    
+                    if (selectedZone) {
+                        if (!(selectedZone in this.probesByZone)) {
+                            this.probesByZone[selectedZone] = {'probe': 0};
+                        }
+                        this.probesByZone[selectedZone]['probe'] = (this.probesByZone[selectedZone]['probe'] || 0) + 1;
+                    } else {
+                        // Fallback to default zone
+                        if (!(this.defaultZone in this.probesByZone)) {
+                            this.probesByZone[this.defaultZone] = {'probe': 0};
+                        }
+                        this.probesByZone[this.defaultZone]['probe'] = (this.probesByZone[this.defaultZone]['probe'] || 0) + 1;
+                    }
+                } else {
+                    // No zone allocations, add to default zone
+                    if (!(this.defaultZone in this.probesByZone)) {
+                        this.probesByZone[this.defaultZone] = {'probe': 0};
+                    }
+                    this.probesByZone[this.defaultZone]['probe'] = (this.probesByZone[this.defaultZone]['probe'] || 0) + 1;
+                }
+                
                 this.probeConstructionProgress[probeType] -= metalCostPerProbe;
                 probesBuiltThisTick += 1;
             }
@@ -1338,11 +1402,52 @@ class GameEngine {
         const rates = {'probe': 0.0}; // Single probe type only
         const idleProbes = {'probes': 0.0, 'structures': 0.0};
         
-        // Factory production (automatic, independent of probe assignments)
+        // Factory production (zone-based) - factories produce probes in their zone
         let totalFactoryRate = 0.0;
         let totalFactoryMetalCost = 0.0;
+        const factoryProductionByZone = {}; // Track production per zone
         
+        // Check structures by zone (new system)
+        for (const [zoneId, zoneStructures] of Object.entries(this.structuresByZone)) {
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                const building = this.dataLoader.getBuildingById(buildingId);
+                if (building) {
+                    const category = this._getBuildingCategory(buildingId);
+                    if (category === 'factories') {
+                        const effects = building.effects || {};
+                        const probesPerSecond = effects.probes_per_second || 0.0;
+                        const metalPerProbe = effects.metal_per_probe || 10.0;
+                        
+                        // Each factory produces at its rate in this zone
+                        const factoryRate = probesPerSecond * count;
+                        const factoryMetalNeeded = factoryRate * metalPerProbe;
+                        
+                        totalFactoryRate += factoryRate;
+                        totalFactoryMetalCost += factoryMetalNeeded;
+                        
+                        // Track production per zone
+                        if (!factoryProductionByZone[zoneId]) {
+                            factoryProductionByZone[zoneId] = {rate: 0.0, metalCost: 0.0};
+                        }
+                        factoryProductionByZone[zoneId].rate += factoryRate;
+                        factoryProductionByZone[zoneId].metalCost += factoryMetalNeeded;
+                    }
+                }
+            }
+        }
+        
+        // Also check legacy global structures for backward compatibility
         for (const [buildingId, count] of Object.entries(this.structures)) {
+            // Skip if already counted in zone structures
+            let alreadyCounted = false;
+            for (const zoneStructures of Object.values(this.structuresByZone)) {
+                if (zoneStructures[buildingId]) {
+                    alreadyCounted = true;
+                    break;
+                }
+            }
+            if (alreadyCounted) continue;
+            
             const building = this.dataLoader.getBuildingById(buildingId);
             if (building) {
                 const category = this._getBuildingCategory(buildingId);
@@ -1351,15 +1456,24 @@ class GameEngine {
                     const probesPerSecond = effects.probes_per_second || 0.0;
                     const metalPerProbe = effects.metal_per_probe || 10.0;
                     
-                    // Each factory produces at its rate
                     const factoryRate = probesPerSecond * count;
                     const factoryMetalNeeded = factoryRate * metalPerProbe;
                     
                     totalFactoryRate += factoryRate;
                     totalFactoryMetalCost += factoryMetalNeeded;
+                    
+                    // Add to default zone
+                    if (!factoryProductionByZone[this.defaultZone]) {
+                        factoryProductionByZone[this.defaultZone] = {rate: 0.0, metalCost: 0.0};
+                    }
+                    factoryProductionByZone[this.defaultZone].rate += factoryRate;
+                    factoryProductionByZone[this.defaultZone].metalCost += factoryMetalNeeded;
                 }
             }
         }
+        
+        // Store factory production by zone for use in tick()
+        this.factoryProductionByZone = factoryProductionByZone;
         
         // Calculate weighted average metal cost per probe
         let factoryMetalCostPerProbe = 10.0; // Default if no factories
@@ -1367,14 +1481,15 @@ class GameEngine {
             factoryMetalCostPerProbe = totalFactoryMetalCost / totalFactoryRate;
         }
         
-        // Manual probe building (probes building other probes)
-        const constructAllocation = this.probeAllocations.construct || {};
-        const constructingProbes = Object.values(constructAllocation).reduce((a, b) => a + b, 0);
-        const probeBuildingFraction = this.buildAllocation / 100.0; // Fraction of construct probes building probes
-        const probeBuildingProbes = constructingProbes * probeBuildingFraction;
+        // Manual probe building (probes building other probes) - use zone-based replicate allocations
+        let totalReplicatingProbes = 0;
+        for (const [zoneId, zoneAllocations] of Object.entries(this.probeAllocationsByZone)) {
+            const replicateAllocation = zoneAllocations.replicate || {};
+            totalReplicatingProbes += Object.values(replicateAllocation).reduce((a, b) => a + b, 0);
+        }
         
         // Manual build rate: 0.1 kg/s per probe, converted to probes/s
-        const baseManualBuildRateKgS = probeBuildingProbes * Config.PROBE_BUILD_RATE; // 0.1 kg/s per probe
+        const baseManualBuildRateKgS = totalReplicatingProbes * Config.PROBE_BUILD_RATE; // 0.1 kg/s per probe
         const manualBuildRateProbesS = baseManualBuildRateKgS / factoryMetalCostPerProbe; // probes/s (theoretical)
         
         // Calculate metal production rate for limiting
@@ -1405,8 +1520,13 @@ class GameEngine {
         // Distribute factory production across probe types (default to von neumann)
         rates.probe = effectiveFactoryRate + effectiveManualRate; // Combine factory and manual production
         
-        // Calculate structure construction power for idle tracking
-        const structureConstructingPower = constructingProbes * (1.0 - this.buildAllocation / 100.0);
+        // Calculate structure construction power for idle tracking (use zone-based construct allocations)
+        let totalConstructingProbes = 0;
+        for (const [zoneId, zoneAllocations] of Object.entries(this.probeAllocationsByZone)) {
+            const constructAllocation = zoneAllocations.construct || {};
+            totalConstructingProbes += Object.values(constructAllocation).reduce((a, b) => a + b, 0);
+        }
+        const structureConstructingPower = totalConstructingProbes; // All construct probes build structures (replicate is separate)
         
         // Track idle structure-building probes if applicable
         if (structureConstructingPower > 0 && this.metal <= 0 && metalProductionRate <= 0) {

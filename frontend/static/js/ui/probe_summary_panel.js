@@ -111,11 +111,20 @@ class ProbeSummaryPanel {
 
         this.gameState = gameState;
 
-        // Calculate total probes
-        const totalProbes = Object.values(gameState.probes || {}).reduce((sum, count) => sum + (count || 0), 0);
+        // Calculate total probes - sum across all zones
+        let totalProbes = 0;
+        // Legacy: global probe counts
+        totalProbes += Object.values(gameState.probes || {}).reduce((sum, count) => sum + (count || 0), 0);
+        // Zone-based probe counts
+        const probesByZone = gameState.probes_by_zone || {};
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            if (zoneProbes && typeof zoneProbes === 'object') {
+                totalProbes += Object.values(zoneProbes).reduce((sum, count) => sum + (count || 0), 0);
+            }
+        }
         const totalEl = document.getElementById('probe-summary-total');
         if (totalEl) {
-            totalEl.textContent = this.formatNumberWithCommas(totalProbes);
+            totalEl.textContent = this.formatNumberWithCommas(Math.floor(totalProbes));
         }
 
         // Probe production rate (includes both factory production and manual probe building)
@@ -142,47 +151,59 @@ class ProbeSummaryPanel {
             }
         }
 
-        // Allocations breakdown - changed to: dyson, replicate, construction, harvest
+        // Allocations breakdown - use zone-based allocations
         const allocationsEl = document.getElementById('probe-summary-allocations');
         if (allocationsEl) {
             let allocationsHtml = '';
             
-            // Dyson allocation
-            const dysonProbes = Object.values(allocations.dyson || {}).reduce((sum, count) => sum + (count || 0), 0);
-            if (dysonProbes > 0) {
+            // Get allocations from game state
+            const allocations = gameState.probe_allocations || {};
+            const allocationsByZone = gameState.probe_allocations_by_zone || {};
+            
+            // Sum up allocations across all zones
+            let totalDyson = 0;
+            let totalReplicate = 0;
+            let totalConstruct = 0;
+            let totalHarvest = 0;
+            
+            // Legacy allocations (for backward compatibility)
+            totalDyson += Object.values(allocations.dyson || {}).reduce((sum, count) => sum + (count || 0), 0);
+            totalHarvest += Object.values(allocations.harvest || {}).reduce((sum, count) => sum + (count || 0), 0);
+            totalConstruct += Object.values(allocations.construct || {}).reduce((sum, count) => sum + (count || 0), 0);
+            
+            // Zone-based allocations
+            for (const [zoneId, zoneAllocs] of Object.entries(allocationsByZone)) {
+                totalDyson += Object.values(zoneAllocs.dyson || {}).reduce((sum, count) => sum + (count || 0), 0);
+                totalHarvest += Object.values(zoneAllocs.harvest || {}).reduce((sum, count) => sum + (count || 0), 0);
+                totalReplicate += Object.values(zoneAllocs.replicate || {}).reduce((sum, count) => sum + (count || 0), 0);
+                totalConstruct += Object.values(zoneAllocs.construct || {}).reduce((sum, count) => sum + (count || 0), 0);
+            }
+            
+            if (totalDyson > 0) {
                 allocationsHtml += `<div class="probe-summary-breakdown-item">
                     <span class="probe-summary-breakdown-label">Dyson:</span>
-                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(dysonProbes)}</span>
+                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(Math.floor(totalDyson))}</span>
                 </div>`;
             }
-
-            // Replicate allocation (probes building other probes)
-            // This is the construct allocation with build_allocation > 0
-            const replicateProbes = probeBuildingProbes;
-            if (replicateProbes > 0) {
+            
+            if (totalReplicate > 0) {
                 allocationsHtml += `<div class="probe-summary-breakdown-item">
                     <span class="probe-summary-breakdown-label">Replicate:</span>
-                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(Math.floor(replicateProbes))}</span>
+                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(Math.floor(totalReplicate))}</span>
                 </div>`;
             }
-
-            // Construction allocation (probes building structures)
-            // This is the construct allocation with build_allocation < 100
-            const structureBuildingFraction = 1.0 - probeBuildingFraction;
-            const constructionProbes = constructingProbes * structureBuildingFraction;
-            if (constructionProbes > 0) {
+            
+            if (totalConstruct > 0) {
                 allocationsHtml += `<div class="probe-summary-breakdown-item">
-                    <span class="probe-summary-breakdown-label">Construction:</span>
-                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(Math.floor(constructionProbes))}</span>
+                    <span class="probe-summary-breakdown-label">Construct:</span>
+                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(Math.floor(totalConstruct))}</span>
                 </div>`;
             }
-
-            // Harvest allocation
-            const harvestProbes = Object.values(allocations.harvest || {}).reduce((sum, count) => sum + (count || 0), 0);
-            if (harvestProbes > 0) {
+            
+            if (totalHarvest > 0) {
                 allocationsHtml += `<div class="probe-summary-breakdown-item">
                     <span class="probe-summary-breakdown-label">Harvest:</span>
-                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(harvestProbes)}</span>
+                    <span class="probe-summary-breakdown-value">${this.formatNumberWithCommas(Math.floor(totalHarvest))}</span>
                 </div>`;
             }
 

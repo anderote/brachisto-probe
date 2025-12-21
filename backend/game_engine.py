@@ -58,14 +58,16 @@ class GameEngine:
             if zone_id == default_zone:
                 # Earth starts with 1 probe
                 self.probes_by_zone[zone_id] = {'probe': initial_probes}
-                # Earth starts with 1 solar array and 1 mining station
+                # Earth starts with 1 solar array, 1 refinery, 1 mobile factory
                 self.structures_by_zone[zone_id] = {
                     'solar_array_basic': 1,
-                    'basic_mining_station': 1
+                    'refinery': 1,
+                    'mobile_factory': 1
                 }
                 # Also add to legacy global structures for backward compatibility
                 self.structures['solar_array_basic'] = 1
-                self.structures['basic_mining_station'] = 1
+                self.structures['refinery'] = 1
+                self.structures['mobile_factory'] = 1
             
             # Initialize zone allocations
             if zone.get('is_dyson_zone', False):

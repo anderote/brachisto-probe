@@ -228,7 +228,13 @@ class OrbitalZoneSelector {
     }
     
     formatNumber(num) {
-        return num.toLocaleString('en-US');
+        if (!num || num === 0) return '0';
+        if (num < 1) return num.toFixed(2);
+        if (num < 1000) return Math.floor(num).toLocaleString('en-US');
+        if (num < 1e6) return (num / 1000).toFixed(1) + 'k';
+        if (num < 1e9) return (num / 1e6).toFixed(2) + 'M';
+        if (num < 1e12) return (num / 1e9).toFixed(2) + 'B';
+        return num.toExponential(2);
     }
 
     setupTooltips() {
@@ -357,24 +363,26 @@ class OrbitalZoneSelector {
         let totalProbeMass = 0;
         let probesPerSecond = 0;
         let metalRemaining = 0;
-        let slagRemaining = 0;
+        let massRemaining = 0;
+        let slagProduced = 0;
+        let buildingCounts = {};
         
         if (this.gameState) {
             // Get probes in this zone
             const probesByZone = this.gameState.probes_by_zone || {};
             const zoneProbes = probesByZone[zoneId] || {};
             for (const [probeType, count] of Object.entries(zoneProbes)) {
-                numProbes += count;
-                totalProbeMass += count * 10; // Config.PROBE_MASS = 10 kg
+                numProbes += (count || 0);
+                totalProbeMass += (count || 0) * 10; // Config.PROBE_MASS = 10 kg
             }
             
-            // Get probe allocations
+            // Get probe allocations for this zone
             const probeAllocationsByZone = this.gameState.probe_allocations_by_zone || {};
             const zoneAllocations = probeAllocationsByZone[zoneId] || {};
             const harvestAllocation = zoneAllocations.harvest || {};
             
-            // Calculate mining rate from probes (1.0 kg/s per probe base)
-            const baseHarvestRate = 1.0; // Config.PROBE_HARVEST_RATE
+            // Calculate mining rate from probes (use Config.PROBE_BASE_MINING_RATE = 0.5 kg/s per probe)
+            const baseHarvestRate = 0.5; // Config.PROBE_BASE_MINING_RATE
             for (const [probeType, count] of Object.entries(harvestAllocation)) {
                 if (count > 0) {
                     const probeHarvestRate = baseHarvestRate * miningRateMultiplier * count;
@@ -386,13 +394,29 @@ class OrbitalZoneSelector {
             metalMiningRate = miningRate * metalPercentage;
             slagMiningRate = miningRate * (1.0 - metalPercentage);
             
-            // Get probe production rate (probes per second) - total across all zones
-            const probeProductionRates = this.gameState.probe_production_rates || {};
-            probesPerSecond = Object.values(probeProductionRates).reduce((a, b) => a + b, 0);
+            // Get probe production rate for this zone (probes per second)
+            // Calculate from replicate allocation in this zone
+            const replicateAllocation = zoneAllocations.replicate || {};
+            let zoneProbeProductionRate = 0;
+            for (const [probeType, count] of Object.entries(replicateAllocation)) {
+                if (count > 0) {
+                    // Base probe production: 0.1 kg/s per probe (Config.PROBE_BUILD_RATE)
+                    // Probe mass: 10 kg (Config.PROBE_MASS)
+                    // Production rate: (0.1 kg/s) / (10 kg/probe) = 0.01 probes/s per probe
+                    const probesPerSecondPerProbe = 0.1 / 10; // 0.01 probes/s per replicating probe
+                    zoneProbeProductionRate += count * probesPerSecondPerProbe;
+                }
+            }
+            probesPerSecond = zoneProbeProductionRate;
             
             // Get remaining resources
             metalRemaining = (this.gameState.zone_metal_remaining && this.gameState.zone_metal_remaining[zoneId]) || 0;
-            slagRemaining = (this.gameState.zone_slag_remaining && this.gameState.zone_slag_remaining[zoneId]) || 0;
+            massRemaining = (this.gameState.zone_mass_remaining && this.gameState.zone_mass_remaining[zoneId]) || 0;
+            slagProduced = (this.gameState.zone_slag_produced && this.gameState.zone_slag_produced[zoneId]) || 0;
+            
+            // Get building counts for this zone
+            const structuresByZone = this.gameState.structures_by_zone || {};
+            buildingCounts = structuresByZone[zoneId] || {};
         }
         
         // Format values
@@ -427,38 +451,59 @@ class OrbitalZoneSelector {
         panel.style.display = 'block';
         panel.style.left = `${leftPos}px`;
         panel.style.top = `${topPos}px`;
+        // Build building counts display
+        let buildingCountsHtml = '';
+        const buildingEntries = Object.entries(buildingCounts);
+        if (buildingEntries.length > 0) {
+            buildingCountsHtml = '<div class="probe-summary-item" style="border-top: 1px solid rgba(255, 255, 255, 0.2); margin-top: 8px; padding-top: 8px;">';
+            buildingCountsHtml += '<div class="probe-summary-label">Buildings</div>';
+            buildingCountsHtml += '<div class="probe-summary-breakdown">';
+            buildingEntries.forEach(([buildingId, count]) => {
+                if (count > 0) {
+                    // Try to get building name, fallback to ID
+                    const buildingName = buildingId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    buildingCountsHtml += `<div class="probe-summary-breakdown-item">
+                        <span class="probe-summary-breakdown-label">${buildingName}:</span>
+                        <span class="probe-summary-breakdown-value">${count}</span>
+                    </div>`;
+                }
+            });
+            buildingCountsHtml += '</div></div>';
+        }
+        
         panel.style.bottom = 'auto';
         panel.className = 'zone-info-panel probe-summary-panel';
         panel.innerHTML = `
             <div class="probe-summary-title">${zone.name}</div>
             <div class="probe-summary-item">
+                <div class="probe-summary-label">Probes</div>
+                <div class="probe-summary-value">${this.formatNumber(Math.floor(numProbes))}</div>
+            </div>
+            <div class="probe-summary-item">
+                <div class="probe-summary-label">Probe Production Rate</div>
+                <div class="probe-summary-value">${formatRate(probesPerSecond)} /s</div>
+            </div>
+            <div class="probe-summary-item">
                 <div class="probe-summary-label">Mining Rate</div>
-                <div class="probe-summary-value">${formatRate(miningRate)} kg/s</div>
+                <div class="probe-summary-value">${formatRate(metalMiningRate)} kg/s metal</div>
             </div>
             <div class="probe-summary-item">
-                <div class="probe-summary-label">Mining Cost</div>
-                <div class="probe-summary-value">${(deltaVEnergyCost / 1000).toFixed(1)} kW per kg/s</div>
-            </div>
-            <div class="probe-summary-item">
-                <div class="probe-summary-label">Number of Probes</div>
-                <div class="probe-summary-value">${numProbes.toFixed(0)}</div>
-            </div>
-            <div class="probe-summary-item">
-                <div class="probe-summary-label">Total Probe Mass</div>
-                <div class="probe-summary-value">${formatMass(totalProbeMass)} kg</div>
-            </div>
-            <div class="probe-summary-item">
-                <div class="probe-summary-label">Probes Produced per Second</div>
-                <div class="probe-summary-value">${formatRate(probesPerSecond)}</div>
+                <div class="probe-summary-label">Slag Production</div>
+                <div class="probe-summary-value">${formatRate(slagMiningRate)} kg/s</div>
             </div>
             <div class="probe-summary-item">
                 <div class="probe-summary-label">Metal Remaining</div>
-                <div class="probe-summary-value">${formatMass(metalRemaining)} kg</div>
+                <div class="probe-summary-value">${formatMass(metalRemaining)}</div>
             </div>
             <div class="probe-summary-item">
-                <div class="probe-summary-label">Slag Remaining</div>
-                <div class="probe-summary-value">${formatMass(slagRemaining)} kg</div>
+                <div class="probe-summary-label">Mass Remaining</div>
+                <div class="probe-summary-value">${formatMass(massRemaining)}</div>
             </div>
+            <div class="probe-summary-item">
+                <div class="probe-summary-label">Slag Produced</div>
+                <div class="probe-summary-value">${formatMass(slagProduced)}</div>
+            </div>
+            ${buildingCountsHtml}
         `;
     }
     
