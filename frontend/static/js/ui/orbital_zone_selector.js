@@ -527,27 +527,8 @@ class OrbitalZoneSelector {
             });
         });
         
-        // Click handler for clicking away (on document) to deselect
-        document.addEventListener('click', (e) => {
-            // Don't deselect if clicking on the zone selector or its children
-            if (this.container && this.container.contains(e.target)) {
-                return;
-            }
-            // Don't deselect if clicking on the purchase panel (right sidebar)
-            const sidebar = document.getElementById('game-sidebar');
-            if (sidebar && sidebar.contains(e.target)) {
-                return;
-            }
-            // Don't deselect if clicking on transfer dialog
-            const transferDialog = document.querySelector('.transfer-dialog');
-            if (transferDialog && transferDialog.contains(e.target)) {
-                return;
-            }
-            // Deselect if clicking elsewhere
-            if (this.selectedZone || this.transferSourceZone) {
-                this.deselectZone();
-            }
-        });
+        // Zones only deselect when clicking the same zone tile again (toggle behavior)
+        // Clicking anywhere else keeps the zone selected
     }
 
     async selectZone(zoneId) {

@@ -173,6 +173,10 @@ class GameEngine:
         # Each probe is 10 kg, so progress tracks kg built toward next probe
         self.probe_construction_progress = {probe_type: 0.0 for probe_type in self.probes.keys()}
         
+        # Zone-based replication progress: {zoneId: {probe_type: progress_in_kg}}
+        # Tracks replication progress per zone so probes are added to correct zone
+        self.zone_replication_progress = {}
+        
         # Structure construction progress tracking: {building_id: progress_in_kg}
         # Tracks progress toward completing each structure being built
         self.structure_construction_progress = {}
@@ -236,6 +240,13 @@ class GameEngine:
                 # Initialize if not present
                 engine.probe_construction_progress = {probe_type: 0.0 for probe_type in engine.probes.keys()}
             # Otherwise, keep the initialized allocations
+            
+            # Load zone replication progress
+            saved_zone_replication = state.get('zone_replication_progress', {})
+            if saved_zone_replication and isinstance(saved_zone_replication, dict):
+                engine.zone_replication_progress = saved_zone_replication
+            else:
+                engine.zone_replication_progress = {}
             
             # Load structure construction progress
             saved_structure_progress = state.get('structure_construction_progress', {})
@@ -595,7 +606,8 @@ class GameEngine:
         # Manual probe building (probes building other probes)
         manual_probe_build_rate_kg_s = max(0, probe_build_rate_kg_s - total_factory_metal_needed)
         
-        # Update probe construction for factory production
+        # Update probe construction for factory production - zone-based
+        # Factories produce probes in the zone where they're located
         for probe_type, rate in probe_rate.items():
             if rate > 0:
                 # Use factory metal cost for factory-produced probes, otherwise use probe cost
@@ -610,14 +622,176 @@ class GameEngine:
                 # Calculate construction progress in kg/s (rate is in probes/s)
                 construction_rate_kg_s = rate * metal_cost_per_probe
                 
-                # Add progress this tick (throttled by energy and metal)
-                progress_this_tick = construction_rate_kg_s * delta_time
+                # Distribute factory production across zones based on where factories are located
+                zones = self.data_loader.load_orbital_mechanics()
+                total_factory_capacity = 0.0
+                zone_factory_capacity = {}
                 
-                # Check if we have enough metal for this progress
+                # Calculate factory capacity per zone
+                for zone in zones:
+                    zone_id = zone['id']
+                    if zone.get('is_dyson_zone', False):
+                        continue  # Factories don't produce in Dyson zone
+                    
+                    zone_structures = self.structures_by_zone.get(zone_id, {})
+                    zone_factory_rate = 0.0
+                    
+                    for building_id, count in zone_structures.items():
+                        building = self.data_loader.get_building_by_id(building_id)
+                        if building:
+                            category = self._get_building_category(building_id)
+                            if category == 'factories':
+                                effects = building.get('effects', {})
+                                probes_per_second = effects.get('probes_per_second', 0.0)
+                                zone_factory_rate += probes_per_second * count
+                    
+                    if zone_factory_rate > 0:
+                        zone_factory_capacity[zone_id] = zone_factory_rate * metal_cost_per_probe
+                        total_factory_capacity += zone_factory_capacity[zone_id]
+                
+                # If we have zone-based factories, distribute production
+                if total_factory_capacity > 0:
+                    for zone_id, zone_capacity in zone_factory_capacity.items():
+                        zone_share = zone_capacity / total_factory_capacity
+                        zone_construction_rate_kg_s = construction_rate_kg_s * zone_share
+                        
+                        progress_this_tick = zone_construction_rate_kg_s * delta_time
+                        
+                        # Check if we have enough metal for this progress
+                        if self.metal < progress_this_tick:
+                            progress_this_tick = self.metal
+                        
+                        # Use zone-specific progress tracking for factories
+                        progress_key = f'{probe_type}_{zone_id}'
+                        if progress_key not in self.probe_construction_progress:
+                            self.probe_construction_progress[progress_key] = 0.0
+                        
+                        self.probe_construction_progress[progress_key] += progress_this_tick
+                        self.metal -= progress_this_tick
+                        self.metal = max(0, self.metal)
+                        
+                        # Check if we've completed a probe in this zone
+                        probes_built_this_tick = 0
+                        while self.probe_construction_progress[progress_key] >= metal_cost_per_probe:
+                            # Add probe to global count (legacy)
+                            self.probes[probe_type] += 1
+                            
+                            # Add probe to the zone where the factory is located
+                            if zone_id not in self.probes_by_zone:
+                                self.probes_by_zone[zone_id] = {}
+                            if probe_type not in self.probes_by_zone[zone_id]:
+                                self.probes_by_zone[zone_id][probe_type] = 0
+                            self.probes_by_zone[zone_id][probe_type] += 1
+                            
+                            self.probe_construction_progress[progress_key] -= metal_cost_per_probe
+                            probes_built_this_tick += 1
+                        
+                        if probes_built_this_tick > 0:
+                            self._auto_allocate_probes()
+                else:
+                    # Fallback: use global tracking if no zone-based factories
+                    progress_this_tick = construction_rate_kg_s * delta_time
+                    
+                    # Check if we have enough metal for this progress
+                    if self.metal < progress_this_tick:
+                        progress_this_tick = self.metal
+                    
+                    # Add to construction progress
+                    if probe_type not in self.probe_construction_progress:
+                        self.probe_construction_progress[probe_type] = 0.0
+                    
+                    self.probe_construction_progress[probe_type] += progress_this_tick
+                    self.metal -= progress_this_tick
+                    self.metal = max(0, self.metal)
+                    
+                    # Check if we've completed a probe
+                    probes_built_this_tick = 0
+                    while self.probe_construction_progress[probe_type] >= metal_cost_per_probe:
+                        self.probes[probe_type] += 1
+                        self.probe_construction_progress[probe_type] -= metal_cost_per_probe
+                        probes_built_this_tick += 1
+                    
+                    if probes_built_this_tick > 0:
+                        self._auto_allocate_probes()
+        
+        # Manual probe building (probes building other probes) - zone-based replication
+        if manual_probe_build_rate_kg_s > 0:
+            # Default to building 'probe' type
+            probe_type = 'probe'
+            probe_data = self._get_probe_data(probe_type)
+            metal_cost_per_probe = Config.PROBE_MASS
+            if probe_data:
+                metal_cost_per_probe = probe_data.get('base_cost_metal', Config.PROBE_MASS)
+            
+            # Get zone activities to determine which zones are replicating
+            zone_activities = self._calculate_zone_activities()
+            
+            # Calculate total replication capacity across all zones
+            total_replication_capacity = 0.0
+            zone_replication_capacity = {}
+            for zone_id, activities in zone_activities.items():
+                replicate_count = activities.get('replicate', 0)
+                if replicate_count > 0:
+                    # Calculate dexterity capacity for replication in this zone
+                    zone_probes = self.probes_by_zone.get(zone_id, {}).get('probe', 0)
+                    if zone_probes > 0:
+                        probe_data = self._get_probe_data('probe')
+                        base_dexterity = probe_data.get('base_dexterity', 1.0) if probe_data else 1.0
+                        zone_dexterity = zone_probes * base_dexterity
+                        # Replication uses dexterity capacity (kg/s)
+                        replication_capacity = replicate_count * Config.PROBE_BUILD_RATE
+                        zone_replication_capacity[zone_id] = replication_capacity
+                        total_replication_capacity += replication_capacity
+            
+            # Distribute manual build rate across zones proportionally
+            if total_replication_capacity > 0:
+                for zone_id, replication_capacity in zone_replication_capacity.items():
+                    # Calculate this zone's share of the build rate
+                    zone_share = replication_capacity / total_replication_capacity
+                    zone_build_rate_kg_s = manual_probe_build_rate_kg_s * zone_share
+                    
+                    progress_this_tick = zone_build_rate_kg_s * delta_time
+                    
+                    # Check if we have enough metal
+                    if self.metal < progress_this_tick:
+                        progress_this_tick = self.metal
+                    
+                    # Initialize zone replication progress if needed
+                    if zone_id not in self.zone_replication_progress:
+                        self.zone_replication_progress[zone_id] = {}
+                    if probe_type not in self.zone_replication_progress[zone_id]:
+                        self.zone_replication_progress[zone_id][probe_type] = 0.0
+                    
+                    self.zone_replication_progress[zone_id][probe_type] += progress_this_tick
+                    self.metal -= progress_this_tick
+                    self.metal = max(0, self.metal)
+                    
+                    # Check if we've completed a probe in this zone
+                    probes_built_this_tick = 0
+                    while self.zone_replication_progress[zone_id][probe_type] >= metal_cost_per_probe:
+                        # Add probe to global count (legacy)
+                        self.probes[probe_type] += 1
+                        
+                        # Add probe to the zone where replication occurred
+                        if zone_id not in self.probes_by_zone:
+                            self.probes_by_zone[zone_id] = {}
+                        if probe_type not in self.probes_by_zone[zone_id]:
+                            self.probes_by_zone[zone_id][probe_type] = 0
+                        self.probes_by_zone[zone_id][probe_type] += 1
+                        
+                        self.zone_replication_progress[zone_id][probe_type] -= metal_cost_per_probe
+                        probes_built_this_tick += 1
+                    
+                    if probes_built_this_tick > 0:
+                        self._auto_allocate_probes()
+            else:
+                # Fallback: use old method if no zone replication capacity
+                progress_this_tick = manual_probe_build_rate_kg_s * delta_time
+                
+                # Check if we have enough metal
                 if self.metal < progress_this_tick:
                     progress_this_tick = self.metal
                 
-                # Add to construction progress
                 if probe_type not in self.probe_construction_progress:
                     self.probe_construction_progress[probe_type] = 0.0
                 
@@ -634,38 +808,6 @@ class GameEngine:
                 
                 if probes_built_this_tick > 0:
                     self._auto_allocate_probes()
-        
-        # Manual probe building (probes building other probes)
-        if manual_probe_build_rate_kg_s > 0:
-            # Default to building 'probe' type
-            probe_type = 'probe'
-            probe_data = self._get_probe_data(probe_type)
-            metal_cost_per_probe = Config.PROBE_MASS
-            if probe_data:
-                metal_cost_per_probe = probe_data.get('base_cost_metal', Config.PROBE_MASS)
-            
-            progress_this_tick = manual_probe_build_rate_kg_s * delta_time
-            
-            # Check if we have enough metal
-            if self.metal < progress_this_tick:
-                progress_this_tick = self.metal
-            
-            if probe_type not in self.probe_construction_progress:
-                self.probe_construction_progress[probe_type] = 0.0
-            
-            self.probe_construction_progress[probe_type] += progress_this_tick
-            self.metal -= progress_this_tick
-            self.metal = max(0, self.metal)
-            
-            # Check if we've completed a probe
-            probes_built_this_tick = 0
-            while self.probe_construction_progress[probe_type] >= metal_cost_per_probe:
-                self.probes[probe_type] += 1
-                self.probe_construction_progress[probe_type] -= metal_cost_per_probe
-                probes_built_this_tick += 1
-            
-            if probes_built_this_tick > 0:
-                self._auto_allocate_probes()
         
         # Structure building (probes building structures using 0.1 kg/s per probe)
         structure_building_fraction = 1.0 - (build_allocation / 100.0)
