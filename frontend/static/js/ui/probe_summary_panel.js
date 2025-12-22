@@ -209,89 +209,121 @@ class ProbeSummaryPanel {
         const roboticBonus = breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0;
         const totalMultiplier = 1.0 + (roboticBonus || 0);
         
-        // Helper function to calculate dexterity
-        const calculateDexterityForProbes = (probes, baseDexterity, multiplier = 1.0) => {
-            return probes * baseDexterity * multiplier;
+        // Calculate actual rates in kg/day, then convert to kg/s for formatRate()
+        // Base rates from config
+        const PROBE_HARVEST_RATE = Config.PROBE_HARVEST_RATE; // 100 kg/day per probe
+        const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // 10 kg/day per probe
+        const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+        
+        // Helper function to calculate dexterity rate in kg/day
+        const calculateDexterityRateForProbes = (probes, baseRatePerProbe, multiplier = 1.0) => {
+            return probes * baseRatePerProbe * multiplier; // kg/day
         };
         
         // Sum allocations across all zones
         let totalDysonProbes = 0;
-        let totalDysonDexterity = 0;
+        let totalDysonDexterityPerDay = 0; // kg/day
         let totalMiningProbes = 0;
-        let totalMiningDexterity = 0;
+        let totalMiningDexterityPerDay = 0; // kg/day
         let totalProbeConstructProbes = 0;
-        let totalProbeConstructDexterity = 0;
+        let totalProbeConstructDexterityPerDay = 0; // kg/day
         let totalStructureProbes = 0;
-        let totalStructureDexterity = 0;
+        let totalStructureDexterityPerDay = 0; // kg/day
         
         // Legacy allocations
         totalDysonProbes += (allocations.dyson?.probe || 0) + (allocations.dyson?.construction_probe || 0);
-        totalDysonDexterity += calculateDexterityForProbes(
-            (allocations.dyson?.probe || 0), 1.0, totalMultiplier
-        ) + calculateDexterityForProbes(
-            (allocations.dyson?.construction_probe || 0), 1.8, totalMultiplier
+        totalDysonDexterityPerDay += calculateDexterityRateForProbes(
+            (allocations.dyson?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
+        ) + calculateDexterityRateForProbes(
+            (allocations.dyson?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
         );
         
         totalMiningProbes += (allocations.harvest?.probe || 0) + (allocations.harvest?.miner_probe || 0);
-        totalMiningDexterity += calculateDexterityForProbes(
-            (allocations.harvest?.probe || 0), 1.0, totalMultiplier
-        ) + calculateDexterityForProbes(
-            (allocations.harvest?.miner_probe || 0), 1.5, totalMultiplier
+        totalMiningDexterityPerDay += calculateDexterityRateForProbes(
+            (allocations.harvest?.probe || 0), PROBE_HARVEST_RATE, totalMultiplier
+        ) + calculateDexterityRateForProbes(
+            (allocations.harvest?.miner_probe || 0), PROBE_HARVEST_RATE * 1.5, totalMultiplier
         );
         
         totalProbeConstructProbes += (allocations.construct?.probe || 0) + (allocations.construct?.construction_probe || 0);
-        totalProbeConstructDexterity += calculateDexterityForProbes(
-            (allocations.construct?.probe || 0), 1.0, totalMultiplier
-        ) + calculateDexterityForProbes(
-            (allocations.construct?.construction_probe || 0), 1.8, totalMultiplier
+        totalProbeConstructDexterityPerDay += calculateDexterityRateForProbes(
+            (allocations.construct?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
+        ) + calculateDexterityRateForProbes(
+            (allocations.construct?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
         );
         
         // Zone-based allocations
         for (const [zoneId, zoneAllocs] of Object.entries(allocationsByZone)) {
             totalDysonProbes += Object.values(zoneAllocs.dyson || {}).reduce((sum, count) => sum + (count || 0), 0);
-            totalDysonDexterity += calculateDexterityForProbes(
-                (zoneAllocs.dyson?.probe || 0), 1.0, totalMultiplier
-            ) + calculateDexterityForProbes(
-                (zoneAllocs.dyson?.construction_probe || 0), 1.8, totalMultiplier
+            totalDysonDexterityPerDay += calculateDexterityRateForProbes(
+                (zoneAllocs.dyson?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
+            ) + calculateDexterityRateForProbes(
+                (zoneAllocs.dyson?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
             );
             
             totalMiningProbes += Object.values(zoneAllocs.harvest || {}).reduce((sum, count) => sum + (count || 0), 0);
-            totalMiningDexterity += calculateDexterityForProbes(
-                (zoneAllocs.harvest?.probe || 0), 1.0, totalMultiplier
-            ) + calculateDexterityForProbes(
-                (zoneAllocs.harvest?.miner_probe || 0), 1.5, totalMultiplier
+            totalMiningDexterityPerDay += calculateDexterityRateForProbes(
+                (zoneAllocs.harvest?.probe || 0), PROBE_HARVEST_RATE, totalMultiplier
+            ) + calculateDexterityRateForProbes(
+                (zoneAllocs.harvest?.miner_probe || 0), PROBE_HARVEST_RATE * 1.5, totalMultiplier
             );
             
-            totalProbeConstructProbes += Object.values(zoneAllocs.construct || {}).reduce((sum, count) => sum + (count || 0), 0);
-            totalProbeConstructDexterity += calculateDexterityForProbes(
-                (zoneAllocs.construct?.probe || 0), 1.0, totalMultiplier
-            ) + calculateDexterityForProbes(
-                (zoneAllocs.construct?.construction_probe || 0), 1.8, totalMultiplier
+            const constructProbes = Object.values(zoneAllocs.construct || {}).reduce((sum, count) => sum + (count || 0), 0);
+            totalProbeConstructProbes += constructProbes;
+            totalProbeConstructDexterityPerDay += calculateDexterityRateForProbes(
+                (zoneAllocs.construct?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
+            ) + calculateDexterityRateForProbes(
+                (zoneAllocs.construct?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
+            );
+            
+            // Structure building probes (based on build_allocation slider)
+            const buildAllocation = gameState.build_allocation || 50; // 0 = all structures, 100 = all probes
+            const structureFraction = (100 - buildAllocation) / 100.0;
+            const structureBuildingProbes = constructProbes * structureFraction;
+            totalStructureProbes += structureBuildingProbes;
+            totalStructureDexterityPerDay += calculateDexterityRateForProbes(
+                structureBuildingProbes, PROBE_BUILD_RATE, totalMultiplier
             );
         }
+        
+        // Also calculate structure probes from legacy allocations
+        const legacyConstructProbes = (allocations.construct?.probe || 0) + (allocations.construct?.construction_probe || 0);
+        const buildAllocation = gameState.build_allocation || 50;
+        const structureFraction = (100 - buildAllocation) / 100.0;
+        const legacyStructureProbes = legacyConstructProbes * structureFraction;
+        totalStructureProbes += legacyStructureProbes;
+        totalStructureDexterityPerDay += calculateDexterityRateForProbes(
+            legacyStructureProbes, PROBE_BUILD_RATE, totalMultiplier
+        );
+        
+        // Convert kg/day to kg/s for formatRate()
+        const totalDysonDexterityPerSecond = totalDysonDexterityPerDay / SECONDS_PER_DAY;
+        const totalMiningDexterityPerSecond = totalMiningDexterityPerDay / SECONDS_PER_DAY;
+        const totalProbeConstructDexterityPerSecond = totalProbeConstructDexterityPerDay / SECONDS_PER_DAY;
+        const totalStructureDexterityPerSecond = totalStructureDexterityPerDay / SECONDS_PER_DAY;
         
         // Update Dyson dexterity
         const dysonRateEl = document.getElementById('probe-dex-dyson-rate');
         const dysonCountEl = document.getElementById('probe-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(totalDysonDexterity, 'kg');
+        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(totalDysonDexterityPerSecond, 'kg');
         if (dysonCountEl) dysonCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalDysonProbes))}`;
 
         // Update Mining dexterity
         const miningRateEl = document.getElementById('probe-dex-mining-rate');
         const miningCountEl = document.getElementById('probe-dex-mining-count');
-        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(totalMiningDexterity, 'kg');
+        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(totalMiningDexterityPerSecond, 'kg');
         if (miningCountEl) miningCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalMiningProbes))}`;
 
         // Update Probe construction dexterity
         const probeConstructRateEl = document.getElementById('probe-dex-probes-rate');
         const probeCountEl = document.getElementById('probe-dex-probes-count');
-        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(totalProbeConstructDexterity, 'kg');
+        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(totalProbeConstructDexterityPerSecond, 'kg');
         if (probeCountEl) probeCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalProbeConstructProbes))}`;
 
         // Update Structure construction dexterity
         const structureRateEl = document.getElementById('probe-dex-structures-rate');
         const structureCountEl = document.getElementById('probe-dex-structures-count');
-        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(totalStructureDexterity, 'kg');
+        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(totalStructureDexterityPerSecond, 'kg');
         if (structureCountEl) structureCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalStructureProbes))}`;
     }
 }

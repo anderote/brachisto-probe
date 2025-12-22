@@ -242,15 +242,22 @@ class ResourceDisplay {
             
             // Calculate production breakdown
             const totalHarvestProbes = (harvestAllocation.probe || 0) + (harvestAllocation.miner_probe || 0) + (harvestAllocation.energy_probe || 0);
-            // Base harvest rate is in kg/day, convert to kg/s for display
-            // Use gameState.metal_production_rate which is already in correct units (kg/s)
-            const harvestProduction = gameState.metal_production_rate || 0; // kg/s
+            // metal_production_rate is in kg/day from backend, convert to kg/s for formatRate()
+            const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+            const harvestProduction = (gameState.metal_production_rate || 0) / SECONDS_PER_DAY; // Convert kg/day to kg/s
             
-            // Calculate consumption rates
-            const dysonMetalConsumption = dysonConstructionRate * 0.5; // 50% efficiency
-            const probeMetalConsumption = probeProductionRate * Config.PROBE_MASS; // 100 kg per probe
-            const structureMetalConsumption = structureProbes * 5; // Estimate: 5 kg/s per structure-building probe
-            const totalConsumption = dysonMetalConsumption + probeMetalConsumption + structureMetalConsumption;
+            // Calculate consumption rates (all in kg/day from backend)
+            // Convert to kg/s for formatRate()
+            const dysonMetalConsumptionPerDay = (dysonConstructionRate || 0) * 0.5; // 50% efficiency, kg/day
+            const probeMetalConsumptionPerDay = (probeProductionRate || 0) * Config.PROBE_MASS; // kg/day
+            const structureMetalConsumptionPerDay = structureProbes * Config.PROBE_BUILD_RATE; // kg/day per probe
+            const totalConsumptionPerDay = dysonMetalConsumptionPerDay + probeMetalConsumptionPerDay + structureMetalConsumptionPerDay;
+            
+            // Convert to kg/s for formatRate()
+            const dysonMetalConsumption = dysonMetalConsumptionPerDay / SECONDS_PER_DAY;
+            const probeMetalConsumption = probeMetalConsumptionPerDay / SECONDS_PER_DAY;
+            const structureMetalConsumption = structureMetalConsumptionPerDay / SECONDS_PER_DAY;
+            const totalConsumption = totalConsumptionPerDay / SECONDS_PER_DAY;
             
             html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">
                 Dexterity shows metal storage, production, and consumption. Net = Production - Consumption.
@@ -317,9 +324,9 @@ class ResourceDisplay {
                         
                         if (building) {
                             const effects = building.effects || {};
-                            const metalProduction = effects.metal_production_per_day || 0;
+                            const metalProduction = effects.metal_production_per_day || 0; // kg/day
                             if (metalProduction > 0) {
-                                const totalProduction = metalProduction * count;
+                                const totalProduction = metalProduction * count; // kg/day
                                 structureProduction += totalProduction;
                                 
                                 if (!structureBreakdown[buildingId]) {
@@ -343,16 +350,18 @@ class ResourceDisplay {
                     .sort((a, b) => b[1].production - a[1].production); // Sort by production descending
                 
                 structureEntries.forEach(([buildingId, data]) => {
+                    // Convert kg/day to kg/s for formatRate()
+                    const productionPerSecond = data.production / SECONDS_PER_DAY;
                     html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                         <span style="color: rgba(255, 255, 255, 0.8);">${data.name} (×${data.count}):</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(data.production, 'kg')}</span>
+                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(productionPerSecond, 'kg')}</span>
                     </div>`;
                 });
             }
             
             html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
                 <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Production:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${FormatUtils.formatRate(metalProductionRate, 'kg')}</span>
+                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${FormatUtils.formatRate(harvestProduction, 'kg')}</span>
             </div>`;
             
             html += `</div>`;
@@ -389,12 +398,12 @@ class ResourceDisplay {
             
             html += `</div>`;
             
-            // Net
-            const metalNet = metalProductionRate - totalConsumption;
-            const netColor = metalNet < 0 ? '#8b0000' : (metalNet > 0 ? '#228B22' : '#4a9eff');
+            // Net (already converted to kg/s above)
+            const metalNetPerSecond = harvestProduction - totalConsumption;
+            const netColor = metalNetPerSecond < 0 ? '#8b0000' : (metalNetPerSecond > 0 ? '#228B22' : '#4a9eff');
             html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(74, 158, 255, 0.4);">
                 <div class="tooltip-title">Net Metal:</div>
-                <div class="tooltip-value" style="color: ${netColor}; font-size: 14px;">${FormatUtils.formatRate(metalNet, 'kg')}</div>
+                <div class="tooltip-value" style="color: ${netColor}; font-size: 14px;">${FormatUtils.formatRate(metalNetPerSecond, 'kg')}</div>
             </div>`;
         } else if (resource === 'energy') {
             html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">
@@ -599,25 +608,30 @@ class ResourceDisplay {
 
         // Update dexterity display (Net, Mining Rate, Consumption Rate)
         const metal = gameState.metal || 0;
-        const metalProductionRate = gameState.metal_production_rate || 0;
+        const metalProductionRate = gameState.metal_production_rate || 0; // kg/day from backend
         
         // Use actual metal consumption rate from backend (only counts metal actually consumed)
-        const totalMetalConsumption = gameState.metal_consumption_rate || 0;
+        const totalMetalConsumption = gameState.metal_consumption_rate || 0; // kg/day from backend
         const metalNet = metalProductionRate - totalMetalConsumption;
+        
+        // Convert from kg/day to kg/s for formatRate() which expects per-second rates
+        const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+        const metalNetPerSecond = metalNet / SECONDS_PER_DAY;
+        const metalProductionRatePerSecond = metalProductionRate / SECONDS_PER_DAY;
+        const totalMetalConsumptionPerSecond = totalMetalConsumption / SECONDS_PER_DAY;
         
         const dexterityNetEl = document.getElementById('resource-dexterity-net');
         const dexterityMiningEl = document.getElementById('resource-dexterity-mining');
         const dexterityConsumptionEl = document.getElementById('resource-dexterity-consumption');
         if (dexterityNetEl) {
-            // Rates are in kg/s, formatRate expects rate per second
-            dexterityNetEl.textContent = FormatUtils.formatRate(metalNet, 'kg');
+            dexterityNetEl.textContent = FormatUtils.formatRate(metalNetPerSecond, 'kg');
             dexterityNetEl.style.color = metalNet < 0 ? '#8b0000' : (metalNet > 0 ? '#228B22' : 'inherit');
         }
         if (dexterityMiningEl) {
-            dexterityMiningEl.textContent = FormatUtils.formatRate(metalProductionRate, 'kg');
+            dexterityMiningEl.textContent = FormatUtils.formatRate(metalProductionRatePerSecond, 'kg');
         }
         if (dexterityConsumptionEl) {
-            dexterityConsumptionEl.textContent = FormatUtils.formatRate(totalMetalConsumption, 'kg');
+            dexterityConsumptionEl.textContent = FormatUtils.formatRate(totalMetalConsumptionPerSecond, 'kg');
         }
 
         const dysonMass = gameState.dyson_sphere_mass || 0;

@@ -141,51 +141,66 @@ class MetricsPanel {
         const roboticBonus = breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0;
         const totalMultiplier = 1.0 + (roboticBonus || 0);
         
+        // Calculate actual rates in kg/day, then convert to kg/s for display
+        const PROBE_HARVEST_RATE = Config.PROBE_HARVEST_RATE; // 100 kg/day per probe
+        const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // 10 kg/day per probe
+        const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+        
+        // Helper function to calculate dexterity rate in kg/day
+        const calculateDexterityRateForProbes = (probes, baseRatePerProbe, multiplier = 1.0) => {
+            return probes * baseRatePerProbe * multiplier; // kg/day
+        };
+        
         // Dyson dexterity
         const dysonProbes = (allocations.dyson?.probe || 0) + (allocations.dyson?.construction_probe || 0);
-        const dysonDexterity = this.calculateDexterityForProbes(
-            (allocations.dyson?.probe || 0), 1.0, totalMultiplier
-        ) + this.calculateDexterityForProbes(
-            (allocations.dyson?.construction_probe || 0), 1.8, totalMultiplier
+        const dysonDexterityPerDay = calculateDexterityRateForProbes(
+            (allocations.dyson?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
+        ) + calculateDexterityRateForProbes(
+            (allocations.dyson?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
         );
+        const dysonDexterityPerSecond = dysonDexterityPerDay / SECONDS_PER_DAY;
         const dysonRateEl = document.getElementById('metric-dex-dyson-rate');
         const dysonCountEl = document.getElementById('metric-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = `${this.formatNumber(dysonDexterity)} kg/s`;
+        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(dysonDexterityPerSecond, 'kg');
         if (dysonCountEl) dysonCountEl.textContent = `(${this.formatNumberWithCommas(dysonProbes)} probes)`;
 
         // Mining dexterity
         const miningProbes = (allocations.harvest?.probe || 0) + (allocations.harvest?.miner_probe || 0);
-        const miningDexterity = this.calculateDexterityForProbes(
-            (allocations.harvest?.probe || 0), 1.0, totalMultiplier
-        ) + this.calculateDexterityForProbes(
-            (allocations.harvest?.miner_probe || 0), 1.5, totalMultiplier
+        const miningDexterityPerDay = calculateDexterityRateForProbes(
+            (allocations.harvest?.probe || 0), PROBE_HARVEST_RATE, totalMultiplier
+        ) + calculateDexterityRateForProbes(
+            (allocations.harvest?.miner_probe || 0), PROBE_HARVEST_RATE * 1.5, totalMultiplier
         );
+        const miningDexterityPerSecond = miningDexterityPerDay / SECONDS_PER_DAY;
         const miningRateEl = document.getElementById('metric-dex-mining-rate');
         const miningCountEl = document.getElementById('metric-dex-mining-count');
-        if (miningRateEl) miningRateEl.textContent = `${this.formatNumber(miningDexterity)} kg/s`;
+        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(miningDexterityPerSecond, 'kg');
         if (miningCountEl) miningCountEl.textContent = `(${this.formatNumberWithCommas(miningProbes)} probes)`;
 
         // Probe construction dexterity
         const probeConstructProbes = (allocations.construct?.probe || 0) + (allocations.construct?.construction_probe || 0);
-        const probeConstructDexterity = this.calculateDexterityForProbes(
-            (allocations.construct?.probe || 0), 1.0, totalMultiplier
-        ) + this.calculateDexterityForProbes(
-            (allocations.construct?.construction_probe || 0), 1.8, totalMultiplier
+        const probeConstructDexterityPerDay = calculateDexterityRateForProbes(
+            (allocations.construct?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
+        ) + calculateDexterityRateForProbes(
+            (allocations.construct?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
         );
+        const probeConstructDexterityPerSecond = probeConstructDexterityPerDay / SECONDS_PER_DAY;
         const probeConstructRateEl = document.getElementById('metric-dex-probes-rate');
         const probeCountEl = document.getElementById('metric-dex-probes-count');
-        if (probeConstructRateEl) probeConstructRateEl.textContent = `${this.formatNumber(probeConstructDexterity)} kg/s`;
+        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(probeConstructDexterityPerSecond, 'kg');
         if (probeCountEl) probeCountEl.textContent = `(${this.formatNumberWithCommas(probeConstructProbes)} probes)`;
 
-        // Structure construction dexterity (from factory production)
-        const factoryProduction = gameState.factory_production || {};
-        let structureProbes = 0;
-        let structureDexterity = 0;
-        // Structure construction uses probe allocation for structures
-        // This is simplified - actual structure construction might use different mechanics
+        // Structure construction dexterity (based on build_allocation slider)
+        const buildAllocation = gameState.build_allocation || 50; // 0 = all structures, 100 = all probes
+        const structureFraction = (100 - buildAllocation) / 100.0;
+        const structureProbes = probeConstructProbes * structureFraction;
+        const structureDexterityPerDay = calculateDexterityRateForProbes(
+            structureProbes, PROBE_BUILD_RATE, totalMultiplier
+        );
+        const structureDexterityPerSecond = structureDexterityPerDay / SECONDS_PER_DAY;
         const structureRateEl = document.getElementById('metric-dex-structures-rate');
         const structureCountEl = document.getElementById('metric-dex-structures-count');
-        if (structureRateEl) structureRateEl.textContent = `${this.formatNumber(structureDexterity)} kg/s`;
+        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(structureDexterityPerSecond, 'kg');
         if (structureCountEl) structureCountEl.textContent = `(${this.formatNumberWithCommas(structureProbes)} probes)`;
 
         // Probe base rate multipliers
