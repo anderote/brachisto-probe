@@ -296,10 +296,11 @@ class ProbeSummaryPanel {
             legacyStructureProbes, PROBE_BUILD_RATE, totalMultiplier
         );
         
-        // Update Dyson dexterity (rates are in kg/day)
+        // Update Dyson dexterity - use actual Dyson construction rate from gameState (kg/day)
+        const dysonConstructionRate = gameState.dyson_construction_rate || 0; // kg/day from backend
         const dysonRateEl = document.getElementById('probe-dex-dyson-rate');
         const dysonCountEl = document.getElementById('probe-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(totalDysonDexterityPerDay, 'kg');
+        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(dysonConstructionRate, 'kg');
         if (dysonCountEl) dysonCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalDysonProbes))}`;
 
         // Update Mining dexterity (rates are in kg/day)

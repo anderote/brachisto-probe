@@ -427,6 +427,188 @@ body {
     text-align: right;
 }
 
+/* Probe Panel Styling */
+.probe-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.probe-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.probe-section-title {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.9);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+}
+
+.probe-stat-item {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+}
+
+.probe-stat-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.probe-stat-header {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.probe-stat-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+
+.probe-stat-base {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.probe-stat-effective {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.probe-stat-modifiers {
+    margin-top: 4px;
+    padding-left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.probe-modifier-item {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: 'Courier New', monospace;
+}
+
+.probe-modifier-skill {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.probe-modifier-value {
+    color: rgba(74, 158, 255, 0.9);
+    font-weight: 500;
+    margin-left: 4px;
+}
+
+.probe-modifiers-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.probe-modifier-category {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.probe-modifier-category:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.probe-modifier-category-name {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.probe-modifier-category-value {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: 'Courier New', monospace;
+    padding-left: 8px;
+}
+
+.probe-modifier-bonus {
+    color: rgba(74, 158, 255, 0.9);
+    font-weight: 500;
+    margin-left: 4px;
+}
+
+.probe-upgrade-category {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.probe-upgrade-category:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.probe-upgrade-category-name {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.probe-upgrade-tiers {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 8px;
+}
+
+.probe-upgrade-tier {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: 'Courier New', monospace;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.probe-upgrade-tier-name {
+    flex: 1 1 auto;
+}
+
+.probe-upgrade-tier-bonus {
+    color: rgba(74, 158, 255, 0.9);
+    font-weight: 500;
+    flex: 0 0 auto;
+}
+
+.probe-no-upgrades {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+    padding-left: 8px;
+}
+
 #game-canvas {
     width: 100%;
     height: 100%;
@@ -492,7 +674,7 @@ body {
 .command-panel-column {
     position: fixed;
     left: 10px;
-    top: calc(50% + 60px);
+    top: calc(50% + 90px);
     transform: translateY(-50%); /* Center vertically */
     width: auto; /* Auto width to accommodate side-by-side layout */
     min-width: 200px; /* Minimum width for sliders only */
@@ -697,7 +879,7 @@ body {
     position: fixed;
     top: 0;
     right: 0;
-    width: 350px;
+    width: 410px;
     height: 100vh;
     background: rgba(20, 20, 30, 0.95);
     backdrop-filter: blur(10px);
@@ -856,6 +1038,46 @@ body {
     outline: none;
     -webkit-appearance: none;
     appearance: none;
+}
+
+.manage-activity-slider {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.manage-activity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #4a9eff;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.manage-activity-slider::-webkit-slider-thumb:hover {
+    background: #2e7fff;
+}
+
+.manage-activity-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #4a9eff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    transition: background 0.2s ease;
+}
+
+.manage-activity-slider::-moz-range-thumb:hover {
+    background: #2e7fff;
 }
 
 .manage-category-slider::-webkit-slider-thumb {
