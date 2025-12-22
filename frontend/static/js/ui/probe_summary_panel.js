@@ -296,34 +296,28 @@ class ProbeSummaryPanel {
             legacyStructureProbes, PROBE_BUILD_RATE, totalMultiplier
         );
         
-        // Convert kg/day to kg/s for formatRate()
-        const totalDysonDexterityPerSecond = totalDysonDexterityPerDay / SECONDS_PER_DAY;
-        const totalMiningDexterityPerSecond = totalMiningDexterityPerDay / SECONDS_PER_DAY;
-        const totalProbeConstructDexterityPerSecond = totalProbeConstructDexterityPerDay / SECONDS_PER_DAY;
-        const totalStructureDexterityPerSecond = totalStructureDexterityPerDay / SECONDS_PER_DAY;
-        
-        // Update Dyson dexterity
+        // Update Dyson dexterity (rates are in kg/day)
         const dysonRateEl = document.getElementById('probe-dex-dyson-rate');
         const dysonCountEl = document.getElementById('probe-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(totalDysonDexterityPerSecond, 'kg');
+        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(totalDysonDexterityPerDay, 'kg');
         if (dysonCountEl) dysonCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalDysonProbes))}`;
 
-        // Update Mining dexterity
+        // Update Mining dexterity (rates are in kg/day)
         const miningRateEl = document.getElementById('probe-dex-mining-rate');
         const miningCountEl = document.getElementById('probe-dex-mining-count');
-        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(totalMiningDexterityPerSecond, 'kg');
+        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(totalMiningDexterityPerDay, 'kg');
         if (miningCountEl) miningCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalMiningProbes))}`;
 
-        // Update Probe construction dexterity
+        // Update Probe construction dexterity (rates are in kg/day)
         const probeConstructRateEl = document.getElementById('probe-dex-probes-rate');
         const probeCountEl = document.getElementById('probe-dex-probes-count');
-        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(totalProbeConstructDexterityPerSecond, 'kg');
+        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(totalProbeConstructDexterityPerDay, 'kg');
         if (probeCountEl) probeCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalProbeConstructProbes))}`;
 
-        // Update Structure construction dexterity
+        // Update Structure construction dexterity (rates are in kg/day)
         const structureRateEl = document.getElementById('probe-dex-structures-rate');
         const structureCountEl = document.getElementById('probe-dex-structures-count');
-        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(totalStructureDexterityPerSecond, 'kg');
+        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(totalStructureDexterityPerDay, 'kg');
         if (structureCountEl) structureCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalStructureProbes))}`;
     }
 }

@@ -141,10 +141,9 @@ class MetricsPanel {
         const roboticBonus = breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0;
         const totalMultiplier = 1.0 + (roboticBonus || 0);
         
-        // Calculate actual rates in kg/day, then convert to kg/s for display
+        // Calculate actual rates in kg/day
         const PROBE_HARVEST_RATE = Config.PROBE_HARVEST_RATE; // 100 kg/day per probe
         const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // 10 kg/day per probe
-        const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
         
         // Helper function to calculate dexterity rate in kg/day
         const calculateDexterityRateForProbes = (probes, baseRatePerProbe, multiplier = 1.0) => {
@@ -158,10 +157,9 @@ class MetricsPanel {
         ) + calculateDexterityRateForProbes(
             (allocations.dyson?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
         );
-        const dysonDexterityPerSecond = dysonDexterityPerDay / SECONDS_PER_DAY;
         const dysonRateEl = document.getElementById('metric-dex-dyson-rate');
         const dysonCountEl = document.getElementById('metric-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(dysonDexterityPerSecond, 'kg');
+        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(dysonDexterityPerDay, 'kg');
         if (dysonCountEl) dysonCountEl.textContent = `(${this.formatNumberWithCommas(dysonProbes)} probes)`;
 
         // Mining dexterity
@@ -171,10 +169,9 @@ class MetricsPanel {
         ) + calculateDexterityRateForProbes(
             (allocations.harvest?.miner_probe || 0), PROBE_HARVEST_RATE * 1.5, totalMultiplier
         );
-        const miningDexterityPerSecond = miningDexterityPerDay / SECONDS_PER_DAY;
         const miningRateEl = document.getElementById('metric-dex-mining-rate');
         const miningCountEl = document.getElementById('metric-dex-mining-count');
-        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(miningDexterityPerSecond, 'kg');
+        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(miningDexterityPerDay, 'kg');
         if (miningCountEl) miningCountEl.textContent = `(${this.formatNumberWithCommas(miningProbes)} probes)`;
 
         // Probe construction dexterity
@@ -184,10 +181,9 @@ class MetricsPanel {
         ) + calculateDexterityRateForProbes(
             (allocations.construct?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
         );
-        const probeConstructDexterityPerSecond = probeConstructDexterityPerDay / SECONDS_PER_DAY;
         const probeConstructRateEl = document.getElementById('metric-dex-probes-rate');
         const probeCountEl = document.getElementById('metric-dex-probes-count');
-        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(probeConstructDexterityPerSecond, 'kg');
+        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(probeConstructDexterityPerDay, 'kg');
         if (probeCountEl) probeCountEl.textContent = `(${this.formatNumberWithCommas(probeConstructProbes)} probes)`;
 
         // Structure construction dexterity (based on build_allocation slider)
@@ -197,10 +193,9 @@ class MetricsPanel {
         const structureDexterityPerDay = calculateDexterityRateForProbes(
             structureProbes, PROBE_BUILD_RATE, totalMultiplier
         );
-        const structureDexterityPerSecond = structureDexterityPerDay / SECONDS_PER_DAY;
         const structureRateEl = document.getElementById('metric-dex-structures-rate');
         const structureCountEl = document.getElementById('metric-dex-structures-count');
-        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(structureDexterityPerSecond, 'kg');
+        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(structureDexterityPerDay, 'kg');
         if (structureCountEl) structureCountEl.textContent = `(${this.formatNumberWithCommas(structureProbes)} probes)`;
 
         // Probe base rate multipliers

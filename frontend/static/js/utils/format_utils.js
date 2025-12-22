@@ -94,20 +94,20 @@ class FormatUtils {
     /**
      * Format rate (probes, kg, etc.) with appropriate time unit
      * Automatically selects best unit: per day, per hour, per second
-     * @param {number} ratePerSecond - Rate in units per second
+     * @param {number} ratePerDay - Rate in units per day (backend sends rates in per-day)
      * @param {string} unit - Unit name (e.g., "probes", "kg")
      * @returns {string} Formatted rate string
      */
-    static formatRate(ratePerSecond, unit = '') {
-        if (!ratePerSecond || ratePerSecond < 0 || isNaN(ratePerSecond) || !isFinite(ratePerSecond)) {
+    static formatRate(ratePerDay, unit = '') {
+        if (!ratePerDay || ratePerDay < 0 || isNaN(ratePerDay) || !isFinite(ratePerDay)) {
             return `0 ${unit}/day`.trim();
         }
         
         const SECONDS_PER_DAY = 86400;
         const SECONDS_PER_HOUR = 3600;
         
-        const ratePerDay = ratePerSecond * SECONDS_PER_DAY;
-        const ratePerHour = ratePerSecond * SECONDS_PER_HOUR;
+        const ratePerHour = ratePerDay / 24;
+        const ratePerSecond = ratePerDay / SECONDS_PER_DAY;
         
         // Use per day if >= 0.1 per day
         if (ratePerDay >= 0.1) {

@@ -128,35 +128,30 @@ class ManagePanel {
             html += '<div class="probe-section">';
             html += '<div class="probe-section-title">Current Rates</div>';
             
-            // Mining rate (game state provides kg/day, convert to kg/s for formatRate)
+            // Mining rate (game state provides kg/day)
             const metalProductionRate = this.gameState.metal_production_rate || 0; // kg/day
-            const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
-            const metalProductionRatePerSecond = metalProductionRate / SECONDS_PER_DAY;
-            const SECONDS_PER_DAY = 86400;
             html += `<div class="probe-stat-item">`;
             html += `<div class="probe-stat-header">`;
             html += `<span class="probe-stat-label">Mining Rate:</span>`;
-            html += `<span class="probe-stat-base">${FormatUtils.formatRate(metalProductionRatePerSecond, 'kg')}</span>`;
+            html += `<span class="probe-stat-base">${FormatUtils.formatRate(metalProductionRate, 'kg')}</span>`;
             html += `</div>`;
             html += `</div>`;
             
-            // Probe production rate (game state provides probes/day, convert to probes/s for formatRate)
-            const probeProductionRatePerDay = this.gameState.probe_production_rate || 0; // probes/day
-            const probeProductionRatePerSecond = probeProductionRatePerDay / SECONDS_PER_DAY;
+            // Probe production rate (game state provides probes/day)
+            const probeProductionRate = this.gameState.probe_production_rate || 0; // probes/day
             html += `<div class="probe-stat-item">`;
             html += `<div class="probe-stat-header">`;
             html += `<span class="probe-stat-label">Probe Production:</span>`;
-            html += `<span class="probe-stat-base">${FormatUtils.formatRate(probeProductionRatePerSecond, 'probes')}</span>`;
+            html += `<span class="probe-stat-base">${FormatUtils.formatRate(probeProductionRate, 'probes')}</span>`;
             html += `</div>`;
             html += `</div>`;
             
-            // Dyson construction rate (game state provides kg/day, convert to kg/s for formatRate)
-            const dysonConstructionRatePerDay = this.gameState.dyson_construction_rate || 0; // kg/day
-            const dysonConstructionRatePerSecond = dysonConstructionRatePerDay / SECONDS_PER_DAY;
+            // Dyson construction rate (game state provides kg/day)
+            const dysonConstructionRate = this.gameState.dyson_construction_rate || 0; // kg/day
             html += `<div class="probe-stat-item">`;
             html += `<div class="probe-stat-header">`;
             html += `<span class="probe-stat-label">Dyson Construction:</span>`;
-            html += `<span class="probe-stat-base">${FormatUtils.formatRate(dysonConstructionRatePerSecond, 'kg')}</span>`;
+            html += `<span class="probe-stat-base">${FormatUtils.formatRate(dysonConstructionRate, 'kg')}</span>`;
             html += `</div>`;
             html += `</div>`;
             

@@ -634,19 +634,16 @@ class OrbitalZoneSelector {
                 // Regular zone: calculate mining rate
                 const harvestAllocation = zoneAllocations.harvest || {};
                 const baseHarvestRate = Config.PROBE_HARVEST_RATE; // kg/day per probe (100 kg/day base)
-                const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
                 for (const [probeType, count] of Object.entries(harvestAllocation)) {
                     if (count > 0) {
                         const probeHarvestRatePerDay = baseHarvestRate * miningRateMultiplier * count;
-                        // Convert from kg/day to kg/s for display (formatRate expects per-second)
-                        const probeHarvestRatePerSecond = probeHarvestRatePerDay / SECONDS_PER_DAY;
-                        miningRate += probeHarvestRatePerSecond;
+                        miningRate += probeHarvestRatePerDay; // kg/day
                     }
                 }
                 
                 // Split into metal and slag based on zone's metal percentage
-                metalMiningRate = miningRate * metalPercentage;
-                slagMiningRate = miningRate * (1.0 - metalPercentage);
+                metalMiningRate = miningRate * metalPercentage; // kg/day
+                slagMiningRate = miningRate * (1.0 - metalPercentage); // kg/day
             }
             
             // Get probe production rate for this zone (probes per second)
