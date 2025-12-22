@@ -1689,13 +1689,13 @@ class GameEngine {
                     this.probesByZone[transfer.to].probe = currentTo + totalArrivingInt;
                 }
                 
-                // Constantly recalculate transfer rate based on current probes in the source zone
-                // Send a percentage of current probes per day (e.g., 10% of current drones per day)
-                const sourceZoneProbes = (this.probesByZone[transfer.from] && this.probesByZone[transfer.from].probe) || 0;
+                // Constantly recalculate transfer rate based on daily probe production in the source zone
+                // Send a percentage of daily probe production (e.g., 10% of daily production)
+                const zoneProbeProductionRate = this._calculateZoneProbeProductionRate(transfer.from);
                 
-                // Calculate sending rate as percentage of current probes (stored in ratePercentage)
+                // Calculate sending rate as percentage of daily probe production (stored in ratePercentage)
                 const ratePercentage = transfer.ratePercentage || 0;
-                const actualSendingRate = (sourceZoneProbes * ratePercentage) / 100.0; // probes per day
+                const actualSendingRate = (zoneProbeProductionRate * ratePercentage) / 100.0; // probes per day
                 
                 // Update the transfer rate to reflect current production
                 transfer.rate = actualSendingRate;
@@ -4593,9 +4593,11 @@ class GameEngine {
                 throw new Error('Transfer rate must be between 0 and 100 (percentage of probe production)');
             }
             
-            // Calculate transfer rate as percentage of current probes in source zone (per day)
-            const sourceZoneProbes = (this.probesByZone[fromZone] && this.probesByZone[fromZone].probe) || 0;
-            const actualTransferRate = (sourceZoneProbes * rate) / 100.0; // probes per day (percentage of current drones)
+            // Calculate probe production rate for source zone (probes/day)
+            const zoneProbeProductionRate = this._calculateZoneProbeProductionRate(fromZone);
+            
+            // Calculate transfer rate as percentage of daily probe production in source zone
+            const actualTransferRate = (zoneProbeProductionRate * rate) / 100.0; // probes per day (percentage of daily production)
             
             // Calculate transfer time to determine arrival rate
             const fromZoneData = zones.find(z => z.id === fromZone);
@@ -4822,14 +4824,17 @@ class GameEngine {
      * @returns {number} Probe production rate in probes per second
      */
     _calculateZoneProbeProductionRate(zoneId) {
-        let sourceZoneNetIncreaseRate = 0.0;
+        // Calculate daily probe production rate for a zone (probes/day)
+        // Includes: factory production + manual replication
+        // Excludes: incoming transfers (to avoid circular dependency when calculating transfer rates)
+        let productionRate = 0.0;
         
-        // 1. Factory production in source zone
+        // 1. Factory production in source zone (probes/day)
         if (this.factoryProductionByZone && this.factoryProductionByZone[zoneId]) {
-            sourceZoneNetIncreaseRate += this.factoryProductionByZone[zoneId].rate || 0;
+            productionRate += this.factoryProductionByZone[zoneId].rate || 0;
         }
         
-        // 2. Replication production in source zone
+        // 2. Manual replication production in source zone (probes/day)
         const zoneAllocations = this.probeAllocationsByZone[zoneId] || {};
         const replicateAllocation = zoneAllocations.replicate || {};
         let replicatingProbesInZone = Object.values(replicateAllocation).reduce((a, b) => a + b, 0);
@@ -4839,37 +4844,28 @@ class GameEngine {
         const constructingProbesInZone = Object.values(constructAllocation).reduce((a, b) => a + b, 0);
         if (constructingProbesInZone > 0) {
             const zonePolicy = this.zonePolicies[zoneId] || {};
-            const replicationSlider = zonePolicy.replication_slider !== undefined ? zonePolicy.replication_slider : 50;
-            const replicateFraction = replicationSlider / 100.0;
+            const replicationSlider = zonePolicy.replication_slider !== undefined ? zonePolicy.replication_slider : 100;
+            const replicateFraction = replicationSlider / 100.0; // Fraction going to replicate (0 = all construct, 100 = all replicate)
             replicatingProbesInZone += constructingProbesInZone * replicateFraction;
         }
         
         // Calculate replication rate (probes building other probes)
+        // Base build rate: 10 kg/day per probe
         const buildingRateBonus = this._getResearchBonus('production_efficiency', 'building_rate_multiplier', 1.0);
-        const effectiveBuildRate = Config.PROBE_BUILD_RATE * buildingRateBonus;
-        const replicationRate = replicatingProbesInZone * effectiveBuildRate;
+        const effectiveBuildRate = Config.PROBE_BUILD_RATE * buildingRateBonus; // kg/day per probe
+        const replicationRateKgPerDay = replicatingProbesInZone * effectiveBuildRate; // kg/day total
         
         // Get metal cost per probe for replication
-        const metalCostPerProbe = Probe.getMetalCost('probe');
+        const metalCostPerProbe = Probe.getMetalCost('probe'); // kg per probe
         
         // Convert replication rate from kg/day to probes/day
-        const replicationProbesPerDay = replicationRate / metalCostPerProbe;
-        sourceZoneNetIncreaseRate += replicationProbesPerDay;
+        const replicationProbesPerDay = metalCostPerProbe > 0 ? replicationRateKgPerDay / metalCostPerProbe : 0;
+        productionRate += replicationProbesPerDay;
         
-        // 3. Incoming transfers arriving at source zone
-        let incomingTransferRate = 0.0;
-        if (this.activeTransfers) {
-            for (const otherTransfer of this.activeTransfers) {
-                if (otherTransfer.paused) continue;
-                if (otherTransfer.to === zoneId && otherTransfer.type === 'continuous') {
-                    incomingTransferRate += otherTransfer.rate || 0;
-                }
-            }
-        }
+        // Note: We don't include incoming transfers here to avoid circular dependency
+        // when calculating transfer rates. This function returns only the production rate.
         
-        sourceZoneNetIncreaseRate += incomingTransferRate;
-        
-        return sourceZoneNetIncreaseRate;
+        return productionRate; // probes/day
     }
     
     _updateTransfer(actionData) {
