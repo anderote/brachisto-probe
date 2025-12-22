@@ -334,10 +334,10 @@ class PurchasePanel {
                     <div class="purchase-item-count" id="count-${buildingId}">Count: 0</div>
                     <div class="building-progress-container" id="progress-${buildingId}">
                         <div class="building-progress-label">Building Progress:</div>
-                        <div class="building-progress-bar">
-                            <div class="building-progress-fill" id="progress-fill-${buildingId}"></div>
+                        <div class="building-progress-info">
+                            <div class="building-progress-percentage" id="progress-percent-${buildingId}">0%</div>
+                            <div class="building-progress-time" id="progress-time-${buildingId}">—</div>
                         </div>
-                        <div class="building-progress-text" id="progress-text-${buildingId}">0%</div>
                     </div>
                     <label class="construction-toggle">
                         <input type="checkbox" class="construction-toggle-checkbox" data-category="${category}" data-building-id="${buildingId}" ${!this.selectedZone || !isAllowed ? 'disabled' : ''}>
@@ -505,8 +505,45 @@ class PurchasePanel {
             }
         });
         
-        // Update building progress bars - zone-specific if zone is selected
+        // Update building progress - zone-specific if zone is selected
         const structureProgress = gameState.structure_construction_progress || {};
+        const enabledConstruction = gameState.enabled_construction || [];
+        
+        // Calculate structure building dexterity per zone
+        const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
+        const zonePolicies = gameState.zone_policies || {};
+        const buildAllocation = gameState.build_allocation || 100; // 0 = all structures, 100 = all probes
+        const structureFraction = (100 - buildAllocation) / 100.0;
+        
+        // Get research multiplier for build rate
+        const breakdown = gameState.resource_breakdowns?.dexterity;
+        const roboticBonus = breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0;
+        const totalMultiplier = 1.0 + (roboticBonus || 0);
+        
+        // Base build rate: 10 kg/day per probe (from Config.PROBE_BUILD_RATE)
+        const PROBE_BUILD_RATE = 10.0; // kg/day per probe
+        
+        // Calculate build rate per zone
+        const buildRateByZone = {};
+        for (const [zoneId, zoneAllocations] of Object.entries(probeAllocationsByZone)) {
+            const constructAllocation = zoneAllocations.construct || {};
+            const constructingProbes = Object.values(constructAllocation).reduce((sum, count) => sum + (count || 0), 0);
+            const structureBuildingProbes = constructingProbes * structureFraction;
+            const zoneBuildRateKgPerDay = structureBuildingProbes * PROBE_BUILD_RATE * totalMultiplier;
+            buildRateByZone[zoneId] = zoneBuildRateKgPerDay;
+        }
+        
+        // Count enabled buildings per zone
+        const enabledBuildingsByZone = {};
+        for (const enabledKey of enabledConstruction) {
+            const [zoneId, buildingId] = enabledKey.split('::', 2);
+            if (zoneId && buildingId) {
+                if (!(zoneId in enabledBuildingsByZone)) {
+                    enabledBuildingsByZone[zoneId] = [];
+                }
+                enabledBuildingsByZone[zoneId].push(enabledKey);
+            }
+        }
         
         document.querySelectorAll('.building-progress-container').forEach(container => {
             const buildingId = container.id.replace('progress-', '');
@@ -515,31 +552,77 @@ class PurchasePanel {
             
             const costMetal = building.base_cost_metal || 0;
             let progress = 0;
+            let buildRatePerBuilding = 0;
+            let timeToComplete = Infinity;
             
             if (this.selectedZone) {
                 // Show progress for selected zone
                 const enabledKey = `${this.selectedZone}::${buildingId}`;
                 progress = structureProgress[enabledKey] || 0;
+                
+                // Calculate build rate per building in this zone
+                const zoneBuildRate = buildRateByZone[this.selectedZone] || 0;
+                const numEnabledInZone = (enabledBuildingsByZone[this.selectedZone] || []).length;
+                if (numEnabledInZone > 0) {
+                    buildRatePerBuilding = zoneBuildRate / numEnabledInZone; // kg/day per building
+                }
+                
+                // Calculate time to complete
+                const remainingToBuild = costMetal - progress;
+                if (buildRatePerBuilding > 0 && remainingToBuild > 0) {
+                    timeToComplete = remainingToBuild / buildRatePerBuilding; // days
+                } else if (remainingToBuild <= 0) {
+                    timeToComplete = 0; // Already complete
+                }
             } else {
                 // No zone selected - show total progress across all zones
                 progress = Object.entries(structureProgress)
                     .filter(([key]) => key.endsWith(`::${buildingId}`))
                     .reduce((sum, [, val]) => sum + val, 0);
+                
+                // Calculate total build rate across all zones for this building
+                let totalBuildRate = 0;
+                let totalEnabled = 0;
+                for (const [zoneId, enabledKeys] of Object.entries(enabledBuildingsByZone)) {
+                    if (enabledKeys.some(key => key.endsWith(`::${buildingId}`))) {
+                        const zoneBuildRate = buildRateByZone[zoneId] || 0;
+                        const numEnabledInZone = enabledKeys.length;
+                        if (numEnabledInZone > 0) {
+                            totalBuildRate += zoneBuildRate / numEnabledInZone;
+                            totalEnabled++;
+                        }
+                    }
+                }
+                buildRatePerBuilding = totalBuildRate;
+                
+                // Calculate time to complete
+                const remainingToBuild = costMetal - progress;
+                if (buildRatePerBuilding > 0 && remainingToBuild > 0) {
+                    timeToComplete = remainingToBuild / buildRatePerBuilding; // days
+                } else if (remainingToBuild <= 0) {
+                    timeToComplete = 0; // Already complete
+                }
             }
             
             const progressPercent = costMetal > 0 ? (progress / costMetal) * 100 : 0;
             
-            const progressFill = document.getElementById(`progress-fill-${buildingId}`);
-            const progressText = document.getElementById(`progress-text-${buildingId}`);
+            const progressPercentEl = document.getElementById(`progress-percent-${buildingId}`);
+            const progressTimeEl = document.getElementById(`progress-time-${buildingId}`);
             
             // Always show the container
             container.style.display = 'block';
             
-            if (progressFill) {
-                progressFill.style.width = `${Math.min(100, Math.max(0, progressPercent))}%`;
+            if (progressPercentEl) {
+                progressPercentEl.textContent = `${progressPercent.toFixed(1)}%`;
             }
-            if (progressText) {
-                progressText.textContent = `${progressPercent.toFixed(1)}%`;
+            if (progressTimeEl) {
+                if (timeToComplete === 0) {
+                    progressTimeEl.textContent = 'Complete';
+                } else if (timeToComplete === Infinity || !isFinite(timeToComplete)) {
+                    progressTimeEl.textContent = '—';
+                } else {
+                    progressTimeEl.textContent = FormatUtils.formatTime(timeToComplete);
+                }
             }
         });
 
