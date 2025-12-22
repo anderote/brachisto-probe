@@ -1926,11 +1926,12 @@ class GameEngine {
             const harvestZoneData = zones.find(z => z.id === this.harvestZone) || null;
             if (harvestZoneData) {
                 // Energy cost is quadratic in delta-v penalty
+                // Use same units as backend: watts per kg/day
                 const deltaVPenalty = harvestZoneData.delta_v_penalty || 0.1;
-                const baseEnergyCost = 453515; // watts per kg/s at Earth baseline
-                const energyCostPerKgS = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2);
-                const harvestRatePerProbe = Config.PROBE_HARVEST_RATE; // kg/s per probe
-                let harvestEnergyCost = energyCostPerKgS * harvestRatePerProbe * totalHarvestProbes;
+                const baseEnergyCost = 453515 / 86400; // watts per kg/day at Earth baseline (converted from per-second)
+                const energyCostPerKgDay = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2);
+                const harvestRatePerProbe = Config.PROBE_HARVEST_RATE; // kg/day per probe
+                let harvestEnergyCost = energyCostPerKgDay * harvestRatePerProbe * totalHarvestProbes;
                 
                 // Apply propulsion systems reduction to harvesting costs
                 harvestEnergyCost *= (1.0 - propulsionReduction);
