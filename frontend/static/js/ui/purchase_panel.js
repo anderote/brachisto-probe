@@ -140,6 +140,18 @@ class PurchasePanel {
             html += '</div></div>';
         }
 
+        // Storage section
+        const storage = this.buildings.storage || [];
+        if (storage.length > 0) {
+            const isCollapsed = this.collapsedCategories.has('storage');
+            html += '<div class="purchase-section">';
+            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('storage')">`;
+            html += '<span class="collapse-icon">▼</span>Storage</div>';
+            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
+            html += this.renderBuildings(storage, 'storage');
+            html += '</div></div>';
+        }
+
         // Specialized Units section
         if (this.buildings.specialized_units && this.buildings.specialized_units.probes) {
             const isCollapsed = this.collapsedCategories.has('probes');
@@ -507,7 +519,10 @@ class PurchasePanel {
         
         // Update building progress - zone-specific if zone is selected
         const structureProgress = gameState.structure_construction_progress || {};
-        const enabledConstruction = gameState.enabled_construction || [];
+        // enabled_construction comes as an array from gameState (converted from Set in engine)
+        const enabledConstruction = Array.isArray(gameState.enabled_construction) 
+            ? gameState.enabled_construction 
+            : [];
         
         // Calculate structure building dexterity per zone
         const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
