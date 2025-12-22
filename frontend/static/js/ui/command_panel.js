@@ -179,6 +179,76 @@ class CommandPanel {
         
         // Set up event listeners for sliders
         this.setupSliderListeners(isDysonZone);
+        
+        // Sync slider values with current policy values
+        this.syncSlidersWithPolicy(zoneId, isDysonZone);
+    }
+    
+    syncSlidersWithPolicy(zoneId, isDysonZone) {
+        // Get current policy values from game state
+        const zonePolicies = this.gameState?.zone_policies || {};
+        const policy = zonePolicies[zoneId] || {};
+        
+        if (isDysonZone) {
+            // Dyson zone: Sync Dyson/Build slider
+            const dysonBuildSlider = document.getElementById('dyson-build-slider');
+            if (dysonBuildSlider) {
+                // Policy: dyson_allocation_slider (0 = all Build, 100 = all Dyson)
+                // Slider: 0 = top (Dyson label), 100 = bottom (Build label)
+                // So: slider value = 100 - policy value
+                const policyValue = policy.dyson_allocation_slider !== undefined ? policy.dyson_allocation_slider : 100;
+                const sliderValue = 100 - policyValue; // Invert: policy 100 (all Dyson) = slider 0 (top)
+                dysonBuildSlider.value = sliderValue;
+                
+                // Update visual fill/line
+                const fillEl = document.getElementById('dyson-build-bar-fill');
+                const lineEl = document.getElementById('dyson-build-bar-line');
+                if (fillEl) fillEl.style.height = `${sliderValue}%`;
+                if (lineEl) lineEl.style.bottom = `${sliderValue}%`;
+            }
+            
+            // Sync Structures/Replicate slider
+            const structuresReplicateSlider = document.getElementById('dyson-structures-replicate-slider');
+            if (structuresReplicateSlider) {
+                // Policy: replication_slider (0 = all structures, 100 = all replicate)
+                // Slider: 0 = top (Structures label), 100 = bottom (Replicate label)
+                // So: slider value = 100 - policy value
+                const policyValue = policy.replication_slider !== undefined ? policy.replication_slider : 100;
+                const sliderValue = 100 - policyValue; // Invert: policy 100 (all replicate) = slider 0 (top)
+                structuresReplicateSlider.value = sliderValue;
+                
+                // Update visual fill/line
+                const fillEl = document.getElementById('dyson-structures-replicate-bar-fill');
+                const lineEl = document.getElementById('dyson-structures-replicate-bar-line');
+                if (fillEl) fillEl.style.height = `${sliderValue}%`;
+                if (lineEl) lineEl.style.bottom = `${sliderValue}%`;
+            }
+        } else {
+            // Regular zones: Sync Mine/Build slider
+            const harvestBuildSlider = document.getElementById('harvest-build-slider');
+            if (harvestBuildSlider) {
+                const policyValue = policy.mining_slider !== undefined ? policy.mining_slider : 50;
+                harvestBuildSlider.value = policyValue;
+                
+                const fillEl = document.getElementById('harvest-build-bar-fill');
+                const lineEl = document.getElementById('harvest-build-bar-line');
+                if (fillEl) fillEl.style.height = `${policyValue}%`;
+                if (lineEl) lineEl.style.bottom = `${policyValue}%`;
+            }
+            
+            // Sync Structures/Replicate slider
+            const structuresReplicateSlider = document.getElementById('structures-replicate-slider');
+            if (structuresReplicateSlider) {
+                const policyValue = policy.replication_slider !== undefined ? policy.replication_slider : 100;
+                const sliderValue = 100 - policyValue; // Invert for regular zones too
+                structuresReplicateSlider.value = sliderValue;
+                
+                const fillEl = document.getElementById('structures-replicate-bar-fill');
+                const lineEl = document.getElementById('structures-replicate-bar-line');
+                if (fillEl) fillEl.style.height = `${sliderValue}%`;
+                if (lineEl) lineEl.style.bottom = `${sliderValue}%`;
+            }
+        }
     }
 
     // Clip slider value to extremes if within 5% of end
@@ -226,9 +296,12 @@ class CommandPanel {
                         if (fillEl) fillEl.style.height = `${value}%`;
                         if (lineEl) lineEl.style.bottom = `${value}%`;
                     }
-                    // Slider: 0 (top/Dyson label) = all Build, 100 (bottom/Build label) = all Dyson
-                    // Store value directly: slider 100 = all Dyson, slider 0 = all Build
-                    this.updateZonePolicy('dyson_build_slider', value);
+                    // Slider: Labels "Dyson" at top, "Build" at bottom
+                    // Store as dyson_allocation_slider: 0-100 where 0 = all Build (bottom), 100 = all Dyson (top)
+                    // But slider visual: 0 at top (Dyson label), 100 at bottom (Build label)
+                    // So we invert: slider value 0 (top) = 100 Dyson allocation, slider value 100 (bottom) = 0 Dyson allocation
+                    const dysonAllocationValue = 100 - value; // Invert: top (0) = 100 Dyson, bottom (100) = 0 Dyson
+                    this.updateZonePolicy('dyson_allocation_slider', dysonAllocationValue);
                 });
                 dysonBuildSlider.addEventListener('input', (e) => {
                     let value = parseInt(e.target.value);

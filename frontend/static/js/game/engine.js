@@ -100,6 +100,7 @@ class GameEngine {
         this.dexterity = 0.0; // Will be calculated after probes are initialized
         this.slag = 0.0;
         this.energyStored = 0.0; // Energy stored in watt-days
+        this.lastDysonConstructionRate = 0.0; // Throttled Dyson construction rate from last tick (for display)
         
         // Throttling flags for UI
         this.isEnergyLimited = false;
@@ -713,7 +714,8 @@ class GameEngine {
         const intelligenceProductionRate = this._calculateIntelligenceProduction();
         const [probeProductionRates, , factoryMetalCostPerProbe] = this._calculateProbeProduction();
         const probeProductionRate = Object.values(probeProductionRates).reduce((a, b) => a + b, 0);
-        const dysonConstructionRate = this._calculateDysonConstructionRate();
+        // Use throttled rate from last tick if available, otherwise calculate base rate
+        const dysonConstructionRate = this.lastDysonConstructionRate > 0 ? this.lastDysonConstructionRate : this._calculateDysonConstructionRate();
         
         // Calculate actual metal consumption rates
         let probeMetalConsumption = 0.0;
@@ -915,7 +917,7 @@ class GameEngine {
         
         // Total energy consumption
         const energyConsumption = nonComputeEnergyConsumption + computeEnergyConsumption;
-        const netEnergyAvailable = totalEnergyAvailable - energyConsumption;
+        let netEnergyAvailable = totalEnergyAvailable - energyConsumption;
         
         // Calculate energy throttle factors - prioritize mining over build
         let miningEnergyThrottle = 1.0;
@@ -1081,6 +1083,9 @@ class GameEngine {
         // Apply Dyson construction activity modifier
         const dysonConstructingModifier = this.activityModifiers.dyson_constructing || 1.0;
         const dysonConstructionRate = dysonConstructionRateAfterEnergy * dysonMetalThrottle * dysonConstructingModifier;
+        
+        // Store throttled rate for display in getState()
+        this.lastDysonConstructionRate = dysonConstructionRate;
         
         // For backward compatibility, calculate overall throttle (weighted average)
         const metalThrottle = (dysonMetalConsumptionRate * dysonMetalThrottle + 
@@ -1563,14 +1568,22 @@ class GameEngine {
         const dysonProbes = zoneActivities[dysonZoneId]?.dyson || 0;
         
         if (dysonProbes > 0) {
-            // Base rate: 1.0 kg/day per probe
+            // Base rate: 100 kg/day per probe (PROBE_BUILD_RATE)
             const baseDysonRate = dysonProbes * Config.PROBE_BUILD_RATE;
-            // Apply throttling (use same throttles as structure building)
+            
+            // Apply throttling (use throttles calculated earlier in tick)
+            // buildEnergyThrottle and otherMetalThrottle are calculated before this point
             dysonConstructionRateKgS = baseDysonRate * buildEnergyThrottle * otherMetalThrottle;
             
             // Apply research bonuses
             const researchBonus = this._getResearchBonus('dyson_swarm_construction', 'dyson_construction_rate_multiplier', 1.0);
             dysonConstructionRateKgS *= researchBonus;
+            
+            // Store throttled rate for display in getState()
+            this.lastDysonConstructionRate = dysonConstructionRateKgS;
+        } else {
+            // No Dyson construction this tick
+            this.lastDysonConstructionRate = 0.0;
         }
         
         this._updateDysonSphereConstruction(deltaTime, dysonConstructionRateKgS);
@@ -3143,28 +3156,29 @@ class GameEngine {
             return 0.0;
         }
         
-        // Get probes allocated to Dyson construction from zone-based allocations
-        const dysonZoneAllocations = this.probeAllocationsByZone[dysonZoneId] || {};
-        const dysonZoneDysonAllocation = dysonZoneAllocations.dyson || {};
-        const totalDysonProbes = Object.values(dysonZoneDysonAllocation).reduce((a, b) => a + b, 0);
+        // Get probes allocated to Dyson construction from zone activities (current allocation)
+        // This uses the same logic as tick() to ensure consistency
+        const zoneActivities = this._calculateZoneActivities();
+        const dysonProbes = zoneActivities[dysonZoneId]?.dyson || 0;
         
         // Round to integer and check if > 0
-        const totalDysonProbesInt = Math.floor(totalDysonProbes);
+        const totalDysonProbesInt = Math.floor(dysonProbes);
         if (totalDysonProbesInt <= 0) {
             return 0.0;
         }
         
         // Calculate construction rate
-        // Base rate: 1.0 kg/day per probe
-        const baseConstructionRate = totalDysonProbesInt * Config.PROBE_BUILD_RATE; // 10.0 kg/day per probe
+        // Base rate: 100 kg/day per probe (PROBE_BUILD_RATE)
+        const baseConstructionRate = totalDysonProbesInt * Config.PROBE_BUILD_RATE;
         
         // Apply research bonuses
         const researchBonus = this._getResearchBonus('dyson_swarm_construction', 'dyson_construction_rate_multiplier', 1.0);
         let constructionRate = baseConstructionRate * researchBonus;
         
-        // Apply zone bonuses (use average for now)
-        const zoneBonus = 1.0; // Could calculate based on probe locations
-        constructionRate *= zoneBonus;
+        // Note: Throttling is applied in tick() when actually constructing
+        // This function returns the base rate (before throttling) for display
+        // The actual throttled rate is calculated in tick() and stored in dysonConstructionRate
+        // For accurate throttled rate display, use the rate from getState() which comes from tick()
         
         return constructionRate;
     }
