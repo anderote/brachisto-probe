@@ -7,6 +7,19 @@ class PurchasePanel {
         this.hotkeys = {};
         this.selectedZone = null; // No zone selected by default
         this.collapsedCategories = new Set(); // Track collapsed categories
+        
+        // Performance optimization: Cache DOM elements
+        this.cachedElements = {
+            purchaseItems: null,
+            constructionCheckboxes: null,
+            buildingProgressContainers: null,
+            lastCacheTime: 0
+        };
+        this.cacheValidFor = 1000; // Cache for 1 second
+        
+        // Throttle updates - only update if values changed
+        this.lastUpdateState = {};
+        
         this.init();
         this.loadData();
     }
@@ -174,6 +187,12 @@ class PurchasePanel {
         }
 
         this.container.innerHTML = html;
+        
+        // Invalidate cache when rendering
+        this.cachedElements.purchaseItems = null;
+        this.cachedElements.constructionCheckboxes = null;
+        this.cachedElements.buildingProgressContainers = null;
+        this.cachedElements.lastCacheTime = Date.now();
 
         // Attach event listeners for construction toggles (better than inline onclick)
         this.attachConstructionToggleHandlers();
@@ -478,6 +497,14 @@ class PurchasePanel {
             this.render();
             return;
         }
+        
+        // Invalidate cache if it's been too long or if render was called
+        const now = Date.now();
+        if (now - this.cachedElements.lastCacheTime > this.cacheValidFor) {
+            this.cachedElements.purchaseItems = null;
+            this.cachedElements.constructionCheckboxes = null;
+            this.cachedElements.buildingProgressContainers = null;
+        }
 
         // Update counts for buildings - zone-specific if zone is selected
         if (this.selectedZone) {
@@ -490,7 +517,12 @@ class PurchasePanel {
                 }
             });
             // Set count to 0 for buildings not in this zone
-            document.querySelectorAll('.purchase-item[data-building-id]').forEach(item => {
+            // Cache purchase items to avoid repeated queries
+            if (!this.cachedElements.purchaseItems) {
+                this.cachedElements.purchaseItems = Array.from(this.container.querySelectorAll('.purchase-item[data-building-id]'));
+                this.cachedElements.lastCacheTime = Date.now();
+            }
+            this.cachedElements.purchaseItems.forEach(item => {
                 const buildingId = item.getAttribute('data-building-id');
                 if (buildingId && !(buildingId in zoneStructures)) {
                     const countElement = document.getElementById(`count-${buildingId}`);
@@ -511,15 +543,27 @@ class PurchasePanel {
         
         // Update enabled construction checkboxes - zone-specific
         const enabledConstruction = gameState.enabled_construction || [];
-        document.querySelectorAll('.construction-toggle-checkbox').forEach(checkbox => {
+        // Cache checkboxes to avoid repeated queries
+        if (!this.cachedElements.constructionCheckboxes) {
+            this.cachedElements.constructionCheckboxes = Array.from(this.container.querySelectorAll('.construction-toggle-checkbox'));
+            this.cachedElements.lastCacheTime = Date.now();
+        }
+        this.cachedElements.constructionCheckboxes.forEach(checkbox => {
             const buildingId = checkbox.getAttribute('data-building-id');
             if (buildingId && this.selectedZone) {
                 // Check if this building is enabled for the selected zone
                 const enabledKey = `${this.selectedZone}::${buildingId}`;
-                checkbox.checked = enabledConstruction.includes(enabledKey);
+                const shouldBeChecked = enabledConstruction.includes(enabledKey);
+                // Only update if changed to avoid unnecessary DOM writes
+                if (checkbox.checked !== shouldBeChecked) {
+                    checkbox.checked = shouldBeChecked;
+                }
             } else if (buildingId) {
                 // No zone selected - check if enabled in any zone (for legacy compatibility)
-                checkbox.checked = enabledConstruction.some(key => key.endsWith(`::${buildingId}`));
+                const shouldBeChecked = enabledConstruction.some(key => key.endsWith(`::${buildingId}`));
+                if (checkbox.checked !== shouldBeChecked) {
+                    checkbox.checked = shouldBeChecked;
+                }
             }
         });
         
@@ -567,7 +611,12 @@ class PurchasePanel {
                 }
             }
             
-            document.querySelectorAll('.building-progress-container').forEach(container => {
+            // Cache progress containers to avoid repeated queries
+            if (!this.cachedElements.buildingProgressContainers) {
+                this.cachedElements.buildingProgressContainers = Array.from(this.container.querySelectorAll('.building-progress-container'));
+                this.cachedElements.lastCacheTime = Date.now();
+            }
+            this.cachedElements.buildingProgressContainers.forEach(container => {
                 const buildingId = container.id.replace('progress-', '');
                 const building = this.getBuildingById(buildingId);
                 if (!building) return;
@@ -664,7 +713,9 @@ class PurchasePanel {
         const metal = gameState.metal || 0;
         const energy = gameState.energy || 0;
 
-        document.querySelectorAll('.purchase-item').forEach(item => {
+        // Use cached purchase items if available
+        const purchaseItems = this.cachedElements.purchaseItems || Array.from(this.container.querySelectorAll('.purchase-item'));
+        purchaseItems.forEach(item => {
             const buildingId = item.dataset.buildingId || item.dataset.unitId;
             if (!buildingId) return;
 
@@ -672,10 +723,12 @@ class PurchasePanel {
             if (!building) return;
 
             const costMetal = building.base_cost_metal || 0;
-
-            if (metal < costMetal) {
+            const shouldBeDisabled = metal < costMetal;
+            
+            // Only update if changed to avoid unnecessary DOM writes
+            if (shouldBeDisabled && !item.classList.contains('disabled')) {
                 item.classList.add('disabled');
-            } else {
+            } else if (!shouldBeDisabled && item.classList.contains('disabled')) {
                 item.classList.remove('disabled');
             }
         });
