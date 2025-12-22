@@ -565,11 +565,21 @@ class CommandPanel {
                 orbitalEfficiency = building.orbital_efficiency[zoneId];
             }
             
+            // Calculate solar distance modifier (inverse square law) for energy structures
+            let solarDistanceModifier = 1.0;
+            if (category === 'energy' && zone && zone.radius_au) {
+                const radiusAu = zone.radius_au;
+                if (radiusAu > 0) {
+                    // Inverse square law: power at distance d = power_at_earth * (1.0 / d)²
+                    solarDistanceModifier = Math.pow(1.0 / radiusAu, 2);
+                }
+            }
+            
             // Calculate production/consumption rates
-            const energyProduction = (effects.energy_production_per_second || 0) * count * orbitalEfficiency;
+            const energyProduction = (effects.energy_production_per_second || 0) * count * orbitalEfficiency * solarDistanceModifier;
             const energyConsumption = (effects.energy_consumption_per_second || 0) * count;
-            const metalProduction = (effects.metal_production_per_second || 0) * count * orbitalEfficiency;
-            const probeProduction = (effects.probes_per_second || 0) * count * orbitalEfficiency;
+            const metalProduction = (effects.metal_production_per_day || 0) * count * orbitalEfficiency;
+            const probeProduction = (effects.probe_production_per_day || 0) * count * orbitalEfficiency;
             const intelligenceProduction = (effects.intelligence_flops || 0) * count;
             
             // Get building name

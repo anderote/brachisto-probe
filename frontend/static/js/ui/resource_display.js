@@ -242,11 +242,13 @@ class ResourceDisplay {
             
             // Calculate production breakdown
             const totalHarvestProbes = (harvestAllocation.probe || 0) + (harvestAllocation.miner_probe || 0) + (harvestAllocation.energy_probe || 0);
-            const harvestProduction = totalHarvestProbes * 0.5; // Base harvest rate per probe
+            // Base harvest rate is in kg/day, convert to kg/s for display
+            // Use gameState.metal_production_rate which is already in correct units (kg/s)
+            const harvestProduction = gameState.metal_production_rate || 0; // kg/s
             
             // Calculate consumption rates
             const dysonMetalConsumption = dysonConstructionRate * 0.5; // 50% efficiency
-            const probeMetalConsumption = probeProductionRate * 10; // 10 kg per probe
+            const probeMetalConsumption = probeProductionRate * Config.PROBE_MASS; // 100 kg per probe
             const structureMetalConsumption = structureProbes * 5; // Estimate: 5 kg/s per structure-building probe
             const totalConsumption = dysonMetalConsumption + probeMetalConsumption + structureMetalConsumption;
             
@@ -274,7 +276,7 @@ class ResourceDisplay {
                         const zoneName = zoneId === 'global' ? 'Global' : zoneId.charAt(0).toUpperCase() + zoneId.slice(1).replace(/_/g, ' ');
                         html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                             <span style="color: rgba(255, 255, 255, 0.8);">${zoneName} (${data.probeCount} probes):</span>
-                            <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatNumber(data.baseDexterity)} kg/s</span>
+                            <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(data.baseDexterity, 'kg')}</span>
                         </div>`;
                     });
                     
@@ -289,7 +291,7 @@ class ResourceDisplay {
             if (harvestProduction > 0) {
                 html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                     <span style="color: rgba(255, 255, 255, 0.8);">Harvesting Probes:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatNumber(harvestProduction)} kg/s</span>
+                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(harvestProduction, 'kg')}</span>
                 </div>`;
             }
             
@@ -315,7 +317,7 @@ class ResourceDisplay {
                         
                         if (building) {
                             const effects = building.effects || {};
-                            const metalProduction = effects.metal_production_per_second || 0;
+                            const metalProduction = effects.metal_production_per_day || 0;
                             if (metalProduction > 0) {
                                 const totalProduction = metalProduction * count;
                                 structureProduction += totalProduction;
@@ -343,14 +345,14 @@ class ResourceDisplay {
                 structureEntries.forEach(([buildingId, data]) => {
                     html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                         <span style="color: rgba(255, 255, 255, 0.8);">${data.name} (×${data.count}):</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatNumber(data.production)} kg/s</span>
+                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(data.production, 'kg')}</span>
                     </div>`;
                 });
             }
             
             html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
                 <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Production:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.formatNumber(metalProductionRate)} kg/s</span>
+                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${FormatUtils.formatRate(metalProductionRate, 'kg')}</span>
             </div>`;
             
             html += `</div>`;
@@ -362,27 +364,27 @@ class ResourceDisplay {
             if (dysonMetalConsumption > 0) {
                 html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                     <span style="color: rgba(255, 255, 255, 0.8);">Dyson Construction:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatNumber(dysonMetalConsumption)} kg/s</span>
+                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(dysonMetalConsumption, 'kg')}</span>
                 </div>`;
             }
             
             if (probeMetalConsumption > 0) {
                 html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                     <span style="color: rgba(255, 255, 255, 0.8);">Building Probes:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatNumber(probeMetalConsumption)} kg/s</span>
+                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(probeMetalConsumption, 'kg')}</span>
                 </div>`;
             }
             
             if (structureMetalConsumption > 0) {
                 html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
                     <span style="color: rgba(255, 255, 255, 0.8);">Building Structures:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatNumber(structureMetalConsumption)} kg/s</span>
+                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${FormatUtils.formatRate(structureMetalConsumption, 'kg')}</span>
                 </div>`;
             }
             
             html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
                 <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Consumption:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.formatNumber(totalConsumption)} kg/s</span>
+                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${FormatUtils.formatRate(totalConsumption, 'kg')}</span>
             </div>`;
             
             html += `</div>`;
@@ -392,7 +394,7 @@ class ResourceDisplay {
             const netColor = metalNet < 0 ? '#8b0000' : (metalNet > 0 ? '#228B22' : '#4a9eff');
             html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(74, 158, 255, 0.4);">
                 <div class="tooltip-title">Net Metal:</div>
-                <div class="tooltip-value" style="color: ${netColor}; font-size: 14px;">${this.formatNumber(metalNet)} kg/s</div>
+                <div class="tooltip-value" style="color: ${netColor}; font-size: 14px;">${FormatUtils.formatRate(metalNet, 'kg')}</div>
             </div>`;
         } else if (resource === 'energy') {
             html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">
@@ -607,11 +609,16 @@ class ResourceDisplay {
         const dexterityMiningEl = document.getElementById('resource-dexterity-mining');
         const dexterityConsumptionEl = document.getElementById('resource-dexterity-consumption');
         if (dexterityNetEl) {
-            dexterityNetEl.textContent = `${this.formatNumber(metalNet)} kg/s`;
+            // Rates are in kg/s, formatRate expects rate per second
+            dexterityNetEl.textContent = FormatUtils.formatRate(metalNet, 'kg');
             dexterityNetEl.style.color = metalNet < 0 ? '#8b0000' : (metalNet > 0 ? '#228B22' : 'inherit');
         }
-        if (dexterityMiningEl) dexterityMiningEl.textContent = `${this.formatNumber(metalProductionRate)} kg/s`;
-        if (dexterityConsumptionEl) dexterityConsumptionEl.textContent = `${this.formatNumber(totalMetalConsumption)} kg/s`;
+        if (dexterityMiningEl) {
+            dexterityMiningEl.textContent = FormatUtils.formatRate(metalProductionRate, 'kg');
+        }
+        if (dexterityConsumptionEl) {
+            dexterityConsumptionEl.textContent = FormatUtils.formatRate(totalMetalConsumption, 'kg');
+        }
 
         const dysonMass = gameState.dyson_sphere_mass || 0;
         const dysonTarget = gameState.dyson_sphere_target_mass || 1;
@@ -619,8 +626,8 @@ class ResourceDisplay {
         if (dysonProgressEl) dysonProgressEl.textContent = `${(dysonProgress * 100).toFixed(5)}%`;
         if (dysonMassEl) dysonMassEl.textContent = `${this.formatNumber(dysonMass)} kg`;
         
-        // Calculate probe mass (sum across all zones * 10 kg per probe)
-        const PROBE_MASS = 10; // kg per probe (from Config.PROBE_MASS)
+        // Calculate probe mass (sum across all zones * 100 kg per probe)
+        const PROBE_MASS = Config.PROBE_MASS; // kg per probe (from Config.PROBE_MASS = 100 kg)
         let totalProbeMass = 0;
         
         // Legacy: global probe counts

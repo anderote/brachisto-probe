@@ -1,278 +1,184 @@
-/** Manage panel - category-level production rates and building stats */
+/** Manage panel - global activity modifiers to control/suppress economic activities */
 class ManagePanel {
     constructor(containerId) {
         this.container = document.getElementById(containerId);
-        this.buildings = null;
         this.gameState = null;
-        this.researchData = null;
-        this.categoryProductionRates = {
-            factories: 100,
-            mining: 100,
-            energy: 100,
-            transportation: 100
+        this.activityModifiers = {
+            mining: 100,           // Probe mining (harvest)
+            replicating: 100,      // Probe replication
+            dyson_constructing: 100, // Dyson sphere construction
+            structures: 100,       // Structure building
+            mining_buildings: 100, // Mining structure production
+            factories: 100         // Factory production
         };
         this.init();
-        this.loadData();
-    }
-
-    async loadData() {
-        try {
-            // Load buildings
-            const buildingsResponse = await fetch('/game_data/buildings.json');
-            const buildingsData = await buildingsResponse.json();
-            this.buildings = buildingsData.buildings || buildingsData;
-            
-            // Load research data (for modifiers)
-            try {
-                const additionalResponse = await fetch('/game_data/additional_research_trees.json');
-                const additionalData = await additionalResponse.json();
-                this.researchData = additionalData.additional_research_trees || {};
-            } catch (e) {
-                this.researchData = {};
-            }
-            
-            this.render();
-        } catch (error) {
-            console.error('Failed to load data:', error);
-            this.container.innerHTML = `<div>Error loading data: ${error.message}</div>`;
-        }
     }
 
     init() {
-        // Initialize event listeners if needed
-    }
-
-    formatNumber(value) {
-        if (value >= 1e6) return (value / 1e6).toFixed(2) + 'M';
-        if (value >= 1e3) return (value / 1e3).toFixed(2) + 'k';
-        return value.toFixed(2);
-    }
-
-    getBuildingCategory(buildingId) {
-        if (!this.buildings) return null;
-        
-        // Check each category
-        const categories = ['factories', 'mining', 'energy', 'transportation'];
-        for (const category of categories) {
-            const items = this.buildings[category] || [];
-            if (items.find(b => b.id === buildingId)) {
-                return category;
+        // Load saved modifiers from localStorage
+        const saved = localStorage.getItem('activityModifiers');
+        if (saved) {
+            try {
+                this.activityModifiers = { ...this.activityModifiers, ...JSON.parse(saved) };
+            } catch (e) {
+                console.error('Failed to load saved activity modifiers:', e);
             }
         }
-        return null;
     }
 
-    calculateResearchModifiers(building) {
-        // This would calculate research bonuses applied to the building
-        // For now, return empty object - will be enhanced with actual research calculations
-        const modifiers = {
-            production_efficiency: 0,
-            energy_efficiency: 0,
-            cost_reduction: 0
+    formatNumber(value, decimals = 2) {
+        if (value >= 1e24) return (value / 1e24).toFixed(decimals) + 'Y';
+        if (value >= 1e21) return (value / 1e21).toFixed(decimals) + 'Z';
+        if (value >= 1e18) return (value / 1e18).toFixed(decimals) + 'E';
+        if (value >= 1e15) return (value / 1e15).toFixed(decimals) + 'P';
+        if (value >= 1e12) return (value / 1e12).toFixed(decimals) + 'T';
+        if (value >= 1e9) return (value / 1e9).toFixed(decimals) + 'G';
+        if (value >= 1e6) return (value / 1e6).toFixed(decimals) + 'M';
+        if (value >= 1e3) return (value / 1e3).toFixed(decimals) + 'k';
+        return value.toFixed(decimals);
+    }
+
+    getActivityLabel(activityId) {
+        const labels = {
+            mining: 'Probe Mining',
+            replicating: 'Probe Replication',
+            dyson_constructing: 'Dyson Construction',
+            structures: 'Structure Building',
+            mining_buildings: 'Mining Buildings',
+            factories: 'Factories'
         };
-        
-        // TODO: Calculate actual research modifiers from gameState.research
-        return modifiers;
+        return labels[activityId] || activityId;
     }
 
-    calculateNetPerformance(building, count, categoryRate) {
-        // Calculate net performance metrics
-        const effects = building.effects || {};
-        const baseConsumption = effects.energy_consumption_per_second || 0;
-        const effectiveRate = categoryRate / 100.0;
+    getActivityDescription(activityId) {
+        const descriptions = {
+            mining: 'Controls probe harvesting/mining activities',
+            replicating: 'Controls probe replication/building activities',
+            dyson_constructing: 'Controls Dyson sphere construction',
+            structures: 'Controls structure construction by probes',
+            mining_buildings: 'Controls mining structure production',
+            factories: 'Controls factory production rates'
+        };
+        return descriptions[activityId] || '';
+    }
+
+    async updateActivityModifier(activityId, value) {
+        // Update local state
+        this.activityModifiers[activityId] = value;
         
-        // Energy cost per structure
-        const energyCostPerSecond = baseConsumption * effectiveRate;
+        // Save to localStorage
+        localStorage.setItem('activityModifiers', JSON.stringify(this.activityModifiers));
         
-        // For factories, calculate energy per probe produced
-        let energyPerProbe = null;
-        if (building.effects && building.effects.probe_production_rate_multiplier) {
-            // This is a simplified calculation
-            // Real calculation would need probe production rate data
-            energyPerProbe = baseConsumption / (building.effects.probe_production_rate_multiplier || 1);
+        // Send to game engine
+        if (typeof window !== 'undefined' && window.gameEngine && window.gameEngine.engine) {
+            try {
+                await window.gameEngine.engine.performAction('set_activity_modifier', {
+                    activity_id: activityId,
+                    modifier: value / 100.0  // Convert percentage to multiplier
+                });
+            } catch (e) {
+                console.error('Failed to update activity modifier:', e);
+            }
         }
-        
-        return {
-            energyCostPerSecond,
-            energyPerProbe,
-            effectiveRate
-        };
     }
 
     render() {
-        if (!this.buildings) {
-            this.container.innerHTML = '<div>Loading...</div>';
-            return;
-        }
-
         let html = '';
 
-        // Category production rate controls
-        html += '<div class="manage-section">';
-        html += '<div class="manage-section-title">Production Rates (Category Default)</div>';
-        html += '<div class="manage-section-description">Set default utilization rate for all structures in each category (0-100%)</div>';
+        html += '<div class="probe-section">';
+        html += '<div class="probe-section-title">Activity Modifiers</div>';
+        html += '<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 12px; font-style: italic;">Control global activity rates (0-100%). Set to 0% to completely suppress an activity.</div>';
         
-        const categories = [
-            { id: 'factories', name: 'Factories' },
-            { id: 'mining', name: 'Mining' },
-            { id: 'energy', name: 'Energy' },
-            { id: 'transportation', name: 'Transportation' }
+        const activities = [
+            'mining',
+            'replicating',
+            'dyson_constructing',
+            'structures',
+            'mining_buildings',
+            'factories'
         ];
 
-        categories.forEach(category => {
-            const rate = this.categoryProductionRates[category.id] || 100;
-            html += '<div class="manage-category-control">';
-            html += `<div class="manage-category-label">${category.name}</div>`;
-            html += '<div class="manage-slider-container">';
-            html += `<input type="range" class="manage-category-slider" data-category="${category.id}" min="0" max="100" value="${rate}" step="1">`;
-            html += `<span class="manage-slider-value">${rate}%</span>`;
+        activities.forEach(activityId => {
+            const value = this.activityModifiers[activityId] || 100;
+            const label = this.getActivityLabel(activityId);
+            const description = this.getActivityDescription(activityId);
+            
+            html += '<div class="probe-stat-item">';
+            html += `<div class="probe-stat-header">`;
+            html += `<span class="probe-stat-label">${label}:</span>`;
+            html += `<span class="probe-stat-base" data-activity-value="${activityId}">${value}%</span>`;
+            html += `</div>`;
+            if (description) {
+                html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-top: 4px; padding-left: 8px;">${description}</div>`;
+            }
+            html += '<div style="margin-top: 8px; padding: 0 4px;">';
+            html += `<input type="range" class="manage-activity-slider" data-activity="${activityId}" min="0" max="100" value="${value}" step="1" style="width: 100%;">`;
+            html += '<div style="display: flex; justify-content: space-between; font-size: 8px; color: rgba(255, 255, 255, 0.4); margin-top: 4px;">';
+            html += '<span>0%</span>';
+            html += '<span>100%</span>';
+            html += '</div>';
             html += '</div>';
             html += '</div>';
         });
         
         html += '</div>';
 
-        // Building stats and modifiers
-        html += '<div class="manage-section">';
-        html += '<div class="manage-section-title">Building Stats & Research Modifiers</div>';
-        
-        // Group buildings by category
-        const structures = this.gameState?.structures || {};
-        const factoryProduction = this.gameState?.factory_production || {};
-        
-        categories.forEach(category => {
-            const categoryBuildings = this.buildings[category.id] || [];
-            const categoryRate = this.categoryProductionRates[category.id] || 100;
+        // Show current rates section
+        if (this.gameState) {
+            html += '<div class="probe-section">';
+            html += '<div class="probe-section-title">Current Rates</div>';
             
-            // Check if we have any buildings in this category
-            const hasBuildings = categoryBuildings.some(b => (structures[b.id] || 0) > 0);
-            if (!hasBuildings) return;
+            // Mining rate (game state provides kg/s, convert to per-day for display)
+            const metalProductionRate = this.gameState.metal_production_rate || 0;
+            const SECONDS_PER_DAY = 86400;
+            html += `<div class="probe-stat-item">`;
+            html += `<div class="probe-stat-header">`;
+            html += `<span class="probe-stat-label">Mining Rate:</span>`;
+            html += `<span class="probe-stat-base">${FormatUtils.formatRate(metalProductionRate, 'kg')}</span>`;
+            html += `</div>`;
+            html += `</div>`;
             
-            html += `<div class="manage-building-category">`;
-            html += `<div class="manage-building-category-title">${category.name}</div>`;
+            // Probe production rate (game state provides probes/s)
+            const probeProductionRate = this.gameState.probe_production_rate || 0;
+            html += `<div class="probe-stat-item">`;
+            html += `<div class="probe-stat-header">`;
+            html += `<span class="probe-stat-label">Probe Production:</span>`;
+            html += `<span class="probe-stat-base">${FormatUtils.formatRate(probeProductionRate, 'probes')}</span>`;
+            html += `</div>`;
+            html += `</div>`;
             
-            categoryBuildings.forEach(building => {
-                const count = structures[building.id] || 0;
-                if (count === 0) return;
-                
-                const production = factoryProduction[building.id] || categoryRate;
-                const performance = this.calculateNetPerformance(building, count, production);
-                const modifiers = this.calculateResearchModifiers(building);
-                
-                html += '<div class="manage-building-item">';
-                html += `<div class="manage-building-name">${building.name} (${count})</div>`;
-                
-                // Current production rate
-                html += '<div class="manage-building-stat">';
-                html += `<span class="manage-stat-label">Utilization:</span> `;
-                html += `<span class="manage-stat-value">${production}%</span>`;
-                html += '</div>';
-                
-                // Energy consumption
-                if (performance.energyCostPerSecond > 0) {
-                    html += '<div class="manage-building-stat">';
-                    html += `<span class="manage-stat-label">Energy:</span> `;
-                    html += `<span class="manage-stat-value">${this.formatNumber(performance.energyCostPerSecond * count)}/s</span>`;
-                    html += '</div>';
-                }
-                
-                // Energy per probe (for factories)
-                if (performance.energyPerProbe !== null) {
-                    html += '<div class="manage-building-stat">';
-                    html += `<span class="manage-stat-label">Energy/Probe:</span> `;
-                    html += `<span class="manage-stat-value">${this.formatNumber(performance.energyPerProbe)}</span>`;
-                    html += '</div>';
-                }
-                
-                // Research modifiers (placeholder for now)
-                if (modifiers.production_efficiency > 0 || modifiers.energy_efficiency > 0) {
-                    html += '<div class="manage-building-modifiers">';
-                    html += '<div class="manage-modifier-label">Research Modifiers:</div>';
-                    if (modifiers.production_efficiency > 0) {
-                        html += `<div class="manage-modifier-item">Production: +${(modifiers.production_efficiency * 100).toFixed(1)}%</div>`;
-                    }
-                    if (modifiers.energy_efficiency > 0) {
-                        html += `<div class="manage-modifier-item">Energy Efficiency: +${(modifiers.energy_efficiency * 100).toFixed(1)}%</div>`;
-                    }
-                    html += '</div>';
-                }
-                
-                html += '</div>';
-            });
+            // Dyson construction rate (game state provides kg/s)
+            const dysonConstructionRate = this.gameState.dyson_construction_rate || 0;
+            html += `<div class="probe-stat-item">`;
+            html += `<div class="probe-stat-header">`;
+            html += `<span class="probe-stat-label">Dyson Construction:</span>`;
+            html += `<span class="probe-stat-base">${FormatUtils.formatRate(dysonConstructionRate, 'kg')}</span>`;
+            html += `</div>`;
+            html += `</div>`;
             
             html += '</div>';
-        });
-        
-        html += '</div>';
+        }
 
         this.container.innerHTML = html;
 
         // Set up slider event listeners
-        this.container.querySelectorAll('.manage-category-slider').forEach(slider => {
+        this.container.querySelectorAll('.manage-activity-slider').forEach(slider => {
             slider.addEventListener('input', (e) => {
-                const category = e.target.dataset.category;
+                const activityId = e.target.dataset.activity;
                 const value = parseInt(e.target.value);
-                const valueSpan = e.target.parentElement.querySelector('.manage-slider-value');
-                valueSpan.textContent = value + '%';
+                const valueDisplay = this.container.querySelector(`[data-activity-value="${activityId}"]`);
+                if (valueDisplay) {
+                    valueDisplay.textContent = value + '%';
+                }
                 
-                // Update local state
-                this.categoryProductionRates[category] = value;
-                
-                // Send to backend
-                this.updateCategoryProductionRate(category, value);
+                // Update modifier
+                this.updateActivityModifier(activityId, value);
             });
         });
     }
 
-    async updateCategoryProductionRate(category, rate) {
-        try {
-            // Update all buildings in this category
-            const categoryBuildings = this.buildings[category] || [];
-            const structures = this.gameState?.structures || {};
-            
-            for (const building of categoryBuildings) {
-                const count = structures[building.id] || 0;
-                if (count > 0) {
-                    await gameEngine.performAction('set_factory_production', {
-                        building_id: building.id,
-                        production: rate
-                    });
-                }
-            }
-        } catch (error) {
-            console.error('Failed to update category production rate:', error);
-        }
-    }
-
     update(gameState) {
         this.gameState = gameState;
-        
-        // Update category rates from factory production if available
-        if (gameState.factory_production) {
-            const structures = gameState.structures || {};
-            const factoryProduction = gameState.factory_production;
-            
-            // Find average production rate for each category
-            const categories = ['factories', 'mining', 'energy', 'transportation'];
-            categories.forEach(category => {
-                const categoryBuildings = this.buildings?.[category] || [];
-                let totalRate = 0;
-                let count = 0;
-                
-                categoryBuildings.forEach(building => {
-                    if ((structures[building.id] || 0) > 0 && factoryProduction[building.id] !== undefined) {
-                        totalRate += factoryProduction[building.id];
-                        count++;
-                    }
-                });
-                
-                if (count > 0) {
-                    this.categoryProductionRates[category] = Math.round(totalRate / count);
-                }
-            });
-        }
-        
         this.render();
     }
 }
-

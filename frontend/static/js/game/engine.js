@@ -89,7 +89,7 @@ class GameEngine {
         
         // Game state
         this.tickCount = 0;
-        this.time = 0.0; // seconds
+        this.time = 0.0; // days (fundamental time unit)
         
         // Resources
         this.energy = config.initial_energy !== undefined ? config.initial_energy : Config.INITIAL_ENERGY;
@@ -99,6 +99,7 @@ class GameEngine {
         this.intelligence = 0.0; // Will be updated to show current production rate for UI
         this.dexterity = 0.0; // Will be calculated after probes are initialized
         this.slag = 0.0;
+        this.energyStored = 0.0; // Energy stored in watt-days
         
         // Throttling flags for UI
         this.isEnergyLimited = false;
@@ -149,6 +150,16 @@ class GameEngine {
         // Harvest zone selection (which zone to harvest from)
         this.harvestZone = 'earth'; // Default to Earth
         
+        // Activity modifiers: {activity_id: multiplier (0.0-1.0)}
+        this.activityModifiers = {
+            mining: 1.0,           // Probe mining (harvest)
+            replicating: 1.0,       // Probe replication
+            dyson_constructing: 1.0, // Dyson sphere construction
+            structures: 1.0,        // Structure building
+            mining_buildings: 1.0,  // Mining structure production
+            factories: 1.0          // Factory production
+        };
+        
         // Structures by zone: {zoneId: {building_id: count}}
         this.structuresByZone = {};
         
@@ -177,8 +188,12 @@ class GameEngine {
         
         // Dyson sphere
         this.dysonSphereMass = 0.0;
-        this.dysonSphereTargetMass = config.dyson_sphere_target_mass !== undefined ? 
+        // Target mass will be calculated dynamically using getDysonTargetMass() to account for research modifiers
+        // Store base value for reference
+        this.dysonSphereBaseTargetMass = config.dyson_sphere_target_mass !== undefined ? 
             config.dyson_sphere_target_mass : Config.DYSON_SPHERE_TARGET_MASS;
+        // Effective target mass (will be updated when research changes)
+        this.dysonSphereTargetMass = this.dysonSphereBaseTargetMass;
         
         // Probe construction progress tracking: {probe_type: progress_in_kg}
         this.probeConstructionProgress = {};
@@ -276,14 +291,7 @@ class GameEngine {
                 this.structuresByZone[zoneId] = {};
             }
             
-            // Dyson sphere (sun) starts with 1 probe
-            if (zoneId === 'dyson_sphere') {
-                this.probesByZone[zoneId] = {
-                    'probe': 1
-                };
-            }
-            
-            // Earth starts with 1 probe, 10 solar arrays, 1 mining station, 1 refinery
+            // Earth starts with 1 probe, no structures
             if (zoneId === 'earth') {
                 const initialProbes = this.config.initial_probes !== undefined ? this.config.initial_probes : 1;
                 this.probesByZone[zoneId] = {
@@ -292,13 +300,6 @@ class GameEngine {
                 if (!this.structuresByZone[zoneId]) {
                     this.structuresByZone[zoneId] = {};
                 }
-                this.structuresByZone[zoneId]['solar_array_basic'] = 10;
-                this.structuresByZone[zoneId]['basic_mining_station'] = 1;
-                this.structuresByZone[zoneId]['refinery'] = 1;
-                // Also add to legacy global structures
-                this.structures['solar_array_basic'] = 5;
-                this.structures['basic_mining_station'] = 1;
-                this.structures['refinery'] = 1;
             }
         }
         
@@ -445,7 +446,9 @@ class GameEngine {
                     const tierId = tier.id;
                     this.research[treeId][tierId] = {
                         'tranches_completed': 0,
-                        'enabled': false
+                        'enabled': false,
+                        'start_time': null,  // Time when research started (in days)
+                        'completion_time': null  // Time when research completed (in days)
                     };
                 }
             }
@@ -459,13 +462,247 @@ class GameEngine {
                             const tierKey = subcatId + '_' + tierId;
                             this.research[treeId][tierKey] = {
                                 'tranches_completed': 0,
-                                'enabled': false
+                                'enabled': false,
+                                'start_time': null,  // Time when research started (in days)
+                                'completion_time': null  // Time when research completed (in days)
                             };
                         }
                     }
                 }
             }
         }
+    }
+    
+    _getResearchTree(skillCategory) {
+        /** Get research tree data for a skill category. */
+        return this.dataLoader.getResearchTree(skillCategory);
+    }
+    
+    _calculateResearchBonus(skillCategory, skillName = null) {
+        /** Calculate total bonus from research for a skill category.
+        
+        Uses exponential compounding system:
+        - During research: bonus = base_bonus * e^(0.20 * time_in_days)
+        - When tier completes: principal doubles, then continues: bonus = (base_bonus * 2) * e^(0.20 * time_since_completion)
+        - Each tier compounds independently and continuously
+        - Tiers compound multiplicatively: total_bonus = tier1_bonus * tier2_bonus * ...
+        
+        Args:
+            skillCategory: Research tree ID (e.g., 'propulsion_systems')
+            skillName: Optional subcategory name (e.g., 'processing' for computer_systems)
+        
+        Returns:
+            Total bonus multiplier (additive bonus = multiplier - 1.0)
+        */
+        let totalBonusMultiplier = 1.0;  // Start with 1.0 for multiplicative compounding
+        const researchTree = this._getResearchTree(skillCategory);
+        
+        if (!researchTree) {
+            return 0.0;  // No bonus if no research tree
+        }
+        
+        // Handle subcategories (e.g., computer_systems has processing, memory, etc.)
+        if (skillName && researchTree.subcategories) {
+            if (skillName in researchTree.subcategories) {
+                const subcatData = researchTree.subcategories[skillName];
+                if (subcatData.tiers) {
+                    for (const tier of subcatData.tiers) {
+                        const tierKey = skillName + '_' + tier.id;
+                        const progress = this.research[skillCategory]?.[tierKey] || {};
+                        const tranchesCompleted = progress.tranches_completed || 0;
+                        const isComplete = tranchesCompleted >= tier.tranches;
+                        const startTime = progress.start_time;
+                        const completionTime = progress.completion_time;
+                        
+                        if (startTime !== null && startTime !== undefined) {
+                            const baseBonus = tier.total_bonus || 0.0;
+                            const timeElapsedDays = this.time - startTime;
+                            
+                            let tierBonus;
+                            if (isComplete && completionTime !== null && completionTime !== undefined) {
+                                // Tier completed: principal doubles, then continues compounding
+                                const timeSinceCompletionDays = this.time - completionTime;
+                                // Base bonus doubles on completion
+                                const effectiveBase = baseBonus * 2.0;
+                                // Continue compounding from completion time
+                                tierBonus = effectiveBase * Math.exp(0.20 * timeSinceCompletionDays);
+                            } else {
+                                // During research: compound continuously
+                                tierBonus = baseBonus * Math.exp(0.20 * timeElapsedDays);
+                            }
+                            
+                            // Multiplicative compounding: multiply by (1 + tierBonus)
+                            totalBonusMultiplier *= (1.0 + tierBonus);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular tiers
+            if (researchTree.tiers) {
+                for (const tier of researchTree.tiers) {
+                    const tierId = tier.id;
+                    const progress = this.research[skillCategory]?.[tierId] || {};
+                    const tranchesCompleted = progress.tranches_completed || 0;
+                    const isComplete = tranchesCompleted >= tier.tranches;
+                    const startTime = progress.start_time;
+                    const completionTime = progress.completion_time;
+                    
+                    if (startTime !== null && startTime !== undefined) {
+                        const baseBonus = tier.total_bonus || 0.0;
+                        const timeElapsedDays = this.time - startTime;
+                        
+                        let tierBonus;
+                        if (isComplete && completionTime !== null && completionTime !== undefined) {
+                            // Tier completed: principal doubles, then continues compounding
+                            const timeSinceCompletionDays = this.time - completionTime;
+                            // Base bonus doubles on completion
+                            const effectiveBase = baseBonus * 2.0;
+                            // Continue compounding from completion time
+                            tierBonus = effectiveBase * Math.exp(0.20 * timeSinceCompletionDays);
+                        } else {
+                            // During research: compound continuously
+                            tierBonus = baseBonus * Math.exp(0.20 * timeElapsedDays);
+                        }
+                        
+                        // Multiplicative compounding: multiply by (1 + tierBonus)
+                        totalBonusMultiplier *= (1.0 + tierBonus);
+                    }
+                }
+            }
+        }
+        
+        // Return the additive bonus (multiplier - 1.0) to match existing API
+        return totalBonusMultiplier - 1.0;
+    }
+    
+    getBaseSkillValue(skillCategory, skillName = null) {
+        /** Get base skill value before research modifiers.
+        
+        Args:
+            skillCategory: Skill category ID
+            skillName: Optional subcategory name
+        
+        Returns:
+            Base skill value
+        */
+        // Base values for different skill categories
+        const baseValues = {
+            'propulsion_systems': Config.BASE_PROPULSION_ISP || 500,  // specific impulse in seconds
+            'locomotion_systems': 1.0,  // efficiency multiplier
+            'acds': 1.0,  // efficiency multiplier
+            'robotic_systems': 1.0,  // efficiency multiplier
+            'computer_systems': 1.0,  // compute power multiplier (calculated from sub-skills)
+            'production_efficiency': 1.0,  // production rate multiplier
+            'recycling_efficiency': 0.75,  // base recycling efficiency (75%)
+            'energy_collection': 1.0,  // energy collection efficiency multiplier
+            'solar_concentrators': 1.0,  // solar concentration multiplier
+            'energy_storage': 1.0,  // storage capacity multiplier
+            'energy_transport': 1.0,  // transport efficiency multiplier
+            'energy_matter_conversion': 0.0,  // conversion rate (starts at 0)
+            'dyson_swarm_construction': 1.0,  // construction rate multiplier
+        };
+        
+        // For computer_systems subcategories
+        if (skillCategory === 'computer_systems' && skillName) {
+            return 1.0;  // Base compute sub-skill value
+        }
+        
+        return baseValues[skillCategory] || 1.0;
+    }
+    
+    getSkillValue(skillCategory, skillName = null) {
+        /** Get effective skill value with research bonuses applied.
+        
+        Args:
+            skillCategory: Skill category ID
+            skillName: Optional subcategory name
+        
+        Returns:
+            Effective skill value (base * (1 + bonus))
+        */
+        const baseValue = this.getBaseSkillValue(skillCategory, skillName);
+        const researchBonus = this._calculateResearchBonus(skillCategory, skillName);
+        return baseValue * (1.0 + researchBonus);
+    }
+    
+    getComputePower() {
+        /** Calculate effective compute power from computer_systems subcategories.
+        
+        Uses geometric mean: compute = (processing × memory × interface × transmission)^0.25
+        
+        Returns:
+            Effective compute power multiplier
+        */
+        const processing = this.getSkillValue('computer_systems', 'processing');
+        const memory = this.getSkillValue('computer_systems', 'memory');
+        const interface_skill = this.getSkillValue('computer_systems', 'interface');
+        const transmission = this.getSkillValue('computer_systems', 'transmission');
+        
+        // Geometric mean
+        const computePower = Math.pow(processing * memory * interface_skill * transmission, 0.25);
+        return computePower;
+    }
+    
+    getDysonTargetMass() {
+        /** Calculate effective Dyson sphere target mass with research modifiers.
+        
+        Base target mass: 5e24 kg
+        Research modifiers can reduce the required mass.
+        
+        Returns:
+            Effective target mass in kg
+        */
+        const baseTargetMass = Config.DYSON_SPHERE_TARGET_MASS;  // 5e24 kg
+        
+        // Research modifiers can reduce the required mass
+        // (e.g., better construction techniques, more efficient materials)
+        const dysonConstructionBonus = this._calculateResearchBonus('dyson_swarm_construction');
+        
+        // Mass reduction: 10% reduction per 100% bonus (example formula)
+        // Adjust this formula as needed for game balance
+        const massReduction = Math.min(0.5, dysonConstructionBonus * 0.1);  // Cap at 50% reduction
+        const effectiveMass = baseTargetMass * (1.0 - massReduction);
+        
+        return effectiveMass;
+    }
+    
+    getDysonEnergyProduction() {
+        /** Calculate energy production from Dyson sphere mass.
+        
+        Base production: 5 kW per kg of Dyson sphere mass
+        From: 5 kW/m² / 1 kg/m² = 5 kW/kg
+        
+        Returns:
+            Energy production in watts
+        */
+        // Base production: 5 kW per kg of Dyson sphere mass
+        const baseEnergyPerKg = Config.DYSON_POWER_PER_KG || 5000;  // 5000 watts per kg
+        
+        // Calculate base energy production
+        const baseProduction = this.dysonSphereMass * baseEnergyPerKg;
+        
+        // Apply energy collection skill modifiers
+        const energyCollectionBonus = this._calculateResearchBonus('energy_collection');
+        const solarConcentratorsBonus = this._calculateResearchBonus('solar_concentrators');
+        
+        // Sum bonuses (they're multipliers, so additive)
+        const totalBonus = energyCollectionBonus + solarConcentratorsBonus;
+        const effectiveProduction = baseProduction * (1.0 + totalBonus);
+        
+        return effectiveProduction;
+    }
+    
+    // Legacy method for backward compatibility
+    _getResearchBonus(treeId, effectName, defaultValue = 1.0) {
+        /** Legacy method: get research bonus for a specific effect.
+        
+        This method is kept for backward compatibility with existing code.
+        New code should use getSkillValue() instead.
+        */
+        // For now, return the skill value for the tree
+        // This is a simplified implementation - may need refinement based on effectName
+        return this.getSkillValue(treeId);
     }
     
     getState() {
@@ -532,6 +769,8 @@ class GameEngine {
             'intelligence': this.intelligence, // Current production rate (for display), not accumulated
             'dexterity': this.dexterity,
             'slag': this.slag,
+            'energy_stored': this.energyStored,
+            'energy_storage_capacity': this._calculateEnergyStorageCapacity(),
             'probes': this._calculateTotalProbes(), // Calculate total probes across all zones
             'probes_by_zone': this.probesByZone, // New: probes per zone
             'probe_allocations': this.probeAllocations, // Legacy: global allocations
@@ -549,9 +788,9 @@ class GameEngine {
             'zone_depleted': this.zoneDepleted,
             'research': this.research,
             'dyson_sphere_mass': this.dysonSphereMass,
-            'dyson_sphere_target_mass': this.dysonSphereTargetMass,
-            'dyson_sphere_progress': this.dysonSphereTargetMass > 0 ? 
-                this.dysonSphereMass / this.dysonSphereTargetMass : 0,
+            'dyson_sphere_target_mass': this.getDysonTargetMass(),  // Use dynamic target mass with research modifiers
+            'dyson_sphere_progress': this.getDysonTargetMass() > 0 ? 
+                this.dysonSphereMass / this.getDysonTargetMass() : 0,
             'factory_production': this.factoryProduction,
             'economy_slider': this.economySlider,
             'mine_build_slider': this.mineBuildSlider,
@@ -706,6 +945,35 @@ class GameEngine {
             }
         }
         
+        // Calculate energy storage capacity
+        const storageCapacity = this._calculateEnergyStorageCapacity();
+        
+        // Convert net energy (watts) to watt-days for storage
+        // netEnergyAvailable is in watts, deltaTime is in days
+        // So netWattDays = watts * days = watt-days
+        const netWattDays = netEnergyAvailable * deltaTime;
+        
+        // Handle energy storage
+        if (netWattDays > 0) {
+            // Excess energy - add to storage (capped at capacity)
+            this.energyStored = Math.min(storageCapacity, this.energyStored + netWattDays);
+        } else {
+            // Energy deficit - draw from storage first
+            const energyDeficitWattDays = Math.abs(netWattDays);
+            if (this.energyStored >= energyDeficitWattDays) {
+                // Storage can cover the deficit
+                this.energyStored -= energyDeficitWattDays;
+                netEnergyAvailable = 0; // Deficit fully covered
+            } else {
+                // Storage can only partially cover the deficit
+                netEnergyAvailable = -(energyDeficitWattDays - this.energyStored); // Remaining deficit in watts
+                this.energyStored = 0;
+            }
+        }
+        
+        // Clamp storage to capacity (safety check)
+        this.energyStored = Math.max(0.0, Math.min(storageCapacity, this.energyStored));
+        
         // For backward compatibility, calculate overall throttle (weighted average)
         const energyThrottle = (miningEnergyConsumption * miningEnergyThrottle + buildEnergyConsumption * buildEnergyThrottle) / 
                               Math.max(1.0, miningEnergyConsumption + buildEnergyConsumption);
@@ -717,7 +985,9 @@ class GameEngine {
         this._updateResearch(deltaTime, intelligenceRate);
         
         // Apply energy throttling to all activities first
-        const metalRate = baseMetalRate * energyThrottle;
+        // Apply mining activity modifier
+        const miningModifier = this.activityModifiers.mining || 1.0;
+        const metalRate = baseMetalRate * energyThrottle * miningModifier;
         const probeRateAfterEnergy = {};
         for (const [pt, rate] of Object.entries(baseProbeRate)) {
             probeRateAfterEnergy[pt] = rate * energyThrottle;
@@ -758,7 +1028,9 @@ class GameEngine {
                     const effectiveBuildRate = Config.PROBE_BUILD_RATE * buildingRateBonus;
                     const structureConstructionRateKgS = structureBuildingProbes * effectiveBuildRate;
                 // Structure construction uses buildEnergyThrottle (not overall energyThrottle)
-                const structureConstructionRateKgSThrottled = structureConstructionRateKgS * buildEnergyThrottle;
+                // Apply structures activity modifier
+                const structuresModifier = this.activityModifiers.structures || 1.0;
+                const structureConstructionRateKgSThrottled = structureConstructionRateKgS * buildEnergyThrottle * structuresModifier;
                 structureMetalConsumptionRate = structureConstructionRateKgSThrottled;
             }
         }
@@ -800,11 +1072,15 @@ class GameEngine {
         }
         
         // Apply metal throttling to production activities
+        // Apply replication activity modifier
+        const replicatingModifier = this.activityModifiers.replicating || 1.0;
         const probeRate = {};
         for (const [pt, rate] of Object.entries(probeRateAfterEnergy)) {
-            probeRate[pt] = rate * otherMetalThrottle;
+            probeRate[pt] = rate * otherMetalThrottle * replicatingModifier;
         }
-        const dysonConstructionRate = dysonConstructionRateAfterEnergy * dysonMetalThrottle;
+        // Apply Dyson construction activity modifier
+        const dysonConstructingModifier = this.activityModifiers.dyson_constructing || 1.0;
+        const dysonConstructionRate = dysonConstructionRateAfterEnergy * dysonMetalThrottle * dysonConstructingModifier;
         
         // For backward compatibility, calculate overall throttle (weighted average)
         const metalThrottle = (dysonMetalConsumptionRate * dysonMetalThrottle + 
@@ -812,6 +1088,7 @@ class GameEngine {
                               Math.max(1.0, totalMetalConsumptionRate);
         
         // Update metal stockpile: add production only (mining uses miningEnergyThrottle)
+        // Factories consume metal to produce probes (handled in factory production section above)
         this.metal += metalRate * miningEnergyThrottle * deltaTime;
         this.metal = Math.max(0, this.metal);
         
@@ -894,54 +1171,38 @@ class GameEngine {
             }
         }
         
-        // Base build rate: 0.1 kg/s per probe
+        // Base build rate: 10.0 kg/day per probe
         // Apply research bonuses for building rate
         const buildingRateBonus = this._getResearchBonus('production_efficiency', 'building_rate_multiplier', 1.0);
         const effectiveBuildRate = Config.PROBE_BUILD_RATE * buildingRateBonus;
         const baseProbeBuildRateKgS = totalReplicatingProbes * effectiveBuildRate;
         
         // Apply energy throttling (build activities use buildEnergyThrottle)
-        let probeBuildRateKgS = baseProbeBuildRateKgS * buildEnergyThrottle;
+        // Apply replication activity modifier
+        const replicatingModifier2 = this.activityModifiers.replicating || 1.0;
+        let probeBuildRateKgS = baseProbeBuildRateKgS * buildEnergyThrottle * replicatingModifier2;
         
         // Apply metal throttling (probe replication uses otherMetalThrottle)
         probeBuildRateKgS = probeBuildRateKgS * otherMetalThrottle;
         
-        // Distribute building across probe types based on factory production and manual building
-        let totalFactoryMetalNeeded = 0.0;
-        for (const [probeType, rate] of Object.entries(probeRate)) {
-            if (rate > 0) {
-                let metalCostPerProbe;
-                if (probeType === 'probe' && factoryMetalCostPerProbe > 0) {
-                    metalCostPerProbe = factoryMetalCostPerProbe;
-                } else {
-                    const probeData = this._getProbeData(probeType);
-                    metalCostPerProbe = Config.PROBE_MASS;
-                    if (probeData) {
-                        metalCostPerProbe = probeData.base_cost_metal || Config.PROBE_MASS;
-                    }
-                }
-                totalFactoryMetalNeeded += rate * metalCostPerProbe;
-            }
-        }
-        
-        // Process factory production per zone (zone-based factories produce probes in their zone)
+        // Process factory production per zone (zone-based factories produce probes)
         const factoryProductionByZone = this.factoryProductionByZone || {};
+        let totalFactoryProbeProduction = 0.0;
         let totalFactoryMetalNeededActual = 0.0;
         
         for (const [zoneId, factoryProd] of Object.entries(factoryProductionByZone)) {
             if (factoryProd.rate > 0) {
-                const probeType = 'probe'; // Single probe type only
-                let metalCostPerProbe = factoryProd.metalCost / factoryProd.rate; // Weighted average for this zone
-                if (metalCostPerProbe <= 0 || !isFinite(metalCostPerProbe)) {
-                    metalCostPerProbe = factoryMetalCostPerProbe || Config.PROBE_MASS;
-                }
+                // Apply factories activity modifier
+                const factoriesModifier = this.activityModifiers.factories || 1.0;
+                const probeProductionRate = factoryProd.rate * factoriesModifier; // probes/day
+                const metalCostPerProbe = factoryProd.metalCost / factoryProd.rate; // kg per probe
+                const metalNeededRate = probeProductionRate * metalCostPerProbe; // kg/s
                 
-                // Calculate construction progress in kg/s (rate is in probes/s)
-                const constructionRateKgS = factoryProd.rate * metalCostPerProbe;
-                totalFactoryMetalNeededActual += constructionRateKgS;
+                totalFactoryProbeProduction += probeProductionRate;
+                totalFactoryMetalNeededActual += metalNeededRate;
                 
-                // Add progress this tick (throttled by energy and metal)
-                let progressThisTick = constructionRateKgS * deltaTime;
+                // Calculate construction progress in kg/s
+                let progressThisTick = metalNeededRate * deltaTime;
                 
                 // Check if we have enough metal for this progress
                 if (this.metal < progressThisTick) {
@@ -949,7 +1210,7 @@ class GameEngine {
                 }
                 
                 // Add to construction progress (use zone-specific progress tracking)
-                const progressKey = `${probeType}_${zoneId}`;
+                const progressKey = `probe_${zoneId}`;
                 if (!(progressKey in this.probeConstructionProgress)) {
                     this.probeConstructionProgress[progressKey] = 0.0;
                 }
@@ -959,14 +1220,13 @@ class GameEngine {
                 this.metal = Math.max(0, this.metal);
                 
                 // Check if we've completed a probe
-                // Use division instead of while loop to avoid potential blocking
                 let probesBuiltThisTick = 0;
                 if (this.probeConstructionProgress[progressKey] >= metalCostPerProbe) {
                     probesBuiltThisTick = Math.floor(this.probeConstructionProgress[progressKey] / metalCostPerProbe);
                     const remainder = this.probeConstructionProgress[progressKey] % metalCostPerProbe;
                     
                     // Add probes to global count (legacy)
-                    this.probes[probeType] = (this.probes[probeType] || 0) + probesBuiltThisTick;
+                    this.probes['probe'] = (this.probes['probe'] || 0) + probesBuiltThisTick;
                     
                     // Add probes to the zone where the factory is located
                     if (!(zoneId in this.probesByZone)) {
@@ -985,8 +1245,8 @@ class GameEngine {
         }
         
         // Manual probe building (probes building other probes) - zone-based replication
-        // Calculate remaining build rate after factory production
-        const manualProbeBuildRateKgS = Math.max(0, probeBuildRateKgS - totalFactoryMetalNeededActual);
+        // Use all available build rate for manual building
+        const manualProbeBuildRateKgS = probeBuildRateKgS;
         
         // Manual probe building (probes building other probes) - zone-based replication
         if (manualProbeBuildRateKgS > 0) {
@@ -1099,7 +1359,7 @@ class GameEngine {
             }
         }
         
-        // Structure building (probes building structures using 0.1 kg/s per probe)
+        // Structure building (probes building structures using 10.0 kg/day per probe)
         // Calculate structure-building probes per zone based on zone-specific replication_slider
         // For each zone, construct allocation is split between structures and replicate based on replication_slider
         // replication_slider: 0 = all structures, 100 = all replicate
@@ -1177,7 +1437,7 @@ class GameEngine {
                         continue;
                     }
                     
-                    // Base build rate: 0.1 kg/s per probe
+                    // Base build rate: 10.0 kg/day per probe
                     const baseZoneBuildRateKgS = zoneStructureBuildingProbes * Config.PROBE_BUILD_RATE;
                     
                     // Structure construction uses buildEnergyThrottle and otherMetalThrottle
@@ -1303,7 +1563,7 @@ class GameEngine {
         const dysonProbes = zoneActivities[dysonZoneId]?.dyson || 0;
         
         if (dysonProbes > 0) {
-            // Base rate: 0.1 kg/s per probe
+            // Base rate: 1.0 kg/day per probe
             const baseDysonRate = dysonProbes * Config.PROBE_BUILD_RATE;
             // Apply throttling (use same throttles as structure building)
             dysonConstructionRateKgS = baseDysonRate * buildEnergyThrottle * otherMetalThrottle;
@@ -1398,14 +1658,13 @@ class GameEngine {
                     this.probesByZone[transfer.to].probe = currentTo + totalArrivingInt;
                 }
                 
-                // Constantly recalculate transfer rate based on current net probe increase rate
-                // This ensures the transfer rate scales with production increases
-                // Use the helper function to calculate zone-specific production rate
-                const sourceZoneNetIncreaseRate = this._calculateZoneProbeProductionRate(transfer.from);
+                // Constantly recalculate transfer rate based on current probes in the source zone
+                // Send a percentage of current probes per day (e.g., 10% of current drones per day)
+                const sourceZoneProbes = (this.probesByZone[transfer.from] && this.probesByZone[transfer.from].probe) || 0;
                 
-                // Calculate sending rate as percentage of net increase rate (stored in ratePercentage)
+                // Calculate sending rate as percentage of current probes (stored in ratePercentage)
                 const ratePercentage = transfer.ratePercentage || 0;
-                const actualSendingRate = (sourceZoneNetIncreaseRate * ratePercentage) / 100.0; // probes per second
+                const actualSendingRate = (sourceZoneProbes * ratePercentage) / 100.0; // probes per day
                 
                 // Update the transfer rate to reflect current production
                 transfer.rate = actualSendingRate;
@@ -1426,8 +1685,8 @@ class GameEngine {
                     const currentFrom = Math.floor(this.probesByZone[transfer.from].probe || 0);
                     this.probesByZone[transfer.from].probe = Math.max(0, currentFrom - probesToSend);
                     
-                    // Add to transit queue - they'll arrive after transferTime
-                    const transferTime = transfer.transferTime || 3000;
+                    // Add to transit queue - they'll arrive after transferTime (in days)
+                    const transferTime = transfer.transferTime || 90.0; // Default: 3 months = 90 days
                     const arrivalTime = currentTime + transferTime;
                     transfer.inTransit.push({
                         count: probesToSend,
@@ -1440,9 +1699,16 @@ class GameEngine {
     }
     
     _calculateEnergyProduction() {
-        let rate = 0.0;
+        /** Calculate energy production rate.
         
-        // All energy comes from Dyson sphere (energy probes removed)
+        Includes:
+        - Dyson sphere energy production (from mass × 5 kW/kg, modified by energy collection skills)
+        - Energy structure production (solar arrays, etc., modified by energy collection skill)
+        
+        Dyson sphere power is allocated between economy (energy) and compute based on slider.
+        Allocation: dyson_power_allocation (0 = all economy, 100 = all compute)
+        */
+        let rate = 0.0;
         
         // Dyson sphere power allocation
         // Slider 0-50%: linear from 100% economy to 0% economy (0% compute to 100% compute nominal)
@@ -1457,40 +1723,104 @@ class GameEngine {
             economyFraction = 0.0;
         }
         
-        if (this.dysonSphereMass >= this.dysonSphereTargetMass) {
+        if (this.dysonSphereMass >= this.getDysonTargetMass()) {
             // Complete Dyson sphere: all star's power
             // Sun's total power output: ~3.8e26 W
             const sunTotalPower = 3.8e26; // watts
             // Allocate based on slider
             rate += sunTotalPower * economyFraction;
         } else {
-            // During construction: 5 kW per kg at 0.5 AU
-            const dysonPower = this.dysonSphereMass * 5000; // 5000W = 5 kW per kg
+            // During construction: use getDysonEnergyProduction() which applies skill modifiers
+            const dysonPower = this.getDysonEnergyProduction();
             // Allocate based on slider
             rate += dysonPower * economyFraction;
         }
         
         // Energy structures (solar arrays, reactors, etc.)
+        // Apply energy collection skill modifiers
+        const energyCollectionMultiplier = this.getSkillValue('energy_collection');
+        
+        // Load orbital zones for distance calculations
+        const zoneMap = {};
+        if (this.dataLoader.orbitalZones) {
+            for (const zone of this.dataLoader.orbitalZones) {
+                zoneMap[zone.id] = zone;
+            }
+        }
+        
+        // Check zone-based structures (new system)
+        for (const [zoneId, zoneStructures] of Object.entries(this.structuresByZone)) {
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                const building = this.dataLoader.getBuildingById(buildingId);
+                if (building) {
+                    const category = this._getBuildingCategory(buildingId);
+                    if (category === 'energy') {
+                        const effects = building.effects || {};
+                        let energyOutput = effects.energy_production_per_second || 0;
+                        
+                        // Apply orbital efficiency for this zone
+                        let orbitalEfficiency = 1.0;
+                        if (building.orbital_efficiency && building.orbital_efficiency[zoneId] !== undefined) {
+                            orbitalEfficiency = building.orbital_efficiency[zoneId];
+                        }
+                        
+                        energyOutput *= orbitalEfficiency;
+                        
+                        // Apply solar distance modifier (inverse square law)
+                        // Power is proportional to 1/distance², with Earth (1.0 AU) as baseline
+                        let solarDistanceModifier = 1.0;
+                        if (zoneId in zoneMap) {
+                            const zone = zoneMap[zoneId];
+                            const radiusAu = zone.radius_au || 1.0;
+                            if (radiusAu > 0) {
+                                // Inverse square law: power at distance d = power_at_earth * (1.0 / d)²
+                                solarDistanceModifier = Math.pow(1.0 / radiusAu, 2);
+                            }
+                        }
+                        energyOutput *= solarDistanceModifier;
+                        
+                        // Apply energy collection skill multiplier
+                        energyOutput *= energyCollectionMultiplier;
+                        
+                        rate += energyOutput * count;
+                    }
+                }
+            }
+        }
+        
+        // Also check legacy global structures for backward compatibility
         for (const [buildingId, count] of Object.entries(this.structures)) {
+            // Skip if already counted in zone structures
+            let alreadyCounted = false;
+            for (const zoneStructures of Object.values(this.structuresByZone)) {
+                if (zoneStructures[buildingId]) {
+                    alreadyCounted = true;
+                    break;
+                }
+            }
+            if (alreadyCounted) continue;
+            
             const building = this.dataLoader.getBuildingById(buildingId);
             if (building) {
                 const category = this._getBuildingCategory(buildingId);
                 if (category === 'energy') {
                     const effects = building.effects || {};
                     let energyOutput = effects.energy_production_per_second || 0;
-                    const baseEnergy = effects.base_energy_at_earth !== undefined ? effects.base_energy_at_earth : energyOutput;
                     
-                    // Apply orbital efficiency (for now use default zone, will be zone-specific)
-                    const zones = this.dataLoader.orbitalZones || [];
+                    // Apply orbital efficiency (for now use default zone)
                     const defaultZone = 'earth';
                     let orbitalEfficiency = 1.0;
                     if (building.orbital_efficiency) {
                         orbitalEfficiency = building.orbital_efficiency[defaultZone] || 1.0;
                     }
                     
-                    if (baseEnergy !== energyOutput) {
-                        energyOutput = baseEnergy * orbitalEfficiency;
-                    }
+                    energyOutput *= orbitalEfficiency;
+                    
+                    // Legacy structures default to Earth distance (1.0 AU = no modifier)
+                    // solarDistanceModifier = 1.0 (Earth baseline)
+                    
+                    // Apply energy collection skill multiplier
+                    energyOutput *= energyCollectionMultiplier;
                     
                     rate += energyOutput * count;
                 }
@@ -1498,6 +1828,57 @@ class GameEngine {
         }
         
         return rate;
+    }
+    _calculateEnergyStorageCapacity() {
+        // Calculate total energy storage capacity from storage buildings.
+        // Returns total storage capacity in watt-days
+        let capacity = 0.0;
+        
+        // Get research bonus for storage capacity if applicable
+        const storageCapacityMultiplier = this._getResearchBonus('energy_storage', 'energy_storage_capacity_multiplier', 1.0);
+        
+        // Check structures by zone
+        for (const [zoneId, zoneStructures] of Object.entries(this.structuresByZone)) {
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                const building = this.dataLoader.getBuildingById(buildingId);
+                if (building) {
+                    const category = this._getBuildingCategory(buildingId);
+                    if (category === 'storage') {
+                        const effects = building.effects || {};
+                        const storageCapacity = effects.energy_storage_capacity || 0.0;
+                        capacity += storageCapacity * count;
+                    }
+                }
+            }
+        }
+        
+        // Legacy global structures for backward compatibility
+        for (const [buildingId, count] of Object.entries(this.structures)) {
+            // Skip if already counted in zone structures
+            let alreadyCounted = false;
+            for (const zoneStructures of Object.values(this.structuresByZone)) {
+                if (zoneStructures[buildingId]) {
+                    alreadyCounted = true;
+                    break;
+                }
+            }
+            if (alreadyCounted) continue;
+            
+            const building = this.dataLoader.getBuildingById(buildingId);
+            if (building) {
+                const category = this._getBuildingCategory(buildingId);
+                if (category === 'storage') {
+                    const effects = building.effects || {};
+                    const storageCapacity = effects.energy_storage_capacity || 0.0;
+                    capacity += storageCapacity * count;
+                }
+            }
+        }
+        
+        // Apply research bonus
+        capacity *= storageCapacityMultiplier;
+        
+        return capacity;
     }
     _calculateEnergyConsumption() {
         // Get research bonuses first
@@ -1544,26 +1925,28 @@ class GameEngine {
             }
         }
         
-        // Probe construction energy cost: 250kW per kg/s = 250000W per kg/s
+        // Probe construction energy cost (converted to per-day)
+        // Energy cost: 250000 W / (kg/s) = 250000 / 86400 W / (kg/day) ≈ 2.8935 W per kg/day
+        const ENERGY_COST_PER_KG_DAY = 250000 / 86400; // W per kg/day
         const [probeProdRates, , factoryMetalCostPerProbe] = this._calculateProbeProduction();
-        const totalProbeProductionRate = Object.values(probeProdRates).reduce((a, b) => a + b, 0); // probes/s
+        const totalProbeProductionRate = Object.values(probeProdRates).reduce((a, b) => a + b, 0); // probes/day
         // Use factory metal cost if available, otherwise default
         const metalCostPerProbe = factoryMetalCostPerProbe > 0 ? factoryMetalCostPerProbe : Config.PROBE_MASS;
-        const probeConstructionRateKgS = totalProbeProductionRate * metalCostPerProbe;
-        const probeConstructionEnergyCost = probeConstructionRateKgS * 250000; // 250000W per kg/s
+        const probeConstructionRateKgDay = totalProbeProductionRate * metalCostPerProbe;
+        const probeConstructionEnergyCost = probeConstructionRateKgDay * ENERGY_COST_PER_KG_DAY;
         consumption += probeConstructionEnergyCost;
         
-        // Structure construction energy cost: 250kW per kg/s = 250000W per kg/s
+        // Structure construction energy cost
         const constructAllocation = this.probeAllocations.construct || {};
         const constructingProbes = Object.values(constructAllocation).reduce((a, b) => a + b, 0);
         const structureConstructingPower = constructingProbes * (1.0 - this.buildAllocation / 100.0);
-        const structureConstructionRateKgS = structureConstructingPower * Config.PROBE_BUILD_RATE; // 0.1 kg/s per probe
-        const structureConstructionEnergyCost = structureConstructionRateKgS * 250000; // 250000W per kg/s
+        const structureConstructionRateKgDay = structureConstructingPower * Config.PROBE_BUILD_RATE; // kg/day per probe
+        const structureConstructionEnergyCost = structureConstructionRateKgDay * ENERGY_COST_PER_KG_DAY;
         consumption += structureConstructionEnergyCost;
         
-        // Dyson construction energy cost: 250kW per kg/s = 250000W per kg/s
+        // Dyson construction energy cost
         const dysonConstructionRate = this._calculateDysonConstructionRate();
-        const dysonConstructionEnergyCost = dysonConstructionRate * 250000; // 250000W per kg/s
+        const dysonConstructionEnergyCost = dysonConstructionRate * ENERGY_COST_PER_KG_DAY;
         consumption += dysonConstructionEnergyCost;
         
         // Compute energy consumption: 1 kW per PFLOPS/s (only if research projects active)
@@ -1639,21 +2022,24 @@ class GameEngine {
                 const miningEnergyCostMultiplier = zone.mining_energy_cost_multiplier || 1.0;
                 const miningRateMultiplier = zone.mining_rate_multiplier || 1.0;
                 
-                const baseEnergyCost = 453515; // watts per kg/s at Earth baseline
-                const energyCostPerKgS = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2) * miningEnergyCostMultiplier;
-                const harvestRatePerProbe = Config.PROBE_HARVEST_RATE * miningRateMultiplier;
-                let harvestEnergyCost = energyCostPerKgS * harvestRatePerProbe * totalHarvestProbes;
+                const baseEnergyCost = 453515 / 86400; // watts per kg/day at Earth baseline (converted from per-second)
+                const energyCostPerKgDay = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2) * miningEnergyCostMultiplier;
+                const harvestRatePerProbe = Config.PROBE_HARVEST_RATE * miningRateMultiplier; // kg/day per probe
+                let harvestEnergyCost = energyCostPerKgDay * harvestRatePerProbe * totalHarvestProbes;
                 harvestEnergyCost *= (1.0 - propulsionReduction);
                 miningConsumption += harvestEnergyCost;
             }
         }
         
+        // Energy cost constant: 250kW per kg/s = 250000 / 86400 W per kg/day
+        const ENERGY_COST_PER_KG_DAY = 250000 / 86400; // W per kg/day
+        
         // Probe construction energy cost (BUILD - replication)
         const [probeProdRates, , factoryMetalCostPerProbe] = this._calculateProbeProduction();
         const totalProbeProductionRate = Object.values(probeProdRates).reduce((a, b) => a + b, 0);
         const metalCostPerProbe = factoryMetalCostPerProbe > 0 ? factoryMetalCostPerProbe : Config.PROBE_MASS;
-        const probeConstructionRateKgS = totalProbeProductionRate * metalCostPerProbe;
-        const probeConstructionEnergyCost = probeConstructionRateKgS * 250000;
+        const probeConstructionRateKgDay = totalProbeProductionRate * metalCostPerProbe;
+        const probeConstructionEnergyCost = probeConstructionRateKgDay * ENERGY_COST_PER_KG_DAY;
         buildConsumption += probeConstructionEnergyCost;
         
         // Structure construction energy cost (BUILD - structures)
@@ -1667,15 +2053,15 @@ class GameEngine {
             const constructFraction = 1.0 - (replicationSlider / 100.0); // Fraction going to construct (not replicate)
             const structureBuildingProbes = constructingProbes * constructFraction;
             if (structureBuildingProbes > 0) {
-                const structureConstructionRateKgS = structureBuildingProbes * Config.PROBE_BUILD_RATE;
-                structureConstructionEnergyCost += structureConstructionRateKgS * 250000;
+                const structureConstructionRateKgDay = structureBuildingProbes * Config.PROBE_BUILD_RATE;
+                structureConstructionEnergyCost += structureConstructionRateKgDay * ENERGY_COST_PER_KG_DAY;
             }
         }
         buildConsumption += structureConstructionEnergyCost;
         
         // Dyson construction energy cost (BUILD)
         const dysonConstructionRate = this._calculateDysonConstructionRate();
-        const dysonConstructionEnergyCost = dysonConstructionRate * 250000;
+        const dysonConstructionEnergyCost = dysonConstructionRate * ENERGY_COST_PER_KG_DAY;
         buildConsumption += dysonConstructionEnergyCost;
         
         // No base probe consumption - probes only consume energy when actively working
@@ -1739,8 +2125,8 @@ class GameEngine {
                     const effects = Probe.getEffects(probeType);
                     const harvestMultiplier = effects.harvest_efficiency_multiplier || 1.0;
                     
-                    // Base harvest rate per probe (kg/s total material)
-                    let baseHarvestRate = Config.PROBE_HARVEST_RATE; // 1.0 kg/s per probe
+                    // Base harvest rate per probe (kg/day total material)
+                    let baseHarvestRate = Config.PROBE_HARVEST_RATE; // 100.0 kg/day per probe
                     
                     // Apply research bonuses for mining rate
                     const miningRateBonus = this._getResearchBonus('production_efficiency', 'mining_rate_multiplier', 1.0);
@@ -1775,10 +2161,12 @@ class GameEngine {
                     const category = this._getBuildingCategory(buildingId);
                     if (category === 'mining') {
                         const effects = building.effects || {};
-                        const metalOutput = effects.metal_production_per_second || 0;
+                        // New system: mining produces metal per day, convert to per second
+                        const metalPerDay = effects.metal_production_per_day || 0;
+                        const metalPerSecond = metalPerDay; // At 1x speed, 1 day = 1 second
                         
                         // Apply zone mining rate multiplier
-                        const zoneMetalOutput = metalOutput * miningRateMultiplier;
+                        const zoneMetalOutput = metalPerSecond * miningRateMultiplier;
                         
                         // Limit by zone metal remaining
                         const zoneMetal = this.zoneMetalRemaining[zoneId] || 0;
@@ -1820,22 +2208,23 @@ class GameEngine {
                     const category = this._getBuildingCategory(buildingId);
                     if (category === 'factories') {
                         const effects = building.effects || {};
-                        const probesPerSecond = effects.probes_per_second || 0.0;
-                        const metalPerProbe = effects.metal_per_probe || 10.0;
+                        // Factories produce probes per day (fundamental time unit)
+                        const probeProductionPerDay = effects.probe_production_per_day || 0.0;
+                        const metalPerProbe = effects.metal_per_probe || Config.PROBE_MASS;
                         
-                        // Each factory produces at its rate in this zone
-                        const factoryRate = probesPerSecond * count;
-                        const factoryMetalNeeded = factoryRate * metalPerProbe;
+                        // Each factory produces probes at its rate in this zone
+                        const factoryProbeRate = probeProductionPerDay * count; // probes/day
+                        const factoryMetalCost = factoryProbeRate * metalPerProbe; // kg/day metal cost
                         
-                        totalFactoryRate += factoryRate;
-                        totalFactoryMetalCost += factoryMetalNeeded;
+                        totalFactoryRate += factoryProbeRate; // probes/day
+                        totalFactoryMetalCost += factoryMetalCost; // kg/day metal cost
                         
-                        // Track production per zone
+                        // Track production per zone (in probes/day and kg/day metal cost)
                         if (!factoryProductionByZone[zoneId]) {
                             factoryProductionByZone[zoneId] = {rate: 0.0, metalCost: 0.0};
                         }
-                        factoryProductionByZone[zoneId].rate += factoryRate;
-                        factoryProductionByZone[zoneId].metalCost += factoryMetalNeeded;
+                        factoryProductionByZone[zoneId].rate += factoryProbeRate;
+                        factoryProductionByZone[zoneId].metalCost += factoryMetalCost;
                     }
                 }
             }
@@ -1858,21 +2247,22 @@ class GameEngine {
                 const category = this._getBuildingCategory(buildingId);
                 if (category === 'factories') {
                     const effects = building.effects || {};
-                    const probesPerSecond = effects.probes_per_second || 0.0;
-                    const metalPerProbe = effects.metal_per_probe || 10.0;
+                    // Factories produce probes per day, convert to per second
+                    const probeProductionPerDay = effects.probe_production_per_day || 0.0;
+                    const metalPerProbe = effects.metal_per_probe || Config.PROBE_MASS;
                     
-                    const factoryRate = probesPerSecond * count;
-                    const factoryMetalNeeded = factoryRate * metalPerProbe;
+                    const factoryProbeRate = probeProductionPerDay * count; // probes/day
+                    const factoryMetalCost = factoryProbeRate * metalPerProbe;
                     
-                    totalFactoryRate += factoryRate;
-                    totalFactoryMetalCost += factoryMetalNeeded;
+                    totalFactoryRate += factoryProbeRate;
+                    totalFactoryMetalCost += factoryMetalCost;
                     
                     // Add to default zone
                     if (!factoryProductionByZone[this.defaultZone]) {
                         factoryProductionByZone[this.defaultZone] = {rate: 0.0, metalCost: 0.0};
                     }
-                    factoryProductionByZone[this.defaultZone].rate += factoryRate;
-                    factoryProductionByZone[this.defaultZone].metalCost += factoryMetalNeeded;
+                    factoryProductionByZone[this.defaultZone].rate += factoryProbeRate;
+                    factoryProductionByZone[this.defaultZone].metalCost += factoryMetalCost;
                 }
             }
         }
@@ -1880,8 +2270,8 @@ class GameEngine {
         // Store factory production by zone for use in tick()
         this.factoryProductionByZone = factoryProductionByZone;
         
-        // Calculate weighted average metal cost per probe
-        let factoryMetalCostPerProbe = 10.0; // Default if no factories
+        // Calculate weighted average metal cost per probe for factories
+        let factoryMetalCostPerProbe = Config.PROBE_MASS; // Default if no factories (use manual probe cost)
         if (totalFactoryRate > 0) {
             factoryMetalCostPerProbe = totalFactoryMetalCost / totalFactoryRate;
         }
@@ -1921,7 +2311,7 @@ class GameEngine {
             }
         }
         
-        // Manual build rate: 0.1 kg/s per probe, converted to probes/s
+        // Manual build rate: 10.0 kg/day per probe, converted to probes/day
         // Apply research bonuses for building rate
         const buildingRateBonus = this._getResearchBonus('production_efficiency', 'building_rate_multiplier', 1.0);
         const effectiveBuildRate = Config.PROBE_BUILD_RATE * buildingRateBonus;
@@ -1989,7 +2379,7 @@ class GameEngine {
         
         // Dyson sphere compute (at 100% nominal = slider at 50%)
         const fullComputeFraction = 1.0; // Calculate as if at 100% nominal
-        if (this.dysonSphereMass >= this.dysonSphereTargetMass) {
+        if (this.dysonSphereMass >= this.getDysonTargetMass()) {
             // Complete Dyson sphere: all star's power
             const sunTotalPower = 3.8e26; // watts
             // Calculate full compute, then apply nominal fraction
@@ -1997,7 +2387,8 @@ class GameEngine {
             totalIntelligenceFlops += computePower * 1e9 * nominalComputeFraction; // FLOPS/s
         } else {
             // While building: convert Dyson sphere power generation to compute
-            const dysonPower = this.dysonSphereMass * 5000; // 5000W = 5 kW per kg
+            // Use getDysonEnergyProduction() which applies skill modifiers
+            const dysonPower = this.getDysonEnergyProduction();
             const computePower = dysonPower * fullComputeFraction;
             // Conversion: 1 W = 1e9 FLOPS/s
             totalIntelligenceFlops += computePower * 1e9 * nominalComputeFraction; // FLOPS/s
@@ -2014,9 +2405,12 @@ class GameEngine {
                     if (intelligenceOutputFlops > 0) {
                         totalIntelligenceFlops += intelligenceOutputFlops * count;
                     } else {
-                        // Legacy: convert from intelligence_per_second
+                        // Legacy: convert from intelligence_production_per_second (for backward compatibility with old saves)
                         const intelligenceOutput = effects.intelligence_production_per_second || effects.intelligence_per_second || 0;
-                        totalIntelligenceFlops += intelligenceOutput * 1e12 * count;
+                        if (intelligenceOutput > 0) {
+                            // Convert from per-second to FLOPS (assuming 1e12 FLOPS per unit)
+                            totalIntelligenceFlops += intelligenceOutput * 1e12 * count;
+                        }
                     }
                 }
             }
@@ -2071,7 +2465,7 @@ class GameEngine {
         const fullComputeFraction = 1.0; // 100% of dyson power to compute
         
         let theoreticalMax = 0.0;
-        if (this.dysonSphereMass >= this.dysonSphereTargetMass) {
+        if (this.dysonSphereMass >= this.getDysonTargetMass()) {
             // Complete Dyson sphere: all star's power
             const sunTotalPower = 3.8e26; // watts
             const computePower = sunTotalPower * fullComputeFraction;
@@ -2187,20 +2581,29 @@ class GameEngine {
             const policy = this.zonePolicies[zoneId] || {};
             
             if (zone.is_dyson_zone) {
-                // Dyson zone: Three sliders
-                // 1. Dyson build slider: splits between Dyson construction and other (build/replicate)
-                const dysonBuildSlider = (policy.dyson_build_slider !== undefined ? policy.dyson_build_slider : 90) / 100.0;
-                const dysonBuildCount = zoneProbes * dysonBuildSlider;
-                const otherCount = zoneProbes * (1.0 - dysonBuildSlider);
+                // Dyson zone: Two sliders
+                // 1. Dyson allocation slider: splits between Dyson construction and Build
+                // dyson_allocation_slider: 0 = all Build (bottom), 100 = all Dyson (top)
+                // Fallback to dyson_build_slider for backward compatibility (inverted)
+                let dysonAllocationSlider = policy.dyson_allocation_slider;
+                if (dysonAllocationSlider === undefined) {
+                    // Backward compatibility: invert dyson_build_slider
+                    const dysonBuildSlider = policy.dyson_build_slider !== undefined ? policy.dyson_build_slider : 90;
+                    dysonAllocationSlider = 100 - dysonBuildSlider;
+                }
+                const dysonFraction = dysonAllocationSlider / 100.0;  // 0 = all Build, 100 = all Dyson
+                const dysonBuildCount = zoneProbes * dysonFraction;
+                const buildCount = zoneProbes * (1.0 - dysonFraction);  // Remaining goes to Build
                 
-                // 2. Replication slider: splits "other" between structures and replicate
+                // 2. Replication slider: splits Build between structures and replicate
+                // replication_slider: 0 = all structures, 100 = all replicate
                 const replicationSlider = (policy.replication_slider !== undefined ? policy.replication_slider : 100) / 100.0;
-                const replicateCount = otherCount * replicationSlider;
-                const constructCount = otherCount * (1.0 - replicationSlider);
+                const replicateCount = buildCount * replicationSlider;
+                const constructCount = buildCount * (1.0 - replicationSlider);
                 
                 activities[zoneId] = {
                     'construct': constructCount,  // Building structures
-                    'replicate': replicateCount,
+                    'replicate': replicateCount,  // Replicating probes
                     'harvest': 0,
                     'dyson': dysonBuildCount  // Building Dyson
                 };
@@ -2279,7 +2682,7 @@ class GameEngine {
         //   buildCapacity: kg/s (for replicate + construct),
         //   replicateCapacity: kg/s,
         //   constructCapacity: kg/s,
-        //   factoryProduction: {probesPerSecond: probes/s, metalCostPerProbe: kg},
+        //   factoryProduction: {probesPerDay: probes/day, metalCostPerProbe: kg},
         //   buildingEffects: {miningMultiplier: 1.0, energyProduction: W, transportMultiplier: 1.0}
         // }
         const zones = this.dataLoader.orbitalZones || [];
@@ -2297,7 +2700,7 @@ class GameEngine {
         
         // Get building effects for this zone
         const zoneStructures = this.structuresByZone[zoneId] || {};
-        let factoryProduction = {probesPerSecond: 0.0, metalCostPerProbe: 10.0};
+        let factoryProduction = {probesPerDay: 0.0, metalCostPerProbe: 10.0};
         let miningMultiplier = zone.mining_rate_multiplier || 1.0;
         let energyProduction = 0.0;
         let transportMultiplier = 1.0;
@@ -2311,18 +2714,18 @@ class GameEngine {
                 
                 // Factory production
                 if (category === 'factories') {
-                    const probesPerSecond = effects.probes_per_second || 0.0;
+                    const probesPerDay = effects.probe_production_per_day || 0.0;
                     const metalPerProbe = effects.metal_per_probe || 10.0;
                     const orbitalEfficiency = building.orbital_efficiency && building.orbital_efficiency[zoneId] ? 
                         building.orbital_efficiency[zoneId] : 1.0;
                     
-                    factoryProduction.probesPerSecond += probesPerSecond * count * orbitalEfficiency;
+                    factoryProduction.probesPerDay += probesPerDay * count * orbitalEfficiency;
                     // Weighted average metal cost
-                    if (factoryProduction.probesPerSecond > 0) {
-                        const totalRate = factoryProduction.probesPerSecond;
+                    if (factoryProduction.probesPerDay > 0) {
+                        const totalRate = factoryProduction.probesPerDay;
                         factoryProduction.metalCostPerProbe = 
-                            (factoryProduction.metalCostPerProbe * (totalRate - probesPerSecond * count * orbitalEfficiency) +
-                             metalPerProbe * probesPerSecond * count * orbitalEfficiency) / totalRate;
+                            (factoryProduction.metalCostPerProbe * (totalRate - probesPerDay * count * orbitalEfficiency) +
+                             metalPerProbe * probesPerDay * count * orbitalEfficiency) / totalRate;
                     }
                 }
                 
@@ -2623,7 +3026,16 @@ class GameEngine {
             let tranchesCompleted = tierData.tranches_completed || 0;
             const maxTranches = tier.tranches || 10;
             
+            // Set start_time when research begins (first time enabled)
+            if (tierData.start_time === null || tierData.start_time === undefined) {
+                tierData.start_time = this.time;
+            }
+            
             if (tranchesCompleted >= maxTranches) {
+                // Set completion_time when tier completes (first time it reaches max)
+                if (tierData.completion_time === null || tierData.completion_time === undefined) {
+                    tierData.completion_time = this.time;
+                }
                 continue; // Tier complete
             }
             
@@ -2648,20 +3060,18 @@ class GameEngine {
                 }
             }
             
-            // Exponential cost: tier 1 = 1e3 PFLOPS, scaling as base_amount * k^n where n is the tier number
-            // tierIndex is 0-indexed, so tier 1 has tierIndex=0, tier 2 has tierIndex=1, etc.
-            // Formula: cost = base_amount * k^n where n is tier number (1-indexed)
-            // We want tier 1 to cost 1e3 PFLOPS: 1e3 = base_amount * k^1
-            // Setting base_amount = 1e3 / k ensures tier 1 = 1e3
-            // So: cost = (1e3 / k) * k^n = 1e3 * k^(n-1)
-            const baseCostPflops = 1e3; // 1000 PFLOPS (target cost for tier 1)
-            const growthFactor = 3.0; // k = 3.0 (exponential growth factor)
+            // Research cost: tier 1 = 100 exaflops for 100 days, each tier is 100x longer
+            // At 1x speed: 1 day per second of real time (game time advances 1 day per real second)
+            // 100 exaflops = 100 * 1e18 = 1e20 FLOPS
+            // Total for tier 1: 1e20 FLOPS * 100 = 1e22 FLOPS
+            // Each tier is 100x longer: tier n = 1e22 * 100^(n-1) FLOPS
+            const baseCostFlops = 1e22; // 100 exaflops * 100 days = 1e22 FLOPS for tier 1
+            const growthFactor = 100.0; // Each tier is 100x longer
             const tierNumber = tierIndex + 1; // Convert 0-indexed to 1-indexed tier number
-            // For tier 1 (tierNumber=1): cost = baseCost * k^(1-1) = baseCost * 1 = 1e3 PFLOPS
-            // For tier 2 (tierNumber=2): cost = baseCost * k^(2-1) = baseCost * k = 3e3 PFLOPS
-            // For tier 3 (tierNumber=3): cost = baseCost * k^(3-1) = baseCost * k^2 = 9e3 PFLOPS
-            const tierCostPflops = baseCostPflops * Math.pow(growthFactor, tierNumber - 1);
-            const tierCostFlops = tierCostPflops * 1e15; // Convert PFLOPS to FLOPS
+            // For tier 1 (tierNumber=1): cost = baseCost * 100^(1-1) = baseCost * 1 = 1e22 FLOPS
+            // For tier 2 (tierNumber=2): cost = baseCost * 100^(2-1) = baseCost * 100 = 1e24 FLOPS
+            // For tier 3 (tierNumber=3): cost = baseCost * 100^(3-1) = baseCost * 10000 = 1e26 FLOPS
+            const tierCostFlops = baseCostFlops * Math.pow(growthFactor, tierNumber - 1);
             
             // Calculate FLOPS consumed by this project this tick
             // Each project can consume up to its allocated share of the production rate
@@ -2670,10 +3080,11 @@ class GameEngine {
             // Calculate progress fraction: FLOPS consumed / total FLOPS needed
             const progressFraction = flopsConsumedThisTick / tierCostFlops;
             
-            // Maximum consumption rate: 1% per 100 seconds = 0.01 per 100 seconds = 0.0001 per second
+            // Maximum consumption rate: 1% per 100 days = 0.01 per 100 days = 0.0001 per day
             // This limits how fast a research project can progress, even with unlimited FLOPS
-            const maxProgressRatePerSecond = 0.0001; // 1% per 100 seconds = 0.01% per second
-            const maxProgressFraction = maxProgressRatePerSecond * deltaTime;
+            // Maximum consumption rate: 1% per 100 days = 0.01% per day
+            const maxProgressRatePerDay = 0.0001; // 1% per 100 days = 0.01% per day
+            const maxProgressFraction = maxProgressRatePerDay * deltaTime;
             
             // Cap progress to maximum consumption rate per project
             const cappedProgressFraction = Math.min(progressFraction, maxProgressFraction);
@@ -2683,10 +3094,15 @@ class GameEngine {
             const newTranches = Math.floor(trancheProgress);
             
             if (newTranches > 0) {
+                const oldTranches = tranchesCompleted;
                 tierData.tranches_completed = Math.min(
                     tranchesCompleted + newTranches,
                     maxTranches
                 );
+                // Set completion_time when tier completes
+                if (tierData.tranches_completed >= maxTranches && (tierData.completion_time === null || tierData.completion_time === undefined)) {
+                    tierData.completion_time = this.time;
+                }
             }
             
             // Also track fractional progress for smoother advancement
@@ -2705,12 +3121,16 @@ class GameEngine {
                         maxTranches
                     );
                     tierData.fractional_progress = tierData.fractional_progress - additionalTranches;
+                    // Set completion_time when tier completes
+                    if (tierData.tranches_completed >= maxTranches && (tierData.completion_time === null || tierData.completion_time === undefined)) {
+                        tierData.completion_time = this.time;
+                    }
                 }
             }
         }
     }
     _calculateDysonConstructionRate() {
-        if (this.dysonSphereMass >= this.dysonSphereTargetMass) {
+        if (this.dysonSphereMass >= this.getDysonTargetMass()) {
             return 0.0; // Already complete
         }
         
@@ -2735,8 +3155,8 @@ class GameEngine {
         }
         
         // Calculate construction rate
-        // Base rate: 0.1 kg/s per probe
-        const baseConstructionRate = totalDysonProbesInt * Config.PROBE_BUILD_RATE; // 0.1 kg/s per probe
+        // Base rate: 1.0 kg/day per probe
+        const baseConstructionRate = totalDysonProbesInt * Config.PROBE_BUILD_RATE; // 10.0 kg/day per probe
         
         // Apply research bonuses
         const researchBonus = this._getResearchBonus('dyson_swarm_construction', 'dyson_construction_rate_multiplier', 1.0);
@@ -2751,7 +3171,7 @@ class GameEngine {
     _updateDysonSphereConstruction(deltaTime, throttledConstructionRate) {
         const idleProbes = {'dyson': 0.0};
         
-        if (this.dysonSphereMass >= this.dysonSphereTargetMass) {
+        if (this.dysonSphereMass >= this.getDysonTargetMass()) {
             return idleProbes; // Already complete
         }
         
@@ -2787,7 +3207,7 @@ class GameEngine {
         
         // Construct (limited by available metal)
         let massToAdd = effectiveConstructionRate * deltaTime;
-        massToAdd = Math.min(massToAdd, this.dysonSphereTargetMass - this.dysonSphereMass);
+        massToAdd = Math.min(massToAdd, this.getDysonTargetMass() - this.dysonSphereMass);
         
         // Consume resources
         const metalConsumed = massToAdd * 0.5; // 50% metal efficiency
@@ -2827,7 +3247,7 @@ class GameEngine {
         }
         
         const recyclingEfficiency = this._getRecyclingEfficiency();
-        const recycleRate = this.slag * recyclingEfficiency * 0.1; // 10% per second
+        const recycleRate = this.slag * recyclingEfficiency * 0.1; // 10% per day recycling rate
         
         const metalRecovered = Math.min(recycleRate * deltaTime, this.slag);
         
@@ -3029,7 +3449,7 @@ class GameEngine {
         }
         
         let dysonEnergyProduction = 0.0;
-        if (this.dysonSphereMass >= this.dysonSphereTargetMass) {
+        if (this.dysonSphereMass >= this.getDysonTargetMass()) {
             // Complete Dyson sphere: all star's power
             const sunTotalPower = 3.8e26; // watts
             dysonEnergyProduction = sunTotalPower * economyFraction;
@@ -3083,27 +3503,30 @@ class GameEngine {
             const harvestZoneData = zones.find(z => z.id === this.harvestZone) || null;
             if (harvestZoneData) {
                 const deltaVPenalty = harvestZoneData.delta_v_penalty || 0.1;
-                const baseEnergyCost = 453515; // watts per kg/s at Earth baseline
-                const energyCostPerKgS = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2);
-                const harvestRatePerProbe = Config.PROBE_HARVEST_RATE;
-                harvestEnergyCost = energyCostPerKgS * harvestRatePerProbe * totalHarvestProbes;
+                const baseEnergyCost = 453515 / 86400; // watts per kg/day at Earth baseline (converted from per-second)
+                const energyCostPerKgDay = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2);
+                const harvestRatePerProbe = Config.PROBE_HARVEST_RATE; // kg/day per probe
+                harvestEnergyCost = energyCostPerKgDay * harvestRatePerProbe * totalHarvestProbes;
                 breakdown.consumption.base += harvestEnergyCost;
             }
         }
         breakdown.consumption.breakdown.harvesting = harvestEnergyCost;
         
+        // Energy cost constant: 250kW per kg/s = 250000 / 86400 W per kg/day
+        const ENERGY_COST_PER_KG_DAY = 250000 / 86400; // W per kg/day
+        
         // Consumption: Probe construction energy cost
         const [probeProdRates, , factoryMetalCostPerProbe] = this._calculateProbeProduction();
         const totalProbeProductionRate = Object.values(probeProdRates).reduce((a, b) => a + b, 0);
         const metalCostPerProbe = factoryMetalCostPerProbe > 0 ? factoryMetalCostPerProbe : Config.PROBE_MASS;
-        const probeConstructionRateKgS = totalProbeProductionRate * metalCostPerProbe;
-        const probeConstructionEnergyCost = probeConstructionRateKgS * 250000;
+        const probeConstructionRateKgDay = totalProbeProductionRate * metalCostPerProbe;
+        const probeConstructionEnergyCost = probeConstructionRateKgDay * ENERGY_COST_PER_KG_DAY;
         breakdown.consumption.base += probeConstructionEnergyCost;
         breakdown.consumption.breakdown.probe_construction = probeConstructionEnergyCost;
         
         // Consumption: Dyson construction energy cost
         const dysonConstructionRate = this._calculateDysonConstructionRate();
-        const dysonConstructionEnergyCost = dysonConstructionRate * 250000;
+        const dysonConstructionEnergyCost = dysonConstructionRate * ENERGY_COST_PER_KG_DAY;
         breakdown.consumption.base += dysonConstructionEnergyCost;
         breakdown.consumption.breakdown.dyson_construction = dysonConstructionEnergyCost;
         
@@ -3586,6 +4009,8 @@ class GameEngine {
             return this._deleteTransfer(actionData);
         } else if (actionType === 'recycle_factory') {
             return this._recycleFactory(actionData);
+        } else if (actionType === 'set_activity_modifier') {
+            return this._setActivityModifier(actionData);
         } else {
             throw new Error(`Unknown action type: ${actionType}`);
         }
@@ -3829,6 +4254,24 @@ class GameEngine {
         return {'success': true, 'mine_build_slider': this.mineBuildSlider};
     }
     
+    _setActivityModifier(actionData) {
+        const activityId = actionData.activity_id;
+        let modifier = actionData.modifier !== undefined ? actionData.modifier : 1.0;
+        
+        // Validate modifier is between 0 and 1
+        modifier = Math.max(0.0, Math.min(1.0, modifier));
+        
+        // Validate activity ID
+        if (!(activityId in this.activityModifiers)) {
+            throw new Error(`Unknown activity_id: ${activityId}`);
+        }
+        
+        // Set modifier
+        this.activityModifiers[activityId] = modifier;
+        
+        return {'success': true, 'activity_id': activityId, 'modifier': modifier};
+    }
+    
     _autoAllocateProbes() {
         // Get total available 'probe' type probes across all zones
         let totalProbes = 0;
@@ -4039,8 +4482,8 @@ class GameEngine {
             
             // Validate transfer time is positive
             if (!transferTime || transferTime <= 0) {
-                transferTime = 3000; // Fallback to default
-                console.warn(`Invalid transfer time calculated for ${fromZone} -> ${toZone}, using default 3000s`);
+                transferTime = 90.0; // Fallback to default (3 months = 90 days)
+                console.warn(`Invalid transfer time calculated for ${fromZone} -> ${toZone}, using default 90 days`);
             }
             
             // For one-time transfers, all probes go at once, but they arrive after transferTime
@@ -4104,11 +4547,9 @@ class GameEngine {
                 throw new Error('Transfer rate must be between 0 and 100 (percentage of probe production)');
             }
             
-            // Calculate probe production rate in source zone (includes factory production, replication, and incoming transfers)
-            const sourceZoneProductionRate = this._calculateZoneProbeProductionRate(fromZone);
-            
-            // Calculate actual transfer rate as percentage of production
-            const actualTransferRate = (sourceZoneProductionRate * rate) / 100.0; // probes per second
+            // Calculate transfer rate as percentage of current probes in source zone (per day)
+            const sourceZoneProbes = (this.probesByZone[fromZone] && this.probesByZone[fromZone].probe) || 0;
+            const actualTransferRate = (sourceZoneProbes * rate) / 100.0; // probes per day (percentage of current drones)
             
             // Calculate transfer time to determine arrival rate
             const fromZoneData = zones.find(z => z.id === fromZone);
@@ -4117,8 +4558,8 @@ class GameEngine {
             
             // Validate transfer time is positive
             if (!transferTime || transferTime <= 0) {
-                transferTime = 3000; // Fallback to default
-                console.warn(`Invalid transfer time calculated for ${fromZone} -> ${toZone}, using default 3000s`);
+                transferTime = 90.0; // Fallback to default (3 months = 90 days)
+                console.warn(`Invalid transfer time calculated for ${fromZone} -> ${toZone}, using default 90 days`);
             }
             
             // The rate at which probes are sent is actualTransferRate
@@ -4137,8 +4578,8 @@ class GameEngine {
                 from: fromZone,
                 to: toZone,
                 type: 'continuous',
-                rate: actualTransferRate, // probes per second (actual rate, not percentage)
-                ratePercentage: rate, // store original percentage
+                rate: actualTransferRate, // probes per day (actual rate, recalculated each tick)
+                ratePercentage: rate, // store original percentage input
                 transferTime: transferTime, // time for probes to arrive
                 paused: false,
                 inTransit: [] // probes currently in transit: [{count, arrivalTime}]
@@ -4153,6 +4594,7 @@ class GameEngine {
                 to: toZone,
                 type: 'continuous',
                 rate: rate,
+                ratePercentage: rate,
                 status: 'active',
                 startTime: Date.now()
             });
@@ -4174,8 +4616,8 @@ class GameEngine {
     }
     
     _calculateTransferTime(fromZone, toZone) {
-        // Base transfer time between dyson and mercury: 3e3 seconds (3000 seconds)
-        const BASE_TRANSFER_TIME = 3e3; // seconds
+        // Base transfer time between Mercury and Sun (Dyson Sphere): 3 months = 90 days
+        const BASE_TRANSFER_TIME = 90.0; // days (3 months baseline)
         
         // Get zone IDs
         const fromZoneId = fromZone.id || '';
@@ -4186,7 +4628,7 @@ class GameEngine {
                                  (fromZoneId === 'mercury' && toZoneId === 'dyson_sphere');
         
         if (isDysonToMercury) {
-            // Base case: use 3e3 seconds
+            // Base case: Mercury to Sun (Dyson Sphere) = 90 days (3 months)
             let transferTime = BASE_TRANSFER_TIME;
             
             // Apply research bonuses for propulsion
@@ -4364,9 +4806,9 @@ class GameEngine {
         // Get metal cost per probe for replication
         const metalCostPerProbe = Probe.getMetalCost('probe');
         
-        // Convert replication rate from kg/s to probes/s
-        const replicationProbesPerSecond = replicationRate / metalCostPerProbe;
-        sourceZoneNetIncreaseRate += replicationProbesPerSecond;
+        // Convert replication rate from kg/day to probes/day
+        const replicationProbesPerDay = replicationRate / metalCostPerProbe;
+        sourceZoneNetIncreaseRate += replicationProbesPerDay;
         
         // 3. Incoming transfers arriving at source zone
         let incomingTransferRate = 0.0;
@@ -4386,10 +4828,11 @@ class GameEngine {
     
     _updateTransfer(actionData) {
         const transferId = actionData.transfer_id;
-        const newRate = actionData.rate;
+        // Accept either rate_percentage (preferred) or rate for backward compatibility
+        const newRatePercentage = actionData.rate_percentage !== undefined ? actionData.rate_percentage : actionData.rate;
         
-        if (!newRate || newRate <= 0) {
-            throw new Error('Transfer rate must be greater than 0');
+        if (!newRatePercentage || newRatePercentage <= 0 || newRatePercentage > 100) {
+            throw new Error('Transfer rate must be between 0 and 100 (percentage of current drones per day)');
         }
         
         const transfer = this.activeTransfers.find(t => t.id == transferId);
@@ -4397,19 +4840,19 @@ class GameEngine {
             throw new Error(`Transfer not found: ${transferId}`);
         }
         
-        // Update rate
-        const oldRate = transfer.rate;
-        transfer.rate = newRate;
+        // Update percentage; actual per-day rate will be recalculated each tick
+        transfer.ratePercentage = newRatePercentage;
         
         // Transfers don't consume energy - probes use their own propulsion drives
         
         // Update history
         const historyItem = this.transferHistory.find(t => t.id == transferId);
         if (historyItem) {
-            historyItem.rate = newRate;
+            historyItem.rate = newRatePercentage;
+            historyItem.ratePercentage = newRatePercentage;
         }
         
-        return {'success': true, 'transfer_id': transferId, 'new_rate': newRate};
+        return {'success': true, 'transfer_id': transferId, 'new_rate_percentage': newRatePercentage};
     }
     
     _reverseTransfer(actionData) {
@@ -4665,8 +5108,8 @@ class GameEngineClient {
         this.isRunning = false;
         this.lastTickTime = performance.now();
         this.tickInterval = null;
-        this.tickRate = 60; // ticks per second - fixed rate
-        this.deltaTime = 1 / this.tickRate; // Fixed delta time per tick
+        this.tickRate = 60; // ticks per day - fixed rate
+        this.deltaTime = 1 / this.tickRate; // Fixed delta time per tick in days (1/60 day)
         this.timeSpeed = 1; // Speed multiplier (applied to delta_time, not tick rate)
         this.autoSaveInterval = null;
         this.autoSaveIntervalMs = 60000; // Auto-save every 60 seconds
@@ -4790,19 +5233,23 @@ class GameEngineClient {
         }
 
         try {
-            // Always tick at fixed rate (60 ticks/second)
-            // Time speed is applied to delta_time, not tick rate
-            const effectiveDeltaTime = this.deltaTime * this.timeSpeed;
+            // Always tick at fixed rate (60 ticks/day)
+            // Time system: fundamental unit is 1 day
+            // Each tick = 1/60 day (at 1x speed)
+            // At 100x speed: 100 days per tick
+            // deltaTime is in days (1/60 at 60 ticks/day), apply time speed
+            const DAYS_PER_TICK = 1.0 / 60.0; // 1 day / 60 ticks
+            const effectiveDeltaTimeDays = DAYS_PER_TICK * this.timeSpeed;
             
-            // Ensure effectiveDeltaTime is valid
-            if (!effectiveDeltaTime || effectiveDeltaTime <= 0 || isNaN(effectiveDeltaTime) || !isFinite(effectiveDeltaTime)) {
-                console.warn('Invalid effectiveDeltaTime:', effectiveDeltaTime, 'deltaTime:', this.deltaTime, 'timeSpeed:', this.timeSpeed);
+            // Ensure effectiveDeltaTimeDays is valid
+            if (!effectiveDeltaTimeDays || effectiveDeltaTimeDays <= 0 || isNaN(effectiveDeltaTimeDays) || !isFinite(effectiveDeltaTimeDays)) {
+                console.warn('Invalid effectiveDeltaTimeDays:', effectiveDeltaTimeDays, 'timeSpeed:', this.timeSpeed);
                 return;
             }
             
-            // Execute single tick with time-scaled delta_time
+            // Execute single tick with time-scaled delta_time in days
             const tickStartTime = performance.now();
-            this.engine.tick(effectiveDeltaTime);
+            this.engine.tick(effectiveDeltaTimeDays);
             const tickEndTime = performance.now();
             
             // Record tick time
@@ -4901,7 +5348,7 @@ class GameEngineClient {
     }
 
     isComplete() {
-        return this.engine && this.engine.dysonSphereMass >= this.engine.dysonSphereTargetMass;
+        return this.engine && this.engine.dysonSphereMass >= this.engine.getDysonTargetMass();
     }
     
     setTimeSpeed(speed) {

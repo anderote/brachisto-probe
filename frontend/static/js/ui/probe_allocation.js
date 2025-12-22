@@ -154,9 +154,9 @@ class ProbeAllocationPanel {
     updateProbeTimer() {
         if (!this.gameState) return;
         
-        // Get probe construction progress (in kg, each probe is 10 kg)
+        // Get probe construction progress (in kg, each probe is 100 kg)
         const progress = this.gameState.probe_construction_progress || {};
-        const PROBE_MASS = 10; // kg per probe
+        const PROBE_MASS = Config.PROBE_MASS; // kg per probe (100 kg)
         
         // Find the probe type with the most progress (the one being built)
         let maxProgress = 0;

@@ -61,7 +61,7 @@ class ProbeSummaryPanel {
             // Probe Production Rate
             html += '<div class="probe-summary-item">';
             html += '<div class="probe-summary-label">Production Rate</div>';
-            html += '<div class="probe-summary-value" id="probe-summary-rate">0.00 /s</div>';
+            html += '<div class="probe-summary-value" id="probe-summary-rate">0.00 probes/day</div>';
             html += '</div>';
 
             // Doubling Time
@@ -154,12 +154,18 @@ class ProbeSummaryPanel {
         }
 
         // Probe production rate (includes both factory production and manual probe building)
+        // Rate is in probes/day (fundamental time unit)
         const totalProbeProductionRate = gameState.probe_production_rate !== undefined 
             ? gameState.probe_production_rate 
             : 0;
         const rateEl = document.getElementById('probe-summary-rate');
         if (rateEl) {
-            rateEl.textContent = `${totalProbeProductionRate.toFixed(2)} /s`;
+            // Format in scientific notation for probes per day
+            if (totalProbeProductionRate === 0) {
+                rateEl.textContent = '0.00 probes/day';
+            } else {
+                rateEl.textContent = `${totalProbeProductionRate.toExponential(2)} probes/day`;
+            }
         }
         
         // Calculate doubling time
@@ -168,18 +174,19 @@ class ProbeSummaryPanel {
         // For linear growth (constant production rate): doubling_time = current_probes / production_rate
         // Since probe production includes replicating probes (which scale with probe count),
         // we use exponential growth formula
+        // Note: production_rate is in probes/day, so doubling_time will be in days
         let doublingTime = Infinity;
         if (totalProbeProductionRate > 0 && totalProbes > 0) {
-            // Calculate growth rate: production_rate / current_probes (probes per second per probe)
+            // Calculate growth rate: production_rate / current_probes (probes per day per probe)
             const growthRate = totalProbeProductionRate / totalProbes;
             
-            // For exponential growth: doubling_time = ln(2) / growth_rate
+            // For exponential growth: doubling_time = ln(2) / growth_rate (in days)
             // This is equivalent to: ln(2) * current_probes / production_rate
             if (growthRate > 0 && isFinite(growthRate)) {
-                doublingTime = Math.log(2) / growthRate;
+                doublingTime = Math.log(2) / growthRate; // Result in days
             } else {
                 // Fallback to linear growth if growth rate is invalid
-                doublingTime = totalProbes / totalProbeProductionRate;
+                doublingTime = totalProbes / totalProbeProductionRate; // Result in days
             }
         }
         const doublingEl = document.getElementById('probe-summary-doubling');
@@ -187,24 +194,9 @@ class ProbeSummaryPanel {
             if (doublingTime === Infinity || doublingTime <= 0 || !isFinite(doublingTime)) {
                 doublingEl.textContent = '—';
             } else {
-                // Format time nicely
-                const seconds = Math.floor(doublingTime);
-                const minutes = Math.floor(seconds / 60);
-                const hours = Math.floor(minutes / 60);
-                const days = Math.floor(hours / 24);
-                
-                let timeStr = '';
-                if (days > 0) {
-                    timeStr = `${days}d ${hours % 24}h ${minutes % 60}m`;
-                } else if (hours > 0) {
-                    timeStr = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
-                } else if (minutes > 0) {
-                    timeStr = `${minutes}m ${seconds % 60}s`;
-                } else {
-                    timeStr = `${seconds}s`;
-                }
-                
-                doublingEl.textContent = timeStr;
+                // doublingTime is in days, use FormatUtils for consistent formatting
+                // FormatUtils.formatDoublingTime can show hours/minutes for very short times
+                doublingEl.textContent = FormatUtils.formatDoublingTime(doublingTime);
             }
         }
 
@@ -281,25 +273,25 @@ class ProbeSummaryPanel {
         // Update Dyson dexterity
         const dysonRateEl = document.getElementById('probe-dex-dyson-rate');
         const dysonCountEl = document.getElementById('probe-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = `${this.formatNumber(totalDysonDexterity)} kg/s`;
+        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(totalDysonDexterity, 'kg');
         if (dysonCountEl) dysonCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalDysonProbes))}`;
 
         // Update Mining dexterity
         const miningRateEl = document.getElementById('probe-dex-mining-rate');
         const miningCountEl = document.getElementById('probe-dex-mining-count');
-        if (miningRateEl) miningRateEl.textContent = `${this.formatNumber(totalMiningDexterity)} kg/s`;
+        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(totalMiningDexterity, 'kg');
         if (miningCountEl) miningCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalMiningProbes))}`;
 
         // Update Probe construction dexterity
         const probeConstructRateEl = document.getElementById('probe-dex-probes-rate');
         const probeCountEl = document.getElementById('probe-dex-probes-count');
-        if (probeConstructRateEl) probeConstructRateEl.textContent = `${this.formatNumber(totalProbeConstructDexterity)} kg/s`;
+        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(totalProbeConstructDexterity, 'kg');
         if (probeCountEl) probeCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalProbeConstructProbes))}`;
 
         // Update Structure construction dexterity
         const structureRateEl = document.getElementById('probe-dex-structures-rate');
         const structureCountEl = document.getElementById('probe-dex-structures-count');
-        if (structureRateEl) structureRateEl.textContent = `${this.formatNumber(totalStructureDexterity)} kg/s`;
+        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(totalStructureDexterity, 'kg');
         if (structureCountEl) structureCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalStructureProbes))}`;
     }
 }

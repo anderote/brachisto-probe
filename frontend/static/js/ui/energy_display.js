@@ -24,6 +24,10 @@ class EnergyDisplay {
                     <span class="energy-label">Net:</span>
                     <span class="energy-value" id="energy-net">0 kW</span>
                 </div>
+                <div class="energy-line" id="energy-storage-line">
+                    <span class="energy-label">Storage:</span>
+                    <span class="energy-value" id="energy-storage">0 / 0 W·d</span>
+                </div>
                 <div class="energy-tooltip" id="energy-tooltip"></div>
             </div>
         `;
@@ -162,6 +166,19 @@ class EnergyDisplay {
             html += '</div>';
         }
         
+        // Storage breakdown
+        const energyStored = this.gameState.energy_stored || 0;
+        const storageCapacity = this.gameState.energy_storage_capacity || 0;
+        if (storageCapacity > 0) {
+            html += '<div class="energy-tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.2);">';
+            html += '<div class="energy-tooltip-title">Storage:</div>';
+            html += `<div class="energy-tooltip-item">Capacity: ${this.formatWattDays(storageCapacity)}</div>`;
+            html += `<div class="energy-tooltip-item">Stored: ${this.formatWattDays(energyStored)}</div>`;
+            const storagePercent = (energyStored / storageCapacity * 100).toFixed(1);
+            html += `<div class="energy-tooltip-item">Fill: ${storagePercent}%</div>`;
+            html += '</div>';
+        }
+        
         html += '</div>';
         tooltipEl.innerHTML = html;
         tooltipEl.style.display = 'block';
@@ -187,6 +204,20 @@ class EnergyDisplay {
         if (value === 0) return '0 W';
         return `${value.toExponential(2)} W`;
     }
+    
+    formatWattDays(value) {
+        // Format watt-days values with appropriate units
+        if (value === 0) return '0 W·d';
+        if (value >= 1e9) {
+            return `${(value / 1e9).toFixed(2)} GW·d`;
+        } else if (value >= 1e6) {
+            return `${(value / 1e6).toFixed(2)} MW·d`;
+        } else if (value >= 1e3) {
+            return `${(value / 1e3).toFixed(2)} kW·d`;
+        } else {
+            return `${value.toFixed(2)} W·d`;
+        }
+    }
 
     update(gameState) {
         if (!gameState) return;
@@ -201,6 +232,7 @@ class EnergyDisplay {
         const productionEl = document.getElementById('energy-production');
         const consumptionEl = document.getElementById('energy-consumption');
         const netEl = document.getElementById('energy-net');
+        const storageEl = document.getElementById('energy-storage');
         
         if (productionEl) {
             productionEl.textContent = this.formatEnergy(productionRate);
@@ -210,6 +242,12 @@ class EnergyDisplay {
         }
         if (netEl) {
             netEl.textContent = `${netRate >= 0 ? '+' : ''}${this.formatEnergy(Math.abs(netRate))}`;
+        }
+        if (storageEl) {
+            const energyStored = gameState.energy_stored || 0;
+            const storageCapacity = gameState.energy_storage_capacity || 0;
+            const storagePercent = storageCapacity > 0 ? (energyStored / storageCapacity * 100).toFixed(1) : '0.0';
+            storageEl.textContent = `${this.formatWattDays(energyStored)} / ${this.formatWattDays(storageCapacity)} (${storagePercent}%)`;
         }
         
         // Update tooltip if visible

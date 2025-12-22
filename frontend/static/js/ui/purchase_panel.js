@@ -217,18 +217,18 @@ class PurchasePanel {
             const effects = building.effects || {};
             
             // Factory stats
-            if (effects.probes_per_second !== undefined) {
-                const probesPerSec = effects.probes_per_second;
+            if (effects.probe_production_per_day !== undefined) {
+                const probesPerDay = effects.probe_production_per_day;
                 const metalPerProbe = effects.metal_per_probe || 10;
-                // Use energy_per_probe_kw if available, otherwise calculate from total energy / probes per second
+                // Use energy_per_probe_kw if available, otherwise calculate from total energy / probes per day
                 let energyPerProbeKw = effects.energy_per_probe_kw;
-                if (energyPerProbeKw === undefined && effects.energy_consumption_per_second !== undefined && probesPerSec > 0) {
-                    energyPerProbeKw = effects.energy_consumption_per_second / probesPerSec;
+                if (energyPerProbeKw === undefined && effects.energy_consumption_per_second !== undefined && probesPerDay > 0) {
+                    energyPerProbeKw = effects.energy_consumption_per_second / probesPerDay;
                 }
                 
-                const probesDisplay = probesPerSec >= 1e6 ? `${(probesPerSec/1e6).toFixed(1)}M` : 
-                                      probesPerSec >= 1e3 ? `${(probesPerSec/1e3).toFixed(1)}k` : 
-                                      probesPerSec.toFixed(2);
+                const probesDisplay = probesPerDay >= 1e6 ? `${(probesPerDay/1e6).toFixed(1)}M` : 
+                                      probesPerDay >= 1e3 ? `${(probesPerDay/1e3).toFixed(1)}k` : 
+                                      probesPerDay.toFixed(2);
                 
                 statsHtml = '<div class="building-stats">';
                 statsHtml += `<div class="building-stat-line">${probesDisplay} probes/s</div>`;
@@ -239,9 +239,9 @@ class PurchasePanel {
                     statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
                 }
                 statsHtml += '</div>';
-            } else if (effects.metal_production_per_second !== undefined) {
+            } else if (effects.metal_production_per_day !== undefined) {
                 // Mining building
-                const metalRate = effects.metal_production_per_second;
+                const metalRate = effects.metal_production_per_day;
                 const powerKw = effects.energy_consumption_per_second || 0;
                 const metalDisplay = metalRate >= 1e6 ? `${(metalRate/1e6).toFixed(1)}M` : 
                                      metalRate >= 1e3 ? `${(metalRate/1e3).toFixed(1)}k` : 

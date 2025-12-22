@@ -144,8 +144,10 @@ class TransferPanel {
             html += `</div>`;
         } else {
             // Continuous transfer
+            const ratePerDay = transfer.rate || 0;
+            const ratePct = transfer.ratePercentage !== undefined ? transfer.ratePercentage : (transfer.rate || 0);
             html += `<div class="transfer-item-details">`;
-            html += `<div class="transfer-detail">Rate: ${transfer.rate.toFixed(2)} probes/s</div>`;
+            html += `<div class="transfer-detail">Rate: ${ratePerDay.toFixed(2)} probes/day (${ratePct.toFixed(1)}% of current drones/day)</div>`;
             html += `</div>`;
             
             if (transfer.status === 'active') {
@@ -201,18 +203,19 @@ class TransferPanel {
         if (!transfer || transfer.type !== 'continuous') return;
         
         // Show edit dialog
-        const newRate = prompt(`Edit transfer rate (current: ${transfer.rate} probes/s):`, transfer.rate);
-        if (newRate !== null) {
-            const rate = parseFloat(newRate);
-            if (!isNaN(rate) && rate > 0) {
-                transfer.rate = rate;
+        const currentPct = transfer.ratePercentage !== undefined ? transfer.ratePercentage : (transfer.rate || 0);
+        const newPct = prompt(`Edit transfer rate (% of current drones per day, current: ${currentPct}%):`, currentPct);
+        if (newPct !== null) {
+            const ratePct = parseFloat(newPct);
+            if (!isNaN(ratePct) && ratePct > 0 && ratePct <= 100) {
+                transfer.ratePercentage = ratePct;
                 this.render();
                 
                 // Update in game engine
                 if (window.gameEngine) {
                     window.gameEngine.performAction('update_transfer', {
                         transfer_id: transferId,
-                        rate: rate
+                        rate_percentage: ratePct
                     }).catch(error => {
                         console.error('Failed to update transfer:', error);
                     });

@@ -481,7 +481,19 @@ class OrbitalZoneSelector {
                         orbitalEfficiency = building.orbital_efficiency[zoneId];
                     }
                     
-                    production += energyOutput * count * orbitalEfficiency;
+                    // Apply solar distance modifier (inverse square law) for energy structures
+                    let solarDistanceModifier = 1.0;
+                    // Check if this is an energy building by checking its category
+                    const buildingCategory = this._getBuildingCategory(buildingId);
+                    if (buildingCategory === 'energy' && zone && zone.radius_au) {
+                        const radiusAu = zone.radius_au;
+                        if (radiusAu > 0) {
+                            // Inverse square law: power at distance d = power_at_earth * (1.0 / d)²
+                            solarDistanceModifier = Math.pow(1.0 / radiusAu, 2);
+                        }
+                    }
+                    
+                    production += energyOutput * count * orbitalEfficiency * solarDistanceModifier;
                     consumption += energyCost * count;
                 }
             }
@@ -509,16 +521,19 @@ class OrbitalZoneSelector {
             const miningEnergyCostMultiplier = zone.mining_energy_cost_multiplier || 1.0;
             const baseEnergyCost = 453515; // watts per kg/s at Earth baseline
             const energyCostPerKgS = baseEnergyCost * Math.pow(1.0 + deltaVPenalty, 2) * miningEnergyCostMultiplier;
-            const harvestRatePerProbe = 0.5; // Config.PROBE_HARVEST_RATE
-            consumption += energyCostPerKgS * harvestRatePerProbe * harvestProbes;
+            const harvestRatePerProbePerDay = Config.PROBE_HARVEST_RATE; // kg/day per probe (100 kg/day base)
+            const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+            // Convert from kg/day to kg/s for energy cost calculation
+            const harvestRatePerProbePerSecond = harvestRatePerProbePerDay / SECONDS_PER_DAY;
+            consumption += energyCostPerKgS * harvestRatePerProbePerSecond * harvestProbes;
         }
         
         // Probe construction energy cost (from replicate allocation)
         const replicateAllocation = zoneAllocations.replicate || {};
         const replicateProbes = Object.values(replicateAllocation).reduce((a, b) => a + b, 0);
         if (replicateProbes > 0) {
-            const PROBE_BUILD_RATE = 0.1; // kg/s per probe
-            const PROBE_MASS = 10; // kg per probe
+            const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
+            const PROBE_MASS = 100; // kg per probe
             const probeConstructionRateKgS = replicateProbes * PROBE_BUILD_RATE;
             const probeConstructionEnergyCost = probeConstructionRateKgS * 250000; // 250kW per kg/s
             consumption += probeConstructionEnergyCost;
@@ -532,7 +547,7 @@ class OrbitalZoneSelector {
             const structureFraction = (100 - buildAllocation) / 100.0;
             const structureBuildingProbes = constructProbes * structureFraction;
             if (structureBuildingProbes > 0) {
-                const PROBE_BUILD_RATE = 0.1; // kg/s per probe
+                const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
                 const structureConstructionRateKgS = structureBuildingProbes * PROBE_BUILD_RATE;
                 const structureConstructionEnergyCost = structureConstructionRateKgS * 250000; // 250kW per kg/s
                 consumption += structureConstructionEnergyCost;
@@ -544,7 +559,7 @@ class OrbitalZoneSelector {
             const dysonAllocation = zoneAllocations.construct || {}; // Dyson uses construct allocation
             const dysonProbes = Object.values(dysonAllocation).reduce((a, b) => a + b, 0);
             if (dysonProbes > 0) {
-                const PROBE_BUILD_RATE = 0.1; // kg/s per probe
+                const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
                 const dysonConstructionRateKgS = dysonProbes * PROBE_BUILD_RATE;
                 const dysonConstructionEnergyCost = dysonConstructionRateKgS * 250000; // 250kW per kg/s
                 consumption += dysonConstructionEnergyCost;
@@ -575,9 +590,9 @@ class OrbitalZoneSelector {
         let slagMiningRate = 0; // kg/s slag
         let numProbes = 0;
         let totalProbeMass = 0;
-        let probesPerSecond = 0;
-        let dysonBuildRate = 0; // kg/s for dyson zone
-        let droneProductionRate = 0; // probes/s from structures in dyson zone
+        let probesPerDay = 0;
+        let dysonBuildRate = 0; // kg/day for dyson zone
+        let droneProductionRate = 0; // probes/day from structures in dyson zone
         let metalRemaining = 0;
         let massRemaining = 0;
         let slagProduced = 0;
@@ -590,7 +605,7 @@ class OrbitalZoneSelector {
             const zoneProbes = probesByZone[zoneId] || {};
             for (const [probeType, count] of Object.entries(zoneProbes)) {
                 numProbes += (count || 0);
-                totalProbeMass += (count || 0) * 10; // Config.PROBE_MASS = 10 kg
+                totalProbeMass += (count || 0) * Config.PROBE_MASS; // Config.PROBE_MASS = 100 kg
             }
             
             // Get probe allocations for this zone
@@ -602,7 +617,7 @@ class OrbitalZoneSelector {
                 const constructAllocation = zoneAllocations.construct || {};
                 const dysonProbes = Object.values(constructAllocation).reduce((a, b) => a + b, 0);
                 if (dysonProbes > 0) {
-                    const PROBE_BUILD_RATE = 0.1; // kg/s per probe
+                    const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
                     dysonBuildRate = dysonProbes * PROBE_BUILD_RATE;
                 }
                 
@@ -618,11 +633,14 @@ class OrbitalZoneSelector {
             } else {
                 // Regular zone: calculate mining rate
                 const harvestAllocation = zoneAllocations.harvest || {};
-                const baseHarvestRate = 0.5; // Config.PROBE_BASE_MINING_RATE
+                const baseHarvestRate = Config.PROBE_HARVEST_RATE; // kg/day per probe (100 kg/day base)
+                const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
                 for (const [probeType, count] of Object.entries(harvestAllocation)) {
                     if (count > 0) {
-                        const probeHarvestRate = baseHarvestRate * miningRateMultiplier * count;
-                        miningRate += probeHarvestRate;
+                        const probeHarvestRatePerDay = baseHarvestRate * miningRateMultiplier * count;
+                        // Convert from kg/day to kg/s for display (formatRate expects per-second)
+                        const probeHarvestRatePerSecond = probeHarvestRatePerDay / SECONDS_PER_DAY;
+                        miningRate += probeHarvestRatePerSecond;
                     }
                 }
                 
@@ -637,14 +655,14 @@ class OrbitalZoneSelector {
             let zoneProbeProductionRate = 0;
             for (const [probeType, count] of Object.entries(replicateAllocation)) {
                 if (count > 0) {
-                    // Base probe production: 0.1 kg/s per probe (Config.PROBE_BUILD_RATE)
+                    // Base probe production: 100.0 kg/day per probe (Config.PROBE_BUILD_RATE)
                     // Probe mass: 10 kg (Config.PROBE_MASS)
-                    // Production rate: (0.1 kg/s) / (10 kg/probe) = 0.01 probes/s per probe
-                    const probesPerSecondPerProbe = 0.1 / 10; // 0.01 probes/s per replicating probe
-                    zoneProbeProductionRate += count * probesPerSecondPerProbe;
+                    // Production rate: (100.0 kg/day) / (10 kg/probe) = 10 probes/day per probe
+                    const probesPerDayPerProbe = Config.PROBE_BUILD_RATE / Config.PROBE_MASS;
+                    zoneProbeProductionRate += count * probesPerDayPerProbe;
                 }
             }
-            probesPerSecond = zoneProbeProductionRate;
+            probesPerDay = zoneProbeProductionRate;
             
             // Get remaining resources
             metalRemaining = (this.gameState.zone_metal_remaining && this.gameState.zone_metal_remaining[zoneId]) || 0;
@@ -659,12 +677,9 @@ class OrbitalZoneSelector {
             zoneEnergy = this.calculateZoneEnergy(zoneId);
         }
         
-        // Format values
-        const formatRate = (rate) => {
-            if (rate === 0) return '0.00';
-            if (rate < 0.01) return rate.toFixed(4);
-            if (rate < 1) return rate.toFixed(2);
-            return rate.toExponential(2);
+        // Format values - use FormatUtils for rates with time units
+        const formatRate = (rate, unit = '') => {
+            return FormatUtils.formatRate(rate, unit);
         };
         
         // Format with 6 significant figures
@@ -744,18 +759,18 @@ class OrbitalZoneSelector {
                 </div>
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Dyson Construction Rate</div>
-                    <div class="probe-summary-value">${formatRate(dysonBuildRate)} kg/s</div>
+                    <div class="probe-summary-value">${formatRate(dysonBuildRate, 'kg')}</div>
                 </div>
                 ${droneProductionRate > 0 ? `
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Drone Production</div>
-                    <div class="probe-summary-value">${formatRate(droneProductionRate)} /s</div>
+                    <div class="probe-summary-value">${formatRate(droneProductionRate, 'probes')}</div>
                 </div>
                 ` : ''}
-                ${probesPerSecond > 0 ? `
+                ${probesPerDay > 0 ? `
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Probe Production Rate</div>
-                    <div class="probe-summary-value">${formatRate(probesPerSecond)} /s</div>
+                    <div class="probe-summary-value">${formatRate(probesPerDay, 'probes')}</div>
                 </div>
                 ` : ''}
                 <div class="probe-summary-item">
@@ -775,20 +790,20 @@ class OrbitalZoneSelector {
                     <div class="probe-summary-label">Probes</div>
                     <div class="probe-summary-value">${this.formatNumber(Math.floor(numProbes))}</div>
                 </div>
-                ${probesPerSecond > 0 ? `
+                ${probesPerDay > 0 ? `
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Probe Production Rate</div>
-                    <div class="probe-summary-value">${formatRate(probesPerSecond)} /s</div>
+                    <div class="probe-summary-value">${formatRate(probesPerDay, 'probes')}</div>
                 </div>
                 ` : ''}
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Mining Rate</div>
-                    <div class="probe-summary-value">${formatRate(metalMiningRate)} kg/s metal</div>
+                    <div class="probe-summary-value">${formatRate(metalMiningRate, 'kg')} metal</div>
                 </div>
                 ${slagMiningRate > 0 ? `
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Slag Production</div>
-                    <div class="probe-summary-value">${formatRate(slagMiningRate)} kg/s</div>
+                    <div class="probe-summary-value">${formatRate(slagMiningRate, 'kg')}</div>
                 </div>
                 ` : ''}
                 <div class="probe-summary-item">
@@ -1184,10 +1199,14 @@ class OrbitalZoneSelector {
         const distance = this.calculateTransferDistance(fromZone, toZone); // km
         const speed = this.getProbeMovementSpeed(); // km/s
         
-        // Transfer time = distance / speed (in seconds)
+        // Transfer time = distance / speed (calculated in days, converted to seconds for animation)
         const transferTimeSeconds = distance / speed;
         
-        return transferTimeSeconds;
+        // Convert to days (fundamental time unit)
+        const SECONDS_PER_DAY = 86400;
+        const transferTimeDays = transferTimeSeconds / SECONDS_PER_DAY;
+        
+        return transferTimeDays;
     }
     
     calculateTransferEnergyCost(fromZone, toZone, probeCount = 1) {
@@ -1228,25 +1247,9 @@ class OrbitalZoneSelector {
         };
     }
     
-    formatTransferTime(seconds) {
-        if (seconds < 60) {
-            return `${seconds.toFixed(1)} seconds`;
-        } else if (seconds < 3600) {
-            const minutes = seconds / 60;
-            return `${minutes.toFixed(1)} minutes`;
-        } else if (seconds < 86400) {
-            const hours = seconds / 3600;
-            return `${hours.toFixed(2)} hours`;
-        } else if (seconds < 2592000) {
-            const days = seconds / 86400;
-            return `${days.toFixed(2)} days`;
-        } else if (seconds < 31536000) {
-            const months = seconds / 2592000;
-            return `${months.toFixed(2)} months`;
-        } else {
-            const years = seconds / 31536000;
-            return `${years.toFixed(2)} years`;
-        }
+    formatTransferTime(days) {
+        // Use FormatUtils for consistent time formatting
+        return FormatUtils.formatTime(days);
     }
     
     createTransfer(fromZoneId, toZoneId, type, count, rate) {
@@ -1556,7 +1559,7 @@ class OrbitalZoneSelector {
     animateTransferProbe(transfer, fromX, fromY, toX, toY, path, svg) {
         // For one-time transfers, show a single probe icon traveling along the path
         const pathLength = path.getTotalLength();
-        const transferTime = transfer.transferTime || 1; // seconds
+        const transferTime = transfer.transferTime || 90.0; // days (default: 3 months = 90 days)
         const gameTime = (this.gameState && this.gameState.time) ? this.gameState.time : 0;
         const startTime = transfer.startTime || transfer.departureTime || gameTime;
         
@@ -1646,28 +1649,33 @@ class OrbitalZoneSelector {
     
     animateContinuousTransfer(transfer, fromX, fromY, toX, toY, path, svg) {
         const pathLength = path.getTotalLength();
-        const transferTime = transfer.transferTime || 3000; // seconds
+        const transferTime = transfer.transferTime || 90.0; // days (default: 3 months = 90 days)
         const gameTime = (this.gameState && this.gameState.time) ? this.gameState.time : 0;
         
         // Probe icon size
         const probeRadius = 4;
         const probeWidth = probeRadius * 2;
         
-        // Constant speed: probes move at pathLength / transferTime pixels per second
-        const constantSpeed = pathLength / transferTime; // pixels per second
+        // Transfer time is in days, convert to seconds for animation
+        const SECONDS_PER_DAY = 86400;
+        const transferTimeSeconds = transferTime * SECONDS_PER_DAY;
         
-        // Get transfer rate (probes per second)
-        const transferRate = transfer.rate || 0; // probes per second
+        // Constant speed: probes move at pathLength / transferTime pixels per second
+        const constantSpeed = pathLength / transferTimeSeconds; // pixels per second
+        
+        // Get transfer rate (probes per day, convert to per second for visualization)
+        const transferRatePerDay = transfer.rate || 0; // probes per day
+        const transferRate = transferRatePerDay / SECONDS_PER_DAY; // probes per second (for visualization)
         
         // Calculate spacing along path based on transfer rate
         // Make dots much less dense - use larger minimum spacing
         // Minimum spacing: at least 3 probe widths (12px) for better performance
         // Maximum spacing: proportional to transfer rate, but cap at reasonable density
         let pathSpacing = probeWidth * 3; // Default minimum spacing (3x probe width = 24px)
-        if (transferRate > 0 && transferTime > 0) {
-            // Calculate ideal spacing: pathLength / (transferRate * transferTime)
+        if (transferRate > 0 && transferTimeSeconds > 0) {
+            // Calculate ideal spacing: pathLength / (transferRate * transferTimeSeconds)
             // But ensure it's at least 3 probe widths, and cap maximum density
-            const idealSpacing = pathLength / (transferRate * transferTime);
+            const idealSpacing = pathLength / (transferRate * transferTimeSeconds);
             // Use larger spacing - at least 3 probe widths, and don't go below 20px spacing
             pathSpacing = Math.max(probeWidth * 3, Math.max(20, idealSpacing));
         }
@@ -1838,5 +1846,25 @@ class OrbitalZoneSelector {
             // Start animation
             animate();
         });
+    }
+    
+    _getBuildingCategory(buildingId) {
+        if (!window.gameDataLoader) return 'other';
+        const building = window.gameDataLoader.getBuildingById(buildingId);
+        if (!building) return 'other';
+        
+        // Check all building categories
+        const categories = ['energy', 'mining', 'factories', 'computing', 'transportation', 'research'];
+        const buildings = window.gameDataLoader.buildings || {};
+        
+        for (const category of categories) {
+            if (buildings[category] && Array.isArray(buildings[category])) {
+                if (buildings[category].some(b => b.id === buildingId)) {
+                    return category;
+                }
+            }
+        }
+        
+        return 'other';
     }
 }

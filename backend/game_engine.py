@@ -15,7 +15,7 @@ class GameEngine:
         
         # Game state
         self.tick_count = 0
-        self.time = 0.0  # seconds
+        self.time = 0.0  # days (fundamental time unit)
         
         # Resources
         self.energy = self.config.get('initial_energy', Config.INITIAL_ENERGY)
@@ -23,6 +23,7 @@ class GameEngine:
         self.intelligence = 0.0
         self.dexterity = 0.0  # Will be calculated after probes are initialized
         self.slag = 0.0  # Global slag pool
+        self.energy_stored = 0.0  # Energy stored in watt-days
         
         # Zone-specific slag and mass tracking
         self.zone_slag_produced = {}  # {zoneId: slag_produced}
@@ -57,20 +58,13 @@ class GameEngine:
             self.structures_by_zone[zone_id] = {}
             
             if zone_id == earth_zone_id:
-                # Earth starts with 1 probe, 1 solar array, 1 mining station, 1 mobile factory
+                # Earth starts with 1 probe, no structures
                 self.probes_by_zone[zone_id] = {'probe': initial_probes}
-                self.structures_by_zone[zone_id] = {
-                    'solar_array_basic': 1,
-                    'basic_mining_station': 1,
-                    'mobile_factory': 1
-                }
-                # Also add to legacy global structures for backward compatibility
-                self.structures['solar_array_basic'] = 1
-                self.structures['basic_mining_station'] = 1
-                self.structures['mobile_factory'] = 1
+                self.structures_by_zone[zone_id] = {}
             
             # Initialize zone allocations
             if zone.get('is_dyson_zone', False):
+                # Dyson zone: no probes at start
                 # Dyson zone: dyson, construct, replicate
                 self.probe_allocations_by_zone[zone_id] = {
                     'dyson': {'probe': 0},      # Building Dyson
@@ -165,7 +159,7 @@ class GameEngine:
         self.dyson_sphere_target_mass = self.config.get('dyson_sphere_target_mass', Config.DYSON_SPHERE_TARGET_MASS)
         
         # Probe construction progress tracking: {probe_type: progress_in_kg}
-        # Each probe is 10 kg, so progress tracks kg built toward next probe
+        # Each probe is 100 kg, so progress tracks kg built toward next probe
         self.probe_construction_progress = {probe_type: 0.0 for probe_type in self.probes.keys()}
         
         # Zone-based replication progress: {zoneId: {probe_type: progress_in_kg}}
@@ -201,6 +195,7 @@ class GameEngine:
             engine.metal = state.get('metal', Config.INITIAL_METAL)
             engine.intelligence = state.get('intelligence', 0.0)
             engine.slag = state.get('slag', 0.0)
+            engine.energy_stored = state.get('energy_stored', 0.0)
             engine.zone_slag_produced = state.get('zone_slag_produced', engine.zone_slag_produced)
             engine.zone_mass_remaining = state.get('zone_mass_remaining', engine.zone_mass_remaining)
             
@@ -294,7 +289,9 @@ class GameEngine:
                     tier_id = tier['id']
                     self.research[tree_id][tier_id] = {
                         'tranches_completed': 0,
-                        'enabled': False
+                        'enabled': False,
+                        'start_time': None,  # Time when research started (in days)
+                        'completion_time': None  # Time when research completed (in days)
                     }
             # Handle subcategories (computer systems)
             if 'subcategories' in tree_data:
@@ -306,8 +303,216 @@ class GameEngine:
                             tier_key = subcat_id + '_' + tier_id
                             self.research[tree_id][tier_key] = {
                                 'tranches_completed': 0,
-                                'enabled': False
+                                'enabled': False,
+                                'start_time': None,  # Time when research started (in days)
+                                'completion_time': None  # Time when research completed (in days)
                             }
+    
+    def _get_research_tree(self, skill_category):
+        """Get research tree data for a skill category."""
+        return self.data_loader.get_research_tree(skill_category)
+    
+    def _calculate_research_bonus(self, skill_category, skill_name=None):
+        """Calculate total bonus from research for a skill category.
+        
+        Uses exponential compounding system:
+        - During research: bonus = base_bonus * e^(0.20 * time_in_days)
+        - When tier completes: principal doubles, then continues: bonus = (base_bonus * 2) * e^(0.20 * time_since_completion)
+        - Each tier compounds independently and continuously
+        - Tiers compound multiplicatively: total_bonus = tier1_bonus * tier2_bonus * ...
+        
+        Args:
+            skill_category: Research tree ID (e.g., 'propulsion_systems')
+            skill_name: Optional subcategory name (e.g., 'processing' for computer_systems)
+        
+        Returns:
+            Total bonus multiplier (multiplicative product of all tier bonuses)
+        """
+        import math
+        
+        total_bonus_multiplier = 1.0  # Start with 1.0 for multiplicative compounding
+        research_tree = self._get_research_tree(skill_category)
+        
+        if not research_tree:
+            return 0.0  # No bonus if no research tree
+        
+        # Handle subcategories (e.g., computer_systems has processing, memory, etc.)
+        if skill_name and 'subcategories' in research_tree:
+            if skill_name in research_tree['subcategories']:
+                subcat_data = research_tree['subcategories'][skill_name]
+                if 'tiers' in subcat_data:
+                    for tier in subcat_data['tiers']:
+                        tier_key = skill_name + '_' + tier['id']
+                        progress = self.research.get(skill_category, {}).get(tier_key, {})
+                        tranches_completed = progress.get('tranches_completed', 0)
+                        is_complete = tranches_completed >= tier['tranches']
+                        start_time = progress.get('start_time')
+                        completion_time = progress.get('completion_time')
+                        
+                        if start_time is not None:
+                            base_bonus = tier.get('total_bonus', 0.0)
+                            time_elapsed_days = self.time - start_time
+                            
+                            if is_complete and completion_time is not None:
+                                # Tier completed: principal doubles, then continues compounding
+                                time_since_completion_days = self.time - completion_time
+                                # Base bonus doubles on completion
+                                effective_base = base_bonus * 2.0
+                                # Continue compounding from completion time
+                                tier_bonus = effective_base * math.exp(0.20 * time_since_completion_days)
+                            else:
+                                # During research: compound continuously
+                                tier_bonus = base_bonus * math.exp(0.20 * time_elapsed_days)
+                            
+                            # Multiplicative compounding: multiply by (1 + tier_bonus)
+                            total_bonus_multiplier *= (1.0 + tier_bonus)
+        else:
+            # Regular tiers
+            if 'tiers' in research_tree:
+                for tier in research_tree['tiers']:
+                    tier_id = tier['id']
+                    progress = self.research.get(skill_category, {}).get(tier_id, {})
+                    tranches_completed = progress.get('tranches_completed', 0)
+                    is_complete = tranches_completed >= tier['tranches']
+                    start_time = progress.get('start_time')
+                    completion_time = progress.get('completion_time')
+                    
+                    if start_time is not None:
+                        base_bonus = tier.get('total_bonus', 0.0)
+                        time_elapsed_days = self.time - start_time
+                        
+                        if is_complete and completion_time is not None:
+                            # Tier completed: principal doubles, then continues compounding
+                            time_since_completion_days = self.time - completion_time
+                            # Base bonus doubles on completion
+                            effective_base = base_bonus * 2.0
+                            # Continue compounding from completion time
+                            tier_bonus = effective_base * math.exp(0.20 * time_since_completion_days)
+                        else:
+                            # During research: compound continuously
+                            tier_bonus = base_bonus * math.exp(0.20 * time_elapsed_days)
+                        
+                        # Multiplicative compounding: multiply by (1 + tier_bonus)
+                        total_bonus_multiplier *= (1.0 + tier_bonus)
+        
+        # Return the additive bonus (multiplier - 1.0) to match existing API
+        return total_bonus_multiplier - 1.0
+    
+    def get_base_skill_value(self, skill_category, skill_name=None):
+        """Get base skill value before research modifiers.
+        
+        Args:
+            skill_category: Skill category ID
+            skill_name: Optional subcategory name
+        
+        Returns:
+            Base skill value
+        """
+        from backend.config import Config
+        
+        # Base values for different skill categories
+        base_values = {
+            'propulsion_systems': Config.BASE_PROPULSION_ISP,  # specific impulse in seconds
+            'locomotion_systems': 1.0,  # efficiency multiplier
+            'acds': 1.0,  # efficiency multiplier
+            'robotic_systems': 1.0,  # efficiency multiplier
+            'computer_systems': 1.0,  # compute power multiplier (calculated from sub-skills)
+            'production_efficiency': 1.0,  # production rate multiplier
+            'recycling_efficiency': 0.75,  # base recycling efficiency (75%)
+            'energy_collection': 1.0,  # energy collection efficiency multiplier
+            'solar_concentrators': 1.0,  # solar concentration multiplier
+            'energy_storage': 1.0,  # storage capacity multiplier
+            'energy_transport': 1.0,  # transport efficiency multiplier
+            'energy_matter_conversion': 0.0,  # conversion rate (starts at 0)
+            'dyson_swarm_construction': 1.0,  # construction rate multiplier
+        }
+        
+        # For computer_systems subcategories
+        if skill_category == 'computer_systems' and skill_name:
+            return 1.0  # Base compute sub-skill value
+        
+        return base_values.get(skill_category, 1.0)
+    
+    def get_skill_value(self, skill_category, skill_name=None):
+        """Get effective skill value with research bonuses applied.
+        
+        Args:
+            skill_category: Skill category ID
+            skill_name: Optional subcategory name
+        
+        Returns:
+            Effective skill value (base * (1 + bonus))
+        """
+        base_value = self.get_base_skill_value(skill_category, skill_name)
+        research_bonus = self._calculate_research_bonus(skill_category, skill_name)
+        return base_value * (1.0 + research_bonus)
+    
+    def get_compute_power(self):
+        """Calculate effective compute power from computer_systems subcategories.
+        
+        Uses geometric mean: compute = (processing × memory × interface × transmission)^0.25
+        
+        Returns:
+            Effective compute power multiplier
+        """
+        processing = self.get_skill_value('computer_systems', 'processing')
+        memory = self.get_skill_value('computer_systems', 'memory')
+        interface = self.get_skill_value('computer_systems', 'interface')
+        transmission = self.get_skill_value('computer_systems', 'transmission')
+        
+        # Geometric mean
+        compute_power = (processing * memory * interface * transmission) ** 0.25
+        return compute_power
+    
+    def get_dyson_target_mass(self):
+        """Calculate effective Dyson sphere target mass with research modifiers.
+        
+        Base target mass: 5e24 kg
+        Research modifiers can reduce the required mass.
+        
+        Returns:
+            Effective target mass in kg
+        """
+        from backend.config import Config
+        base_target_mass = Config.DYSON_SPHERE_TARGET_MASS  # 5e24 kg
+        
+        # Research modifiers can reduce the required mass
+        # (e.g., better construction techniques, more efficient materials)
+        dyson_construction_bonus = self._calculate_research_bonus('dyson_swarm_construction')
+        
+        # Mass reduction: 10% reduction per 100% bonus (example formula)
+        # Adjust this formula as needed for game balance
+        mass_reduction = min(0.5, dyson_construction_bonus * 0.1)  # Cap at 50% reduction
+        effective_mass = base_target_mass * (1.0 - mass_reduction)
+        
+        return effective_mass
+    
+    def get_dyson_energy_production(self):
+        """Calculate energy production from Dyson sphere mass.
+        
+        Base production: 5 kW per kg of Dyson sphere mass
+        From: 5 kW/m² / 1 kg/m² = 5 kW/kg
+        
+        Returns:
+            Energy production in watts
+        """
+        from backend.config import Config
+        
+        # Base production: 5 kW per kg of Dyson sphere mass
+        base_energy_per_kg = Config.DYSON_POWER_PER_KG  # 5000 watts per kg
+        
+        # Calculate base energy production
+        base_production = self.dyson_sphere_mass * base_energy_per_kg
+        
+        # Apply energy collection skill modifiers
+        energy_collection_bonus = self._calculate_research_bonus('energy_collection')
+        solar_concentrators_bonus = self._calculate_research_bonus('solar_concentrators')
+        
+        # Sum bonuses (they're multipliers, so additive)
+        total_bonus = energy_collection_bonus + solar_concentrators_bonus
+        effective_production = base_production * (1.0 + total_bonus)
+        
+        return effective_production
     
     def get_state(self):
         """Get current game state as dictionary."""
@@ -366,6 +571,8 @@ class GameEngine:
             'intelligence': self.intelligence,
             'dexterity': self.dexterity,
             'slag': self.slag,
+            'energy_stored': self.energy_stored,
+            'energy_storage_capacity': self._calculate_energy_storage_capacity(),
             'probes': self.probes,
             'probes_by_zone': self.probes_by_zone,
             'probe_allocations': self.probe_allocations,
@@ -381,8 +588,8 @@ class GameEngine:
             'zone_min_probes': self.zone_min_probes,
             'research': self.research,
             'dyson_sphere_mass': self.dyson_sphere_mass,
-            'dyson_sphere_target_mass': self.dyson_sphere_target_mass,
-            'dyson_sphere_progress': self.dyson_sphere_mass / self.dyson_sphere_target_mass if self.dyson_sphere_target_mass > 0 else 0,
+            'dyson_sphere_target_mass': self.get_dyson_target_mass(),  # Use dynamic target mass with research modifiers
+            'dyson_sphere_progress': self.dyson_sphere_mass / self.get_dyson_target_mass() if self.get_dyson_target_mass() > 0 else 0,
             'factory_production': self.factory_production,
             'economy_slider': self.economy_slider,
             'mine_build_slider': self.mine_build_slider,
@@ -472,7 +679,34 @@ class GameEngine:
         energy_consumption = non_compute_energy_consumption + compute_energy_consumption
         net_energy_available = total_energy_available - energy_consumption
         
-        # Calculate energy throttle factor if there's a shortfall
+        # Calculate energy storage capacity
+        storage_capacity = self._calculate_energy_storage_capacity()
+        
+        # Convert net energy (watts) to watt-days for storage
+        # net_energy_available is in watts, delta_time is in days
+        # So net_watt_days = watts * days = watt-days
+        net_watt_days = net_energy_available * delta_time
+        
+        # Handle energy storage
+        if net_watt_days > 0:
+            # Excess energy - add to storage (capped at capacity)
+            self.energy_stored = min(storage_capacity, self.energy_stored + net_watt_days)
+        else:
+            # Energy deficit - draw from storage first
+            energy_deficit_watt_days = abs(net_watt_days)
+            if self.energy_stored >= energy_deficit_watt_days:
+                # Storage can cover the deficit
+                self.energy_stored -= energy_deficit_watt_days
+                net_energy_available = 0  # Deficit fully covered
+            else:
+                # Storage can only partially cover the deficit
+                net_energy_available = -(energy_deficit_watt_days - self.energy_stored)  # Remaining deficit in watts
+                self.energy_stored = 0
+        
+        # Clamp storage to capacity (safety check)
+        self.energy_stored = max(0.0, min(storage_capacity, self.energy_stored))
+        
+        # Calculate energy throttle factor if there's still a shortfall after storage
         energy_throttle = 1.0
         if net_energy_available < 0:
             # Energy shortfall - throttle all activities proportionally
@@ -521,7 +755,7 @@ class GameEngine:
             structure_building_fraction = 1.0 - (build_allocation / 100.0)
             structure_building_probes = constructing_probes * structure_building_fraction
             if structure_building_probes > 0:
-                # Base build rate: 0.1 kg/s per probe
+                # Base build rate: 10.0 kg/day per probe
                 structure_construction_rate_kg_s = structure_building_probes * Config.PROBE_BUILD_RATE
                 # Apply energy throttling
                 structure_construction_rate_kg_s = structure_construction_rate_kg_s * energy_throttle
@@ -589,8 +823,14 @@ class GameEngine:
         probe_building_fraction = build_allocation / 100.0
         probe_building_probes = constructing_probes * probe_building_fraction
         
-        # Base build rate: 0.1 kg/s per probe
-        base_probe_build_rate_kg_s = probe_building_probes * Config.PROBE_BUILD_RATE
+        # Base build rate: 10.0 kg/day per probe
+        # Apply skill multipliers for building rate: locomotion, attitude control, robotics
+        locomotion_multiplier = self.get_skill_value('locomotion_systems')
+        acds_multiplier = self.get_skill_value('acds')
+        robotics_multiplier = self.get_skill_value('robotic_systems')
+        building_skill_multiplier = locomotion_multiplier * acds_multiplier * robotics_multiplier
+        
+        base_probe_build_rate_kg_s = probe_building_probes * Config.PROBE_BUILD_RATE * building_skill_multiplier
         
         # Apply energy throttling
         probe_build_rate_kg_s = base_probe_build_rate_kg_s * energy_throttle
@@ -650,8 +890,8 @@ class GameEngine:
                             category = self._get_building_category(building_id)
                             if category == 'factories':
                                 effects = building.get('effects', {})
-                                probes_per_second = effects.get('probes_per_second', 0.0)
-                                zone_factory_rate += probes_per_second * count
+                                probes_per_day = effects.get('probe_production_per_day', 0.0)
+                                zone_factory_rate += probes_per_day * count
                     
                     if zone_factory_rate > 0:
                         zone_factory_capacity[zone_id] = zone_factory_rate * metal_cost_per_probe
@@ -817,14 +1057,20 @@ class GameEngine:
                 if probes_built_this_tick > 0:
                     self._auto_allocate_probes()
         
-        # Structure building (probes building structures using 0.1 kg/s per probe)
+        # Structure building (probes building structures using 10.0 kg/day per probe)
         # Note: In Dyson zone, probes allocated to "construct" only build structures (not Dyson)
         # Dyson construction uses probes allocated to "dyson" activity (via Dyson slider)
         structure_building_fraction = 1.0 - (build_allocation / 100.0)
         structure_building_probes = constructing_probes * structure_building_fraction
         
         # Calculate total structure build rate
-        base_structure_build_rate_kg_s = structure_building_probes * Config.PROBE_BUILD_RATE
+        # Apply skill multipliers for building rate: locomotion, attitude control, robotics
+        locomotion_multiplier = self.get_skill_value('locomotion_systems')
+        acds_multiplier = self.get_skill_value('acds')
+        robotics_multiplier = self.get_skill_value('robotic_systems')
+        building_skill_multiplier = locomotion_multiplier * acds_multiplier * robotics_multiplier
+        
+        base_structure_build_rate_kg_s = structure_building_probes * Config.PROBE_BUILD_RATE * building_skill_multiplier
         structure_build_rate_kg_s = base_structure_build_rate_kg_s * energy_throttle * metal_throttle
         
         # Use structure build rate for building construction (only structures, not Dyson)
@@ -935,14 +1181,18 @@ class GameEngine:
             dyson_probes = dyson_activity.get('dyson', 0)
             
             if dyson_probes > 0:
-                # Base rate: 0.1 kg/s per probe
-                base_dyson_rate = dyson_probes * Config.PROBE_BUILD_RATE
+                # Apply Dyson construction skill multipliers
+                dyson_construction_multiplier = self.get_skill_value('dyson_swarm_construction')
+                # Also apply general building skills
+                locomotion_multiplier = self.get_skill_value('locomotion_systems')
+                acds_multiplier = self.get_skill_value('acds')
+                robotics_multiplier = self.get_skill_value('robotic_systems')
+                building_skill_multiplier = locomotion_multiplier * acds_multiplier * robotics_multiplier
+                
+                # Base rate: 10.0 kg/day per probe, modified by skills
+                base_dyson_rate = dyson_probes * Config.PROBE_BUILD_RATE * dyson_construction_multiplier * building_skill_multiplier
                 # Apply throttling
                 dyson_construction_rate_kg_s = base_dyson_rate * energy_throttle * metal_throttle
-                
-                # Apply research bonuses
-                research_bonus = self._get_research_bonus('dyson_swarm_construction', 'dyson_construction_rate_multiplier', 1.0)
-                dyson_construction_rate_kg_s *= research_bonus
         
         idle_probes_dyson = self._update_dyson_sphere_construction(delta_time, dyson_construction_rate_kg_s)
         
@@ -955,9 +1205,11 @@ class GameEngine:
     def _calculate_energy_production(self):
         """Calculate energy production rate.
         
+        Includes:
+        - Dyson sphere energy production (from mass × 5 kW/kg, modified by energy collection skills)
+        - Energy structure production (solar arrays, etc., modified by energy collection skill)
+        
         Dyson sphere power is allocated between economy (energy) and compute based on slider.
-        - During construction: 5 kW per kg
-        - When complete: All star's power (~3.8e26 W)
         Allocation: dyson_power_allocation (0 = all economy, 100 = all compute)
         """
         rate = 0.0
@@ -966,22 +1218,74 @@ class GameEngine:
         dyson_power_allocation = getattr(self, 'dyson_power_allocation', 0)  # 0 = all economy, 100 = all compute
         economy_fraction = (100 - dyson_power_allocation) / 100.0  # Fraction going to economy/energy
         
-        if self.dyson_sphere_mass >= self.dyson_sphere_target_mass:
+        if self.dyson_sphere_mass >= self.get_dyson_target_mass():
             # Complete Dyson sphere: all star's power
             # Sun's total power output: ~3.8e26 W
             sun_total_power = 3.8e26  # watts
             # Allocate based on slider
             rate += sun_total_power * economy_fraction
         else:
-            # During construction: 5 kW per kg at 0.5 AU
-            # At 0.5 AU, areal density is 0.7 kg/m^2, solar irradiance is 5 kW/m^2
-            # So each kg generates 5 kW of power
-            dyson_power = self.dyson_sphere_mass * 5000  # 5000W = 5 kW per kg
+            # During construction: use get_dyson_energy_production() which applies skill modifiers
+            dyson_power = self.get_dyson_energy_production()
             # Allocate based on slider
             rate += dyson_power * economy_fraction
         
         # Energy structures (solar arrays, reactors, etc.)
+        # Apply energy collection skill modifiers
+        energy_collection_multiplier = self.get_skill_value('energy_collection')
+        
+        # Load orbital zones for distance calculations
+        zones = self.data_loader.load_orbital_mechanics()
+        zone_map = {zone['id']: zone for zone in zones.get('orbital_zones', [])}
+        
+        # Zone-based structures (new system)
+        for zone_id, zone_structures in self.structures_by_zone.items():
+            for building_id, count in zone_structures.items():
+                building = self.data_loader.get_building_by_id(building_id)
+                if building:
+                    category = self._get_building_category(building_id)
+                    if category == 'energy':
+                        effects = building.get('effects', {})
+                        energy_output = effects.get('energy_production_per_second', 0)
+                        
+                        # Apply orbital efficiency
+                        orbital_efficiency = 1.0
+                        if 'orbital_efficiency' in building:
+                            orbital_efficiency = building['orbital_efficiency'].get(zone_id, 1.0)
+                        
+                        # Apply base energy at Earth if specified
+                        base_energy = effects.get('base_energy_at_earth', energy_output)
+                        if base_energy != energy_output:
+                            # Scale by orbital efficiency
+                            energy_output = base_energy * orbital_efficiency
+                        
+                        # Apply solar distance modifier (inverse square law)
+                        # Power is proportional to 1/distance², with Earth (1.0 AU) as baseline
+                        solar_distance_modifier = 1.0
+                        if zone_id in zone_map:
+                            zone = zone_map[zone_id]
+                            radius_au = zone.get('radius_au', 1.0)
+                            if radius_au > 0:
+                                # Inverse square law: power at distance d = power_at_earth * (1.0 / d)²
+                                solar_distance_modifier = (1.0 / radius_au) ** 2
+                        energy_output *= solar_distance_modifier
+                        
+                        # Apply energy collection skill multiplier
+                        energy_output *= energy_collection_multiplier
+                        
+                        rate += energy_output * count
+        
+        # Legacy global structures for backward compatibility
         for building_id, count in self.structures.items():
+            # Skip if already counted in zone structures
+            already_counted = False
+            for zone_structures in self.structures_by_zone.values():
+                if building_id in zone_structures:
+                    already_counted = True
+                    break
+            if already_counted:
+                continue
+            
             building = self.data_loader.get_building_by_id(building_id)
             if building:
                 category = self._get_building_category(building_id)
@@ -989,13 +1293,11 @@ class GameEngine:
                     effects = building.get('effects', {})
                     energy_output = effects.get('energy_production_per_second', 0)
                     
-                    # Apply orbital efficiency
-                    zones = self.data_loader.load_orbital_mechanics()
-                    # For now, use harvest_zone for efficiency (will be updated to zone-specific)
-                    zone_id = self.harvest_zone
+                    # Apply orbital efficiency (use default zone)
+                    default_zone = 'earth'
                     orbital_efficiency = 1.0
                     if 'orbital_efficiency' in building:
-                        orbital_efficiency = building['orbital_efficiency'].get(zone_id, 1.0)
+                        orbital_efficiency = building['orbital_efficiency'].get(default_zone, 1.0)
                     
                     # Apply base energy at Earth if specified
                     base_energy = effects.get('base_energy_at_earth', energy_output)
@@ -1003,9 +1305,61 @@ class GameEngine:
                         # Scale by orbital efficiency
                         energy_output = base_energy * orbital_efficiency
                     
+                    # Legacy structures default to Earth distance (1.0 AU = no modifier)
+                    # solar_distance_modifier = 1.0 (Earth baseline)
+                    
+                    # Apply energy collection skill multiplier
+                    energy_output *= energy_collection_multiplier
+                    
                     rate += energy_output * count
         
         return rate
+    
+    def _calculate_energy_storage_capacity(self):
+        """Calculate total energy storage capacity from storage buildings.
+        
+        Returns:
+            Total storage capacity in watt-days
+        """
+        capacity = 0.0
+        
+        # Get research bonus for storage capacity if applicable
+        storage_capacity_multiplier = self.get_skill_value('energy_storage')
+        
+        # Check structures by zone
+        for zone_id, zone_structures in self.structures_by_zone.items():
+            for building_id, count in zone_structures.items():
+                building = self.data_loader.get_building_by_id(building_id)
+                if building:
+                    category = self._get_building_category(building_id)
+                    if category == 'storage':
+                        effects = building.get('effects', {})
+                        storage_capacity = effects.get('energy_storage_capacity', 0.0)
+                        capacity += storage_capacity * count
+        
+        # Legacy global structures for backward compatibility
+        for building_id, count in self.structures.items():
+            # Skip if already counted in zone structures
+            already_counted = False
+            for zone_structures in self.structures_by_zone.values():
+                if building_id in zone_structures:
+                    already_counted = True
+                    break
+            if already_counted:
+                continue
+            
+            building = self.data_loader.get_building_by_id(building_id)
+            if building:
+                category = self._get_building_category(building_id)
+                if category == 'storage':
+                    effects = building.get('effects', {})
+                    storage_capacity = effects.get('energy_storage_capacity', 0.0)
+                    capacity += storage_capacity * count
+        
+        # Apply research bonus
+        capacity *= storage_capacity_multiplier
+        
+        return capacity
     
     def _calculate_energy_consumption(self):
         """Calculate energy consumption rate."""
@@ -1054,38 +1408,40 @@ class GameEngine:
                 # For Mercury: 500000 = base * (1.05)^2 = base * 1.1025
                 # base ≈ 453515 W
                 delta_v_penalty = harvest_zone_data.get('delta_v_penalty', 0.1)
-                base_energy_cost = 453515  # watts per kg/s at Earth baseline (for 500kW at Mercury)
-                energy_cost_per_kg_s = base_energy_cost * (1.0 + delta_v_penalty) ** 2
-                harvest_rate_per_probe = Config.PROBE_HARVEST_RATE  # kg/s per probe
-                harvest_energy_cost = energy_cost_per_kg_s * harvest_rate_per_probe * total_harvest_probes
+                base_energy_cost = 453515 / 86400  # watts per kg/day at Earth baseline (converted from per-second)
+                energy_cost_per_kg_day = base_energy_cost * (1.0 + delta_v_penalty) ** 2
+                harvest_rate_per_probe = Config.PROBE_HARVEST_RATE  # kg/day per probe
+                harvest_energy_cost = energy_cost_per_kg_day * harvest_rate_per_probe * total_harvest_probes
                 
                 # Apply propulsion systems reduction to harvesting costs
                 harvest_energy_cost *= (1.0 - propulsion_reduction)
                 consumption += harvest_energy_cost
         
-        # Probe construction energy cost: 250kW per kg/s = 250000W per kg/s
+        # Probe construction energy cost: 250kW per kg/s = 250000W per kg/s, converted to per-day
+        # Energy cost: 250000 W / (kg/s) = 250000 / 86400 W / (kg/day) ≈ 2.8935 W per kg/day
+        ENERGY_COST_PER_KG_DAY = 250000 / 86400  # W per kg/day
+        
         # Calculate probe construction rate
         probe_prod_rates, _, factory_metal_cost_per_probe = self._calculate_probe_production()
-        total_probe_production_rate = sum(probe_prod_rates.values())  # probes/s
+        total_probe_production_rate = sum(probe_prod_rates.values())  # probes/day
         # Use factory metal cost if available, otherwise default
         metal_cost_per_probe = factory_metal_cost_per_probe if factory_metal_cost_per_probe > 0 else Config.PROBE_MASS
-        probe_construction_rate_kg_s = total_probe_production_rate * metal_cost_per_probe
-        probe_construction_energy_cost = probe_construction_rate_kg_s * 250000  # 250000W per kg/s
+        probe_construction_rate_kg_day = total_probe_production_rate * metal_cost_per_probe
+        probe_construction_energy_cost = probe_construction_rate_kg_day * ENERGY_COST_PER_KG_DAY
         consumption += probe_construction_energy_cost
         
-        # Structure construction energy cost: 250kW per kg/s = 250000W per kg/s
-        # Probes assigned to structures construct at 0.1 kg/s per probe
+        # Structure construction energy cost
         construct_allocation = self.probe_allocations.get('construct', {})
         constructing_probes = sum(construct_allocation.values())
         build_allocation = getattr(self, 'build_allocation', 100)  # 0 = all structures, 100 = all probes
         structure_constructing_power = constructing_probes * (1.0 - build_allocation / 100.0)
-        structure_construction_rate_kg_s = structure_constructing_power * Config.PROBE_BUILD_RATE  # 0.1 kg/s per probe
-        structure_construction_energy_cost = structure_construction_rate_kg_s * 250000  # 250000W per kg/s
+        structure_construction_rate_kg_day = structure_constructing_power * Config.PROBE_BUILD_RATE  # kg/day per probe
+        structure_construction_energy_cost = structure_construction_rate_kg_day * ENERGY_COST_PER_KG_DAY
         consumption += structure_construction_energy_cost
         
-        # Dyson construction energy cost: 250kW per kg/s = 250000W per kg/s
+        # Dyson construction energy cost
         dyson_construction_rate = self._calculate_dyson_construction_rate()
-        dyson_construction_energy_cost = dyson_construction_rate * 250000  # 250000W per kg/s
+        dyson_construction_energy_cost = dyson_construction_rate * ENERGY_COST_PER_KG_DAY
         consumption += dyson_construction_energy_cost
         
         # Compute energy consumption: 1 kW per PFLOPS/s (only if research projects active)
@@ -1138,25 +1494,26 @@ class GameEngine:
             harvest_zone_data = next((z for z in zones if z['id'] == self.harvest_zone), None)
             if harvest_zone_data:
                 delta_v_penalty = harvest_zone_data.get('delta_v_penalty', 0.1)
-                base_energy_cost = 453515  # watts per kg/s at Earth baseline
-                energy_cost_per_kg_s = base_energy_cost * (1.0 + delta_v_penalty) ** 2
-                harvest_rate_per_probe = Config.PROBE_HARVEST_RATE
-                harvest_energy_cost = energy_cost_per_kg_s * harvest_rate_per_probe * total_harvest_probes
+                base_energy_cost = 453515 / 86400  # watts per kg/day at Earth baseline (converted from per-second)
+                energy_cost_per_kg_day = base_energy_cost * (1.0 + delta_v_penalty) ** 2
+                harvest_rate_per_probe = Config.PROBE_HARVEST_RATE  # kg/day per probe
+                harvest_energy_cost = energy_cost_per_kg_day * harvest_rate_per_probe * total_harvest_probes
                 harvest_energy_cost *= (1.0 - propulsion_reduction)
                 consumption += harvest_energy_cost
         
-        # Probe construction energy cost
+        # Probe construction energy cost (converted to per-day)
+        ENERGY_COST_PER_KG_DAY = 250000 / 86400  # W per kg/day
         probe_prod_rates, _, factory_metal_cost_per_probe = self._calculate_probe_production()
-        total_probe_production_rate = sum(probe_prod_rates.values())
+        total_probe_production_rate = sum(probe_prod_rates.values())  # probes/day
         # Use factory metal cost if available, otherwise default
         metal_cost_per_probe = factory_metal_cost_per_probe if factory_metal_cost_per_probe > 0 else Config.PROBE_MASS
-        probe_construction_rate_kg_s = total_probe_production_rate * metal_cost_per_probe
-        probe_construction_energy_cost = probe_construction_rate_kg_s * 250000
+        probe_construction_rate_kg_day = total_probe_production_rate * metal_cost_per_probe
+        probe_construction_energy_cost = probe_construction_rate_kg_day * ENERGY_COST_PER_KG_DAY
         consumption += probe_construction_energy_cost
         
         # Dyson construction energy cost
         dyson_construction_rate = self._calculate_dyson_construction_rate()
-        dyson_construction_energy_cost = dyson_construction_rate * 250000
+        dyson_construction_energy_cost = dyson_construction_rate * ENERGY_COST_PER_KG_DAY
         consumption += dyson_construction_energy_cost
         
         # Apply production efficiency bonus
@@ -1262,23 +1619,28 @@ class GameEngine:
             policy = self.zone_policies.get(zone_id, {})
             
             if zone.get('is_dyson_zone', False):
-                # Dyson zone: Three sliders
-                # 1. Dyson build slider: splits between Dyson construction and other (build/replicate)
-                # Slider: 0 = all Build, 100 = all Dyson (inverted from visual)
-                dyson_build_slider = policy.get('dyson_build_slider', 90) / 100.0
-                # Invert: slider 100 (bottom/Build label) = all Dyson, slider 0 (top/Dyson label) = all Build
-                dyson_fraction = dyson_build_slider  # 100 = all Dyson, 0 = all Build
+                # Dyson zone: Two sliders
+                # 1. Dyson allocation slider: splits between Dyson construction and Build
+                # dyson_allocation_slider: 0 = all Build (bottom), 100 = all Dyson (top)
+                # Fallback to dyson_build_slider for backward compatibility (inverted)
+                dyson_allocation_slider = policy.get('dyson_allocation_slider')
+                if dyson_allocation_slider is None:
+                    # Backward compatibility: invert dyson_build_slider
+                    dyson_build_slider = policy.get('dyson_build_slider', 90)
+                    dyson_allocation_slider = 100 - dyson_build_slider
+                dyson_fraction = dyson_allocation_slider / 100.0  # 0 = all Build, 100 = all Dyson
                 dyson_build_count = zone_probes * dyson_fraction
-                other_count = zone_probes * (1.0 - dyson_fraction)
+                build_count = zone_probes * (1.0 - dyson_fraction)  # Remaining goes to Build
                 
-                # 2. Replication slider: splits "other" between structures and replicate
+                # 2. Replication slider: splits Build between structures and replicate
+                # replication_slider: 0 = all structures, 100 = all replicate
                 replication_slider = policy.get('replication_slider', 100) / 100.0
-                replicate_count = other_count * replication_slider
-                construct_count = other_count * (1.0 - replication_slider)
+                replicate_count = build_count * replication_slider
+                construct_count = build_count * (1.0 - replication_slider)
                 
                 activities[zone_id] = {
                     'construct': construct_count,  # Building structures
-                    'replicate': replicate_count,
+                    'replicate': replicate_count,  # Replicating probes
                     'harvest': 0,
                     'dyson': dyson_build_count  # Building Dyson
                 }
@@ -1337,10 +1699,20 @@ class GameEngine:
                     harvest_multiplier = effects.get('harvest_efficiency_multiplier', 1.0)
                 
                 # Calculate harvest rate per probe (kg/s per probe)
+                # Use skill system: locomotion, attitude control, and robotics affect mining rate
                 from backend.config import Config
                 base_harvest_rate = Config.PROBE_BASE_MINING_RATE
                 mining_rate_multiplier = zone.get('mining_rate_multiplier', 1.0)
-                harvest_rate_per_probe = base_dexterity * harvest_multiplier * base_harvest_rate * mining_rate_multiplier
+                
+                # Apply skill multipliers
+                locomotion_multiplier = self.get_skill_value('locomotion_systems')
+                acds_multiplier = self.get_skill_value('acds')
+                robotics_multiplier = self.get_skill_value('robotic_systems')
+                
+                # Combine skill multipliers (multiplicative)
+                skill_multiplier = locomotion_multiplier * acds_multiplier * robotics_multiplier
+                
+                harvest_rate_per_probe = base_dexterity * harvest_multiplier * base_harvest_rate * mining_rate_multiplier * skill_multiplier
                 
                 # Harvest from this zone
                 metal_remaining = self.zone_metal_remaining.get(zone_id, 0)
@@ -1364,7 +1736,7 @@ class GameEngine:
                     category = self._get_building_category(building_id)
                     if category == 'mining':
                         effects = building.get('effects', {})
-                        metal_output = effects.get('metal_production_per_second', 0)
+                        metal_output = effects.get('metal_production_per_day', 0)
                         
                         # Limit by zone metal remaining
                         zone_metal = self.zone_metal_remaining.get(self.harvest_zone, 0)
@@ -1383,13 +1755,13 @@ class GameEngine:
                                     self.zone_mass_remaining[self.harvest_zone] -= total_mass_mined
                                     self.zone_mass_remaining[self.harvest_zone] = max(0, self.zone_mass_remaining[self.harvest_zone])
         
-        # Research bonuses
-        research_bonus = self._get_research_bonus('production_efficiency', 'harvest_efficiency_multiplier', 1.0)
-        rate *= research_bonus
+        # Production efficiency skill also affects mining rate
+        production_efficiency_multiplier = self.get_skill_value('production_efficiency')
+        rate *= production_efficiency_multiplier
         
-        # Apply research bonus to zone depletion as well
+        # Apply production efficiency multiplier to zone depletion as well
         for zone_id in zone_depletion:
-            zone_depletion[zone_id] *= research_bonus
+            zone_depletion[zone_id] *= production_efficiency_multiplier
         
         # Generate slag from mining - slag is produced from the non-metal portion of mined mass
         # Track slag production per zone
@@ -1442,11 +1814,14 @@ class GameEngine:
                 category = self._get_building_category(building_id)
                 if category == 'factories':
                     effects = building.get('effects', {})
-                    probes_per_second = effects.get('probes_per_second', 0.0)
+                    probes_per_day = effects.get('probe_production_per_day', 0.0)
                     metal_per_probe = effects.get('metal_per_probe', 10.0)
                     
-                    # Each factory produces at its rate
-                    factory_rate = probes_per_second * count
+                    # Apply production efficiency skill multiplier
+                    production_efficiency_multiplier = self.get_skill_value('production_efficiency')
+                    
+                    # Each factory produces at its rate (modified by production efficiency)
+                    factory_rate = probes_per_day * count * production_efficiency_multiplier
                     factory_metal_needed = factory_rate * metal_per_probe
                     
                     total_factory_rate += factory_rate
@@ -1506,7 +1881,7 @@ class GameEngine:
         total_intelligence_flops = 0.0
         
         # Dyson sphere compute
-        if self.dyson_sphere_mass >= self.dyson_sphere_target_mass:
+        if self.dyson_sphere_mass >= self.get_dyson_target_mass():
             # Complete Dyson sphere: all star's power
             # Sun's total power output: ~3.8e26 W
             sun_total_power = 3.8e26  # watts
@@ -1515,9 +1890,8 @@ class GameEngine:
             total_intelligence_flops += compute_power * 1e9  # FLOPS/s
         else:
             # While building: convert Dyson sphere power generation to compute
-            # Each kg generates 5 kW = 5000 W
-            # Allocate based on slider
-            dyson_power = self.dyson_sphere_mass * 5000  # 5000W = 5 kW per kg
+            # Use get_dyson_energy_production() which applies skill modifiers
+            dyson_power = self.get_dyson_energy_production()
             compute_power = dyson_power * compute_fraction
             # Conversion: 1 W = 1e9 FLOPS/s
             total_intelligence_flops += compute_power * 1e9  # FLOPS/s
@@ -1533,9 +1907,11 @@ class GameEngine:
                     if intelligence_output_flops > 0:
                         total_intelligence_flops += intelligence_output_flops * count
                     else:
-                        # Legacy: convert from intelligence_per_second
+                        # Legacy: convert from intelligence_production_per_second (for backward compatibility with old saves)
                         intelligence_output = effects.get('intelligence_production_per_second', 0) or effects.get('intelligence_per_second', 0)
-                        total_intelligence_flops += intelligence_output * 1e12 * count
+                        if intelligence_output > 0:
+                            # Convert from per-second to FLOPS (assuming 1e12 FLOPS per unit)
+                            total_intelligence_flops += intelligence_output * 1e12 * count
         
         # Also check legacy global structures for backward compatibility
         for building_id, count in self.structures.items():
@@ -1699,7 +2075,14 @@ class GameEngine:
             tranches_completed = tier_data.get('tranches_completed', 0)
             max_tranches = tier.get('tranches', 10)
             
+            # Set start_time when research begins (first time enabled)
+            if tier_data.get('start_time') is None:
+                tier_data['start_time'] = self.time
+            
             if tranches_completed >= max_tranches:
+                # Set completion_time when tier completes (first time it reaches max)
+                if tier_data.get('completion_time') is None:
+                    tier_data['completion_time'] = self.time
                 continue  # Tier complete
             
             # Calculate progress based on FLOPS allocated
@@ -1733,10 +2116,14 @@ class GameEngine:
             new_tranches = int(tranche_progress)
             
             if new_tranches > 0:
+                old_tranches = tranches_completed
                 tier_data['tranches_completed'] = min(
                     tranches_completed + new_tranches,
                     max_tranches
                 )
+                # Set completion_time when tier completes
+                if tier_data['tranches_completed'] >= max_tranches and tier_data.get('completion_time') is None:
+                    tier_data['completion_time'] = self.time
     
     def _calculate_dyson_construction_rate(self):
         """Calculate Dyson sphere construction rate (kg/s).
@@ -1763,7 +2150,7 @@ class GameEngine:
         """
         idle_probes = {'dyson': 0.0}
         
-        if self.dyson_sphere_mass >= self.dyson_sphere_target_mass:
+        if self.dyson_sphere_mass >= self.get_dyson_target_mass():
             return idle_probes  # Already complete
         
         if throttled_construction_rate <= 0:
@@ -1789,7 +2176,7 @@ class GameEngine:
         
         # Construct (limited by available metal)
         mass_to_add = effective_construction_rate * delta_time
-        mass_to_add = min(mass_to_add, self.dyson_sphere_target_mass - self.dyson_sphere_mass)
+        mass_to_add = min(mass_to_add, self.get_dyson_target_mass() - self.dyson_sphere_mass)
         
         # Consume resources
         metal_consumed = mass_to_add * 0.5  # 50% metal efficiency
@@ -2015,7 +2402,7 @@ class GameEngine:
         economy_fraction = (100 - dyson_power_allocation) / 100.0  # Fraction going to economy/energy
         
         dyson_energy_production = 0.0
-        if self.dyson_sphere_mass >= self.dyson_sphere_target_mass:
+        if self.dyson_sphere_mass >= self.get_dyson_target_mass():
             # Complete Dyson sphere: all star's power
             sun_total_power = 3.8e26  # watts
             dyson_energy_production = sun_total_power * economy_fraction
@@ -2078,17 +2465,18 @@ class GameEngine:
         
         # Consumption: Probe construction energy cost
         probe_prod_rates, _, factory_metal_cost_per_probe = self._calculate_probe_production()
-        total_probe_production_rate = sum(probe_prod_rates.values())  # probes/s
+        total_probe_production_rate = sum(probe_prod_rates.values())  # probes/day
         # Use factory metal cost if available, otherwise default
         metal_cost_per_probe = factory_metal_cost_per_probe if factory_metal_cost_per_probe > 0 else Config.PROBE_MASS
-        probe_construction_rate_kg_s = total_probe_production_rate * metal_cost_per_probe  # kg/s
-        probe_construction_energy_cost = probe_construction_rate_kg_s * 250000  # 250000W per kg/s
+        ENERGY_COST_PER_KG_DAY = 250000 / 86400  # W per kg/day
+        probe_construction_rate_kg_day = total_probe_production_rate * metal_cost_per_probe  # kg/day
+        probe_construction_energy_cost = probe_construction_rate_kg_day * ENERGY_COST_PER_KG_DAY
         breakdown['consumption']['base'] += probe_construction_energy_cost
         breakdown['consumption']['breakdown']['probe_construction'] = probe_construction_energy_cost
         
         # Consumption: Dyson construction energy cost
         dyson_construction_rate = self._calculate_dyson_construction_rate()
-        dyson_construction_energy_cost = dyson_construction_rate * 250000  # 250000W per kg/s
+        dyson_construction_energy_cost = dyson_construction_rate * ENERGY_COST_PER_KG_DAY
         breakdown['consumption']['base'] += dyson_construction_energy_cost
         breakdown['consumption']['breakdown']['dyson_construction'] = dyson_construction_energy_cost
         

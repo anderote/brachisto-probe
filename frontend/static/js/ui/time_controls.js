@@ -52,64 +52,9 @@ class TimeControls {
         }
     }
 
-    formatTime(seconds) {
-        // Constants
-        const SECONDS_PER_MINUTE = 60;
-        const SECONDS_PER_HOUR = 3600;
-        const SECONDS_PER_DAY = 86400;
-        const SECONDS_PER_MONTH = 2592000; // ~30 days
-        const SECONDS_PER_YEAR = 31536000; // ~365 days
-        
-        // Handle invalid input
-        if (!seconds || seconds < 0 || isNaN(seconds)) {
-            return '0:00';
-        }
-        
-        const totalSeconds = Math.floor(seconds);
-        
-        // Calculate years
-        const years = Math.floor(totalSeconds / SECONDS_PER_YEAR);
-        const remainingAfterYears = totalSeconds % SECONDS_PER_YEAR;
-        
-        // Calculate months
-        const months = Math.floor(remainingAfterYears / SECONDS_PER_MONTH);
-        const remainingAfterMonths = remainingAfterYears % SECONDS_PER_MONTH;
-        
-        // Calculate days
-        const days = Math.floor(remainingAfterMonths / SECONDS_PER_DAY);
-        const remainingAfterDays = remainingAfterMonths % SECONDS_PER_DAY;
-        
-        // Calculate hours, minutes, seconds
-        const hours = Math.floor(remainingAfterDays / SECONDS_PER_HOUR);
-        const mins = Math.floor((remainingAfterDays % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
-        const secs = remainingAfterDays % SECONDS_PER_MINUTE;
-        
-        // Build formatted string based on what's needed
-        const parts = [];
-        
-        if (years > 0) {
-            parts.push(`${years}y`);
-        }
-        if (months > 0 || years > 0) {
-            parts.push(`${months}mo`);
-        }
-        if (days > 0 || months > 0 || years > 0) {
-            parts.push(`${days}d`);
-        }
-        if (hours > 0 || days > 0 || months > 0 || years > 0) {
-            parts.push(`${hours.toString().padStart(2, '0')}h`);
-        }
-        parts.push(`${mins.toString().padStart(2, '0')}m`);
-        parts.push(`${secs.toString().padStart(2, '0')}s`);
-        
-        // Return appropriate format based on time length
-        if (years > 0 || months > 0 || days > 0) {
-            return parts.join(' ');
-        } else if (hours > 0) {
-            return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        } else {
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
+    formatTime(days) {
+        // Use FormatUtils for consistent time formatting
+        return FormatUtils.formatTime(days);
     }
 
     update(gameState) {
@@ -118,7 +63,7 @@ class TimeControls {
         if (gameState && gameState.time !== undefined && gameState.time !== null) {
             const timeValue = document.getElementById('time-value');
             if (timeValue) {
-                // Ensure time is a number
+                // Ensure time is a number (now in days)
                 const time = typeof gameState.time === 'number' ? gameState.time : parseFloat(gameState.time) || 0;
                 timeValue.textContent = this.formatTime(time);
             }
