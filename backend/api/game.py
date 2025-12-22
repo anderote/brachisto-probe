@@ -85,42 +85,6 @@ def save_game():
     else:
         return jsonify({'error': 'Missing game_state'}), 400
 
-@game_bp.route('/action', methods=['POST'])
-def game_action():
-    """Perform a game action (DEPRECATED - actions now handled locally in JavaScript).
-    
-    This endpoint is kept for backward compatibility but is no longer used.
-    Game actions are now performed locally in the browser.
-    """
-    return jsonify({
-        'error': 'Deprecated',
-        'message': 'This endpoint is deprecated. Game actions are now handled locally in JavaScript.'
-    }), 410  # 410 Gone
-
-@game_bp.route('/tick', methods=['POST'])
-def tick_game():
-    """Advance game simulation (DEPRECATED - ticks now handled locally in JavaScript).
-    
-    This endpoint is kept for backward compatibility but is no longer used.
-    Game ticks are now performed locally in the browser at 60 ticks/second.
-    """
-    return jsonify({
-        'error': 'Deprecated',
-        'message': 'This endpoint is deprecated. Game ticks are now handled locally in JavaScript.'
-    }), 410  # 410 Gone
-
-@game_bp.route('/recycle_factory', methods=['POST'])
-def recycle_factory():
-    """Recycle a factory (DEPRECATED - recycling now handled locally in JavaScript).
-    
-    This endpoint is kept for backward compatibility but is no longer used.
-    Factory recycling is now performed locally in the browser via the JavaScript game engine.
-    """
-    return jsonify({
-        'error': 'Deprecated',
-        'message': 'This endpoint is deprecated. Factory recycling is now handled locally in JavaScript.'
-    }), 410  # 410 Gone
-
 @game_bp.route('/complete', methods=['POST'])
 def complete_game():
     """Mark game session as complete and calculate score (guest mode allowed).
