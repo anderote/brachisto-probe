@@ -2427,9 +2427,11 @@ class GameEngine:
         breakdown['production']['total'] = breakdown['production']['base'] * energy_collection_bonus
         
         # Consumption: Probe base consumption - single probe type only
+        # Apply computer systems reduction (same as actual consumption calculation)
+        computer_reduction = self._get_research_bonus('computer_systems', 'probe_energy_cost_reduction', 0.0)
         base_probe_consumption = Config.PROBE_ENERGY_CONSUMPTION
         probe_count = self.probes.get('probe', 0)
-        probe_base_consumption = probe_count * base_probe_consumption
+        probe_base_consumption = probe_count * base_probe_consumption * (1.0 - computer_reduction)
         
         breakdown['consumption']['base'] = probe_base_consumption
         breakdown['consumption']['breakdown']['probes'] = probe_base_consumption
@@ -2456,10 +2458,16 @@ class GameEngine:
                 delta_v_penalty = harvest_zone_data.get('delta_v_penalty', 0.1)
                 # Energy cost is quadratic in delta-v penalty (same as in _calculate_energy_consumption)
                 # This is for breakdown display only - actual calculation is in _calculate_energy_consumption
-                base_energy_cost = 453515  # watts per kg/s at Earth baseline (for 500kW at Mercury)
-                energy_cost_per_kg_s = base_energy_cost * (1.0 + delta_v_penalty) ** 2
-                harvest_rate_per_probe = Config.PROBE_HARVEST_RATE
-                harvest_energy_cost = energy_cost_per_kg_s * harvest_rate_per_probe * total_harvest_probes
+                # Use same units as actual calculation: watts per kg/day
+                base_energy_cost = 453515 / 86400  # watts per kg/day at Earth baseline (converted from per-second)
+                energy_cost_per_kg_day = base_energy_cost * (1.0 + delta_v_penalty) ** 2
+                harvest_rate_per_probe = Config.PROBE_HARVEST_RATE  # kg/day per probe
+                harvest_energy_cost = energy_cost_per_kg_day * harvest_rate_per_probe * total_harvest_probes
+                
+                # Apply propulsion systems reduction (same as actual calculation)
+                propulsion_reduction = self._get_research_bonus('propulsion_systems', 'dexterity_energy_cost_reduction', 0.0)
+                harvest_energy_cost *= (1.0 - propulsion_reduction)
+                
                 breakdown['consumption']['base'] += harvest_energy_cost
         breakdown['consumption']['breakdown']['harvesting'] = harvest_energy_cost
         
@@ -2525,6 +2533,11 @@ class GameEngine:
             total_consumption_reduction -= upgrade['bonus']
         
         breakdown['consumption']['total'] = breakdown['consumption']['base'] * max(0.1, total_consumption_reduction)
+        
+        # Apply production efficiency bonus (same as actual consumption calculation)
+        production_efficiency_bonus = self._get_research_bonus('production_efficiency', 'energy_efficiency_bonus', 1.0)
+        if production_efficiency_bonus > 1.0:
+            breakdown['consumption']['total'] /= production_efficiency_bonus
         
         return breakdown
     
