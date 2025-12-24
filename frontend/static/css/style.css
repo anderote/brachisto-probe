@@ -27,16 +27,15 @@ body {
     left: 50%;
     transform: translateX(-50%);
     z-index: 1000;
-    background: rgba(20, 20, 30, 0.85);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 8px;
-    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    padding: 8px 12px;
     display: flex;
-    gap: 20px;
+    gap: 12px;
     align-items: center;
     font-size: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 .compact-resource-item {
@@ -122,6 +121,23 @@ body {
     text-shadow: 0 0 8px rgba(139, 0, 0, 0.8);
 }
 
+/* Dyson Sphere Completion Sign */
+.dyson-completion-sign {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    color: #00ff00;
+    text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
+    pointer-events: none;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
 /* Resource Tooltips */
 .resource-tooltip {
     display: none;
@@ -171,6 +187,13 @@ body {
     margin-left: 12px;
     margin-top: 2px;
     font-size: 11px;
+}
+
+.tooltip-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 4px;
 }
 
 /* Research Panel - Legacy (hidden) */
@@ -250,6 +273,13 @@ body {
     height: 100vh;
     background: #000;
     overflow: hidden;
+    /* To change view area size, modify the width/height above, or add margins:
+     * Examples:
+     * - Fixed size: width: 1200px; height: 800px;
+     * - Smaller viewport: width: 80vw; height: 80vh;
+     * - With margins: width: calc(100vw - 200px); height: calc(100vh - 100px);
+     * - Centered smaller view: width: 90vw; height: 90vh; top: 5vh; left: 5vw;
+     */
 }
 
 /* Metrics Panel - Left Side */
@@ -425,6 +455,111 @@ body {
     flex: 0 0 auto;
     min-width: 40px;
     text-align: right;
+}
+
+.probe-summary-item.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.probe-summary-item .building-stats {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.probe-summary-item .building-stat-line {
+    margin-top: 2px;
+    line-height: 1.3;
+}
+
+/* Building card clickable styles */
+.building-card-clickable {
+    transition: all 0.2s ease;
+    padding: 8px;
+    margin: -8px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    position: relative;
+}
+
+.building-card-clickable:hover {
+    background: rgba(74, 158, 255, 0.1);
+    border-color: rgba(74, 158, 255, 0.3);
+}
+
+.building-card-clickable:active {
+    background: rgba(74, 158, 255, 0.15);
+    transform: scale(0.98);
+}
+
+.building-card-clickable.construction-enabled {
+    background: rgba(74, 158, 255, 0.15);
+    border-color: rgba(74, 158, 255, 0.6);
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+}
+
+.building-card-clickable.construction-enabled:hover {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.8);
+    box-shadow: 0 0 12px rgba(74, 158, 255, 0.4);
+}
+
+.construction-status-indicator {
+    font-weight: normal;
+    transition: color 0.2s ease;
+}
+
+/* Research card styles - matching building card pattern */
+.research-card {
+    transition: all 0.2s ease;
+}
+
+.research-card.research-enabled {
+    background: rgba(74, 158, 255, 0.15);
+    border-color: rgba(74, 158, 255, 0.6);
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+}
+
+.research-card.research-enabled:hover {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.8);
+    box-shadow: 0 0 12px rgba(74, 158, 255, 0.4);
+}
+
+/* Zone Info Panel - Right of Probe Summary */
+.zone-info-panel-container {
+    position: absolute;
+    left: 230px;
+    top: 10px;
+    width: 210px;
+    z-index: 100;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.zone-info-panel {
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border-radius: 5px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Zone Hover Tooltip - Separate floating tooltip for hover */
+.zone-hover-tooltip {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border-radius: 5px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 10001;
+    pointer-events: auto;
+    min-width: 250px;
+    max-width: 300px;
 }
 
 /* Probe Panel Styling */
@@ -676,9 +811,7 @@ body {
     left: 10px;
     top: calc(50% + 90px);
     transform: translateY(-50%); /* Center vertically */
-    width: auto; /* Auto width to accommodate side-by-side layout */
-    min-width: 200px; /* Minimum width for sliders only */
-    max-width: 500px; /* Maximum width when buildings are shown */
+    width: 210px; /* Match probe summary panel width */
     z-index: 100;
     pointer-events: none;
     display: block !important; /* Always visible */
@@ -703,30 +836,27 @@ body {
     border-radius: 5px;
     padding: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    height: 420px; /* Fixed height to prevent resizing */
     display: flex;
     flex-direction: column;
 }
 
 .command-panel-main-content {
     display: flex;
+    flex-direction: column;
     gap: 12px;
-    align-items: flex-start;
     flex: 1;
     overflow-y: auto;
 }
 
 .command-panel-left-column {
-    flex: 0 0 auto;
-    min-width: 200px;
+    width: 100%;
 }
 
 .command-buildings-section {
-    flex: 0 0 auto;
-    min-width: 250px;
-    margin-left: 12px;
-    padding-left: 12px;
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    width: 100%;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
     display: none; /* Hidden by default */
     flex-direction: column;
 }
@@ -748,12 +878,93 @@ body {
 
 .command-sliders-container {
     display: flex;
-    flex-direction: row;
-    gap: 20px;
-    justify-content: center;
-    align-items: flex-end;
-    min-height: 200px;
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 12px;
+}
+
+/* Horizontal priority slider styles */
+.command-priority-slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.command-priority-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+    text-align: right;
+}
+
+.command-priority-track {
+    position: relative;
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.command-priority-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.35);
+    transition: width 0.1s ease;
+    border-radius: 4px;
+    pointer-events: none;
+}
+
+.command-priority-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: ew-resize;
+}
+
+.command-priority-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    cursor: ew-resize;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.command-priority-input::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    cursor: ew-resize;
+    border: none;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.command-priority-input::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+}
+
+.command-priority-input::-moz-range-track {
+    width: 100%;
+    height: 100%;
+    background: transparent;
 }
 
 .command-no-zone-message {
@@ -874,188 +1085,239 @@ body {
     border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Game Sidebar */
-.game-sidebar {
+/* Recycle slider toggle checkbox */
+.command-slider-toggle {
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    accent-color: #4a9eff;
+}
+
+/* Disabled slider styling */
+.command-slider-vertical:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.command-slider-vertical:disabled + .command-slider-fill-vertical,
+.command-slider-track-vertical:has(.command-slider-vertical:disabled) .command-slider-fill-vertical {
+    opacity: 0.3;
+}
+
+.command-slider-track-vertical:has(.command-slider-vertical:disabled) {
+    opacity: 0.5;
+}
+
+/* Right Panel Toggle Button - Always Visible */
+.right-panel-toggle {
     position: fixed;
-    top: 0;
     right: 0;
-    width: 410px;
-    height: 100vh;
-    background: rgba(20, 20, 30, 0.95);
-    backdrop-filter: blur(10px);
-    border-left: 2px solid rgba(74, 158, 255, 0.3);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 80px;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    color: #4a9eff;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+    transition: all 0.3s ease;
+    padding: 0;
+    box-shadow: -2px 0 6px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+}
+
+.right-panel-toggle:hover {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.5);
+    width: 34px;
+}
+
+/* Right Panel Container - Floating */
+.right-panel-container {
+    position: fixed;
+    right: 0;
+    top: 10px;
+    width: 400px;
+    max-height: calc(100vh - 20px);
+    z-index: 100;
+    pointer-events: none;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.right-panel-container.hidden {
+    transform: translateX(calc(100% - 30px));
+    opacity: 0;
+    pointer-events: none;
+}
+
+.right-panel-container * {
+    pointer-events: auto;
+}
+
+/* Right Panel - Matches Probe Summary Style */
+.right-panel {
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border-radius: 5px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
-    z-index: 1000;
-    transition: transform 0.3s ease;
+    max-height: calc(100vh - 20px);
+    overflow: hidden;
     box-shadow: -4px 0 12px rgba(0, 0, 0, 0.5);
 }
 
-.game-sidebar.collapsed {
-    transform: translateX(calc(100% - 40px));
+.right-panel-header {
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
 }
 
-.sidebar-header {
-    height: 40px;
+.right-panel-tabs {
     display: flex;
-    align-items: center;
-    padding: 0 10px;
-    border-bottom: 1px solid rgba(74, 158, 255, 0.2);
+    gap: 8px;
 }
 
-.sidebar-toggle {
+.right-tab-btn {
+    flex: 1;
+    padding: 8px 12px;
     background: transparent;
     border: none;
-    color: #4a9eff;
-    font-size: 18px;
-    cursor: pointer;
-    padding: 5px 10px;
-    border-radius: 3px;
-    transition: background 0.2s ease;
-}
-
-.sidebar-toggle:hover {
-    background: rgba(74, 158, 255, 0.1);
-}
-
-.sidebar-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: visible;
-}
-
-/* Allow build tab to extend beyond sidebar */
-#tab-build {
-    overflow: visible !important;
-}
-
-.sidebar-tabs {
-    display: flex;
-    border-bottom: 1px solid rgba(74, 158, 255, 0.2);
-    background: rgba(10, 10, 15, 0.8);
-}
-
-.tab-btn {
-    flex: 1;
-    padding: 12px 16px;
-    background: transparent;
-    border: none;
-    color: #888;
-    font-size: 13px;
-    font-weight: bold;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
     cursor: pointer;
     transition: all 0.2s ease;
     border-bottom: 2px solid transparent;
+    font-family: 'Courier New', monospace;
 }
 
-.tab-btn:hover {
+.right-tab-btn:hover {
     color: #4a9eff;
     background: rgba(74, 158, 255, 0.05);
 }
 
-.tab-btn.active {
+.right-tab-btn.active {
     color: #4a9eff;
     border-bottom-color: #4a9eff;
     background: rgba(74, 158, 255, 0.1);
 }
 
-.tab-content {
+.right-panel-content {
     flex: 1;
     overflow-y: auto;
-    padding: 15px;
-    display: none;
-    position: relative;
+    overflow-x: hidden;
+    min-height: 0;
 }
 
-.tab-content.active {
+.right-tab-content {
+    display: none;
+    height: 100%;
+}
+
+.right-tab-content.active {
     display: block;
 }
 
-/* Build tab - make it slide out as overlay */
-#tab-build {
-    padding: 0;
-    position: relative;
-    overflow: visible;
-    min-width: 24px;
+/* Collapsible Category Styles */
+.collapsible-category {
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
 }
 
-/* Build tab toggle button */
-.build-tab-toggle {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 24px;
-    height: 80px;
-    background: rgba(74, 158, 255, 0.3);
-    border: 1px solid rgba(74, 158, 255, 0.5);
-    border-left: none;
-    border-radius: 0 6px 6px 0;
-    color: #4a9eff;
-    font-size: 14px;
-    cursor: pointer;
+.collapsible-category:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.collapsible-category-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    z-index: 102;
-    transition: all 0.3s ease;
-    padding: 0;
-    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.4);
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 8px 0;
+    user-select: none;
 }
 
-.build-tab-toggle:hover {
-    background: rgba(74, 158, 255, 0.5);
-    border-color: rgba(74, 158, 255, 0.8);
-    width: 28px;
+.collapsible-category-title {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.9);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
 }
 
-.build-tab-content-wrapper {
-    position: fixed;
-    right: 410px;
-    top: 40px;
-    width: 400px;
-    height: calc(100vh - 40px);
-    background: rgba(20, 20, 30, 0.98);
-    backdrop-filter: blur(10px);
-    border-right: 2px solid rgba(74, 158, 255, 0.3);
-    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.5);
-    transition: transform 0.3s ease, opacity 0.3s ease;
-    transform: translateX(0);
+.collapsible-category-toggle {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    transition: transform 0.2s ease;
+}
+
+.collapsible-category-header.collapsed .collapsible-category-toggle {
+    transform: rotate(-90deg);
+}
+
+.collapsible-category-content {
+    max-height: 2000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
     opacity: 1;
-    overflow-y: auto;
-    padding: 15px;
-    z-index: 1001;
 }
 
-.build-tab-content-wrapper.collapsed {
-    transform: translateX(-100%);
+.collapsible-category-content.collapsed {
+    max-height: 0;
     opacity: 0;
     overflow: hidden;
-    pointer-events: none;
 }
 
-/* When collapsed, show only the button */
-#tab-build.collapsed {
-    width: 24px !important;
-    min-width: 24px;
+/* Research Tree Progress Bar */
+.research-tree-progress {
+    margin-top: 8px;
+    margin-bottom: 8px;
 }
 
-#tab-build.collapsed .build-tab-content-wrapper {
+.research-tree-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+}
+
+.research-tree-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(46, 127, 255, 0.9));
+    transition: width 0.3s ease;
+    border-radius: 3px;
+}
+
+.research-tree-progress-label {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 4px;
+    text-align: right;
+    font-family: 'Courier New', monospace;
+}
+
+/* Legacy sidebar styles - keep for backward compatibility */
+.game-sidebar {
     display: none;
-}
-
-#tab-build.collapsed .build-tab-toggle {
-    left: 0;
-    border-left: 1px solid rgba(74, 158, 255, 0.5);
-    border-radius: 0 6px 6px 0;
-}
-
-#tab-build:not(.collapsed) .build-tab-toggle {
-    left: 0;
-    border-left: none;
-    border-radius: 0 6px 6px 0;
 }
 
 /* Apply monospace font to research panel content */
@@ -3140,16 +3402,34 @@ button:disabled {
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
-    height: 60px;
+    height: 80px;
+    pointer-events: none;
+}
+
+.orbital-zone-planet-square-wrapper {
+    position: absolute;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.orbital-zone-travel-time {
+    font-size: 9px;
+    color: #4a9eff;
+    font-weight: 600;
+    margin-top: 4px;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
     pointer-events: none;
 }
 
 .orbital-zone-planet-square-float {
-    position: absolute;
-    bottom: 0;
+    position: relative;
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-    transform: translateX(-50%);
     pointer-events: auto;
     cursor: pointer;
 }
@@ -3210,12 +3490,12 @@ button:disabled {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(5px);
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 10000;
+    pointer-events: none;
 }
 
 .transfer-dialog-content {
@@ -3226,6 +3506,7 @@ button:disabled {
     min-width: 400px;
     max-width: 500px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
 }
 
 .transfer-dialog-header {
@@ -3489,6 +3770,23 @@ button:disabled {
     color: rgba(255, 255, 255, 0.7);
     text-align: left;
     font-family: 'Courier New', monospace;
+}
+
+.orbital-zone-hotkey {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    font-size: 10px;
+    color: rgba(74, 158, 255, 0.8);
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    background: rgba(20, 20, 30, 0.9);
+    border: 1px solid rgba(74, 158, 255, 0.4);
+    border-radius: 3px;
+    padding: 2px 5px;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
 }
 
 .orbital-zone-bar:hover {

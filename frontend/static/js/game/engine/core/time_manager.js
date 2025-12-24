@@ -8,7 +8,7 @@
 class TimeManager {
     constructor(initialTime = 0.0) {
         this.time = initialTime;           // Days elapsed
-        this.tick = 0;                      // Tick count
+        this.tickCount = 0;                 // Tick count (renamed from 'tick' to avoid shadowing method)
         this.timeSpeed = 1.0;               // Speed multiplier
         this.TICKS_PER_DAY = 60;            // At 60fps, 1x speed
     }
@@ -26,7 +26,7 @@ class TimeManager {
      */
     tick() {
         this.time += this.getDeltaTime();
-        this.tick++;
+        this.tickCount++;
     }
     
     /**
@@ -50,7 +50,7 @@ class TimeManager {
      * @returns {number}
      */
     getTick() {
-        return this.tick;
+        return this.tickCount;
     }
     
     /**
@@ -58,7 +58,7 @@ class TimeManager {
      */
     reset() {
         this.time = 0.0;
-        this.tick = 0;
+        this.tickCount = 0;
         this.timeSpeed = 1.0;
     }
 }

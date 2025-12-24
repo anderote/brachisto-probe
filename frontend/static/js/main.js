@@ -53,6 +53,16 @@ class App {
                 console.error('Failed to initialize ProbeSummaryPanel:', e);
             }
             
+            try {
+                this.zoneInfoPanel = typeof ZoneInfoPanel !== 'undefined' ? 
+                    new ZoneInfoPanel('zone-info-panel') : null;
+                if (this.zoneInfoPanel) {
+                    window.zoneInfoPanel = this.zoneInfoPanel;
+                }
+            } catch (e) {
+                console.error('Failed to initialize ZoneInfoPanel:', e);
+            }
+            
             // Initialize Three.js visualization first (needed for starfield)
             try {
                 const canvas = document.getElementById('game-canvas');
@@ -69,7 +79,7 @@ class App {
                         this.solarSystem = new SolarSystem(this.sceneManager.getScene());
                     }
                     if (typeof StructuresVisualization !== 'undefined') {
-                        this.structuresViz = new StructuresVisualization(this.sceneManager.getScene());
+                        this.structuresViz = new StructuresVisualization(this.sceneManager.getScene(), this.solarSystem);
                     }
                     // Note: probeViz and dysonViz need solarSystem for scaling, but it may not be ready yet
                     // They will handle the null case with fallback scaling
@@ -82,87 +92,40 @@ class App {
                         // Pass solarSystem reference for orbit scaling (may be null initially)
                         this.dysonViz = new DysonSphereVisualization(this.sceneManager.getScene(), this.solarSystem);
                     }
+                    if (typeof TransferVisualization !== 'undefined') {
+                        // Pass solarSystem reference for orbit scaling (may be null initially)
+                        this.transferViz = new TransferVisualization(this.sceneManager.getScene(), this.solarSystem);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to initialize visualization:', e);
             }
             
-            // Initialize UI components with sidebar tab containers
+            // Initialize UI components with new right panel tab containers
             try {
-                const buildTab = sidebar ? sidebar.getTabContainer('build') : document.getElementById('tab-build');
-                if (buildTab) {
-                    // Check if structure already exists (from HTML), otherwise create it
-                    let contentWrapper = document.getElementById('build-tab-content-wrapper');
+                const structuresTab = sidebar ? sidebar.getTabContainer('structures') : document.getElementById('right-tab-structures');
+                if (structuresTab) {
                     let purchasePanelContent = document.getElementById('purchase-panel-content');
-                    let toggleBtn = document.getElementById('build-tab-toggle');
-                    
-                    if (!contentWrapper) {
-                        // Create wrapper structure if it doesn't exist
-                        buildTab.innerHTML = `
-                            <div id="build-tab-content-wrapper" class="build-tab-content-wrapper">
-                                <div id="purchase-panel-content"></div>
-                            </div>
-                            <button id="build-tab-toggle" class="build-tab-toggle" title="Show/Hide Build Panel">
-                                <span id="build-tab-toggle-icon">◀</span>
-                            </button>
-                        `;
+                    if (!purchasePanelContent) {
+                        structuresTab.innerHTML = '<div id="purchase-panel-content"></div>';
                         purchasePanelContent = document.getElementById('purchase-panel-content');
-                        toggleBtn = document.getElementById('build-tab-toggle');
                     }
-                    
                     this.purchasePanel = new PurchasePanel('purchase-panel-content');
                     // Expose globally for onclick handlers
                     window.purchasePanel = this.purchasePanel;
-                    
-                    // Set up toggle button
-                    if (toggleBtn) {
-                        toggleBtn.addEventListener('click', () => {
-                            const wrapper = document.getElementById('build-tab-content-wrapper');
-                            const icon = document.getElementById('build-tab-toggle-icon');
-                            const buildTab = document.getElementById('tab-build');
-                            if (wrapper && buildTab) {
-                                const isCollapsed = buildTab.classList.contains('collapsed');
-                                if (isCollapsed) {
-                                    // Expand
-                                    buildTab.classList.remove('collapsed');
-                                    wrapper.classList.remove('collapsed');
-                                    if (icon) icon.textContent = '◀';
-                                    toggleBtn.title = 'Hide Build Panel';
-                                } else {
-                                    // Collapse
-                                    buildTab.classList.add('collapsed');
-                                    wrapper.classList.add('collapsed');
-                                    if (icon) icon.textContent = '▶';
-                                    toggleBtn.title = 'Show Build Panel';
-                                }
-                                // Save state
-                                localStorage.setItem('buildTabCollapsed', !isCollapsed);
-                            }
-                        });
-                        
-                        // Load saved state
-                        const savedState = localStorage.getItem('buildTabCollapsed');
-                        if (savedState === 'true') {
-                            const wrapper = document.getElementById('build-tab-content-wrapper');
-                            const icon = document.getElementById('build-tab-toggle-icon');
-                            const buildTab = document.getElementById('tab-build');
-                            if (wrapper && buildTab) {
-                                buildTab.classList.add('collapsed');
-                                wrapper.classList.add('collapsed');
-                                if (icon) icon.textContent = '▶';
-                                toggleBtn.title = 'Show Build Panel';
-                            }
-                        }
-                    }
                 }
             } catch (e) {
                 console.error('Failed to initialize PurchasePanel:', e);
             }
             
             try {
-                const researchTab = sidebar ? sidebar.getTabContainer('research') : document.getElementById('tab-research');
+                const researchTab = sidebar ? sidebar.getTabContainer('research') : document.getElementById('right-tab-research');
                 if (researchTab) {
-                    researchTab.innerHTML = '<div id="research-panel-content"></div>';
+                    let researchPanelContent = document.getElementById('research-panel-content');
+                    if (!researchPanelContent) {
+                        researchTab.innerHTML = '<div id="research-panel-content"></div>';
+                        researchPanelContent = document.getElementById('research-panel-content');
+                    }
                     this.researchPanel = new ResearchPanel('research-panel-content');
                     // Expose globally for onclick handlers
                     window.researchPanel = this.researchPanel;
@@ -229,9 +192,13 @@ class App {
             }
 
             try {
-                const transfersTab = sidebar ? sidebar.getTabContainer('transfers') : document.getElementById('tab-transfers');
+                const transfersTab = sidebar ? sidebar.getTabContainer('transfers') : document.getElementById('right-tab-transfers');
                 if (transfersTab) {
-                    transfersTab.innerHTML = '<div id="transfer-panel-content"></div>';
+                    let transferPanelContent = document.getElementById('transfer-panel-content');
+                    if (!transferPanelContent) {
+                        transfersTab.innerHTML = '<div id="transfer-panel-content"></div>';
+                        transferPanelContent = document.getElementById('transfer-panel-content');
+                    }
                     this.transferPanel = typeof TransferPanel !== 'undefined' ? 
                         new TransferPanel('transfer-panel-content') : null;
                     // Expose globally for onclick handlers
@@ -292,6 +259,9 @@ class App {
             // Start animation loop
             this.animate();
             
+            // Start UI update loop (independent from worker messages)
+            this.startUIUpdateLoop();
+            
             console.log('App initialized successfully');
         } catch (error) {
             console.error('Failed to initialize app:', error);
@@ -334,10 +304,8 @@ class App {
             });
         }
 
-        // Game state updates
-        window.addEventListener('gameStateUpdate', (e) => {
-            this.onGameStateUpdate(e.detail);
-        });
+        // UI updates now handled by requestAnimationFrame loop (startUIUpdateLoop)
+        // No event listeners - UI polls state at its own interval
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -516,7 +484,8 @@ class App {
             // Display game state
             const initialState = window.gameEngine.getGameState();
             if (initialState) {
-                this.onGameStateUpdate(initialState);
+                this.updateUIPanels(initialState);
+                this.updateVisualization(initialState);
             }
         } catch (error) {
             console.error('Failed to load game:', error);
@@ -630,11 +599,12 @@ class App {
             }
             
             // Start local game engine with unique session ID and fresh config
-            // Pass empty config to ensure we get default initial state
+            // Pass config to ensure we get proper initial state
             await window.gameEngine.start(sessionId, {
                 initial_probes: 1,
                 initial_metal: 1000,
-                initial_energy: 0
+                initial_energy: 100000,  // 100kW initial energy supply
+                default_zone: 'earth'     // Start probes at Earth
             });
             
             // Update loading message
@@ -651,7 +621,8 @@ class App {
             // Display initial game state
             const initialState = window.gameEngine.getGameState();
             if (initialState) {
-                this.onGameStateUpdate(initialState);
+                this.updateUIPanels(initialState);
+                this.updateVisualization(initialState);
             }
         } catch (error) {
             console.error('Failed to start game:', error);
@@ -670,128 +641,146 @@ class App {
         }
     }
 
-    onGameStateUpdate(gameState) {
-        // Start profiling UI update
-        const profiler = window.performanceProfiler;
-        const uiUpdateStart = profiler ? profiler.startTiming('ui_update') : null;
-        
-        // Record memory usage
-        if (profiler) {
-            profiler.recordMemoryUsage(gameState);
-        }
-        
-        // Throttle UI updates - only update every N frames to reduce CPU usage
-        // Update critical displays every frame, but throttle expensive panels
+    /**
+     * Start independent UI update loop using requestAnimationFrame
+     * Polls game state at fixed intervals:
+     *   - Visualization: 30fps (every 2 frames)
+     *   - UI panels: 5fps (every 12 frames)
+     *   - Time display: 60fps (every frame)
+     */
+    startUIUpdateLoop() {
         if (!this.uiUpdateFrameCount) {
             this.uiUpdateFrameCount = 0;
         }
-        this.uiUpdateFrameCount++;
         
-        // Critical updates every frame (resource display, time controls)
-        const criticalUpdate = true;
+        const updateUI = () => {
+            this.uiUpdateFrameCount++;
+            
+            // Get current game state (polled, not event-driven)
+            const gameState = window.gameEngine?.getGameState();
+            if (!gameState) {
+                requestAnimationFrame(updateUI);
+                return;
+            }
+            
+            const profiler = window.performanceProfiler;
+            const uiUpdateStart = profiler ? profiler.startTiming('ui_update') : null;
+            
+            // Record memory usage
+            if (profiler) {
+                profiler.recordMemoryUsage(gameState);
+            }
+            
+            // Critical: time display every frame (60fps)
+            if (this.timeControls) {
+                this.timeControls.update(gameState);
+            }
+            
+            // Visualization every 2 frames (~30fps) - smooth planet orbits
+            if (this.uiUpdateFrameCount % 2 === 0) {
+                this.updateVisualization(gameState);
+            }
+            
+            // UI panels every 12 frames (~5fps) - numbers/text don't need high refresh
+            if (this.uiUpdateFrameCount % 12 === 0) {
+                const probeUIStart = profiler ? performance.now() : null;
+                this.updateUIPanels(gameState);
+                
+                // Record probe UI update time
+                if (profiler && probeUIStart !== null) {
+                    const probeUITime = performance.now() - probeUIStart;
+                    profiler.recordUIProbeUpdateTime(probeUITime);
+                }
+                
+                // Check for game completion
+                if (gameState.dyson_sphere?.progress >= 1.0) {
+                    this.onGameComplete();
+                }
+            }
+            
+            // End profiling UI update
+            if (profiler && uiUpdateStart !== null) {
+                profiler.endTiming('ui_update', uiUpdateStart);
+            }
+            
+            requestAnimationFrame(updateUI);
+        };
         
-        // Throttled updates every 6 frames (~10 updates/sec instead of 60)
-        const throttledUpdate = (this.uiUpdateFrameCount % 6 === 0);
-        
-        // Update all UI components
-        // Critical updates (every frame)
+        requestAnimationFrame(updateUI);
+    }
+    
+    /**
+     * Update visualization components (3D rendering)
+     */
+    updateVisualization(gameState) {
+        if (this.dysonViz) {
+            this.dysonViz.update(gameState);
+        }
+        if (this.solarSystem) {
+            this.solarSystem.updateZoneDepletion(gameState);
+        }
+        if (this.structuresViz) {
+            const probeAllocations = gameState.probe_allocations || {};
+            const factoryProduction = gameState.factory_production || {};
+            this.structuresViz.updateStructures(gameState, probeAllocations, factoryProduction);
+        }
+        if (this.transferViz) {
+            this.transferViz.update(gameState);
+        }
+    }
+    
+    /**
+     * Update UI panels (text, numbers, controls)
+     */
+    updateUIPanels(gameState) {
         if (this.resourceDisplay) {
             this.resourceDisplay.update(gameState);
         }
-        if (this.timeControls) {
-            this.timeControls.update(gameState);
+        if (this.purchasePanel) {
+            this.purchasePanel.update(gameState);
+        }
+        if (this.researchPanel) {
+            this.researchPanel.update(gameState);
+            // Expose globally for event handlers
+            window.researchPanel = this.researchPanel;
+        }
+        if (this.commandPanel) {
+            this.commandPanel.update(gameState);
+        }
+        if (this.productionPanel) {
+            this.productionPanel.update(gameState);
+        }
+        if (this.probeAllocationPanel) {
+            this.probeAllocationPanel.update(gameState);
+        }
+        if (this.probePanel) {
+            this.probePanel.update(gameState);
+        }
+        if (this.managePanel) {
+            this.managePanel.update(gameState);
+        }
+        if (this.probeSummaryPanel) {
+            this.probeSummaryPanel.update(gameState);
         }
         
-        // Throttled updates (every 5 frames = ~12 updates/sec)
-        if (throttledUpdate) {
-            const probeUIStart = profiler ? performance.now() : null;
-            if (this.purchasePanel) {
-                this.purchasePanel.update(gameState);
-            }
-            if (this.researchPanel) {
-                this.researchPanel.update(gameState);
-                // Expose globally for event handlers
-                window.researchPanel = this.researchPanel;
-            }
-            if (this.commandPanel) {
-                this.commandPanel.update(gameState);
-            }
-            if (this.productionPanel) {
-                this.productionPanel.update(gameState);
-            }
-            if (this.probeAllocationPanel) {
-                this.probeAllocationPanel.update(gameState);
-            }
-            if (this.probePanel) {
-                this.probePanel.update(gameState);
-            }
-            if (this.managePanel) {
-                this.managePanel.update(gameState);
-            }
-            // Probe visualization removed - focusing on mechanics first
-            // if (this.probeViz) {
-            //     this.probeViz.updateProbes(gameState);
-            // }
-            if (this.dysonViz) {
-                this.dysonViz.update(gameState);
-                // Dyson progress bar removed - displayed in resource display instead
-            }
-            if (this.solarSystem) {
-                this.solarSystem.updateZoneDepletion(gameState);
-            }
-            if (this.structuresViz) {
-                // Get probe allocations and factory production from game state
-                const probeAllocations = gameState.probe_allocations || {};
-                const factoryProduction = gameState.factory_production || {};
-                this.structuresViz.updateStructures(gameState, probeAllocations, factoryProduction);
-            }
-            // Metrics panel merged into probe summary panel - no longer needed
-            if (this.probeSummaryPanel) {
-                this.probeSummaryPanel.update(gameState);
-                
-                if (this.transferPanel) {
-                    this.transferPanel.update(gameState);
-                }
-            }
-            if (this.orbitalZoneSelector) {
-                this.orbitalZoneSelector.update(gameState);
-            }
-            
-            // Record probe UI update time
-            if (profiler && probeUIStart !== null) {
-                const probeUITime = performance.now() - probeUIStart;
-                profiler.recordUIProbeUpdateTime(probeUITime);
-            }
+        if (this.zoneInfoPanel) {
+            this.zoneInfoPanel.update(gameState);
         }
-        
-        // Energy display removed
-
-        // Check for game completion
-        if (gameState.dyson_sphere_progress >= 1.0) {
-            this.onGameComplete();
+        if (this.transferPanel) {
+            this.transferPanel.update(gameState);
         }
-        
-        // End profiling UI update
-        if (profiler && uiUpdateStart !== null) {
-            profiler.endTiming('ui_update', uiUpdateStart);
+        if (this.orbitalZoneSelector) {
+            this.orbitalZoneSelector.update(gameState);
         }
     }
 
     // updateDysonProgress removed - Dyson progress is displayed in resource display panel
 
     async onGameComplete() {
-        // Show completion message
-        const gameState = window.gameEngine.getGameState();
-        const time = gameState.time || 0;
-        const metal = gameState.zone_metal_remaining ? 
-            Object.values(gameState.zone_metal_remaining).reduce((a, b) => a + b, 0) : 0;
-
-        const message = `Game Complete!\nTime: ${this.formatTime(time)}\nMetal Remaining: ${this.formatNumber(metal)} kg\n\nReturn to main menu?`;
-        if (confirm(message)) {
-            this.returnToMenu();
-        }
-
-        // Complete game session
+        // Completion sign is now shown by the dyson sphere visualization
+        // No popup menu - just show the green "complete" sign
+        
+        // Complete game session silently in the background
         try {
             await api.request('/api/game/complete', {
                 method: 'POST',

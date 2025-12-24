@@ -1,27 +1,28 @@
-/** Sidebar with tabs for Build, Research, and Probes */
+/** Right Panel with tabs for Structures, Research, and Transfers */
 class Sidebar {
     constructor() {
-        this.sidebar = document.getElementById('game-sidebar');
-        this.toggleBtn = document.getElementById('sidebar-toggle');
-        this.toggleIcon = document.getElementById('sidebar-toggle-icon');
-        this.tabButtons = document.querySelectorAll('.tab-btn');
-        this.tabContents = document.querySelectorAll('.tab-content');
+        this.panel = document.getElementById('right-panel');
+        this.panelContainer = document.getElementById('right-panel-container');
+        this.toggleBtn = document.getElementById('right-panel-toggle');
+        this.toggleIcon = document.getElementById('right-panel-toggle-icon');
+        this.tabButtons = document.querySelectorAll('.right-tab-btn');
+        this.tabContents = document.querySelectorAll('.right-tab-content');
         this.isOpen = true;
-        this.activeTab = 'build';
+        this.activeTab = 'structures';
         this.init();
     }
 
     init() {
         // Load saved state
-        const savedState = localStorage.getItem('sidebarState');
+        const savedState = localStorage.getItem('rightPanelState');
         if (savedState) {
             const state = JSON.parse(savedState);
             this.isOpen = state.isOpen !== false; // Default to open
-            this.activeTab = state.activeTab || 'build';
+            this.activeTab = state.activeTab || 'structures';
         }
 
         // Set initial state
-        this.updateSidebarState();
+        this.updatePanelState();
         this.switchTab(this.activeTab);
 
         // Toggle button
@@ -40,19 +41,19 @@ class Sidebar {
 
     toggle() {
         this.isOpen = !this.isOpen;
-        this.updateSidebarState();
+        this.updatePanelState();
         this.saveState();
     }
 
-    updateSidebarState() {
-        if (this.sidebar) {
+    updatePanelState() {
+        if (this.panelContainer) {
             if (this.isOpen) {
-                this.sidebar.classList.remove('collapsed');
+                this.panelContainer.classList.remove('hidden');
                 if (this.toggleIcon) {
                     this.toggleIcon.textContent = '◀';
                 }
             } else {
-                this.sidebar.classList.add('collapsed');
+                this.panelContainer.classList.add('hidden');
                 if (this.toggleIcon) {
                     this.toggleIcon.textContent = '▶';
                 }
@@ -74,7 +75,7 @@ class Sidebar {
 
         // Update tab contents
         this.tabContents.forEach(content => {
-            if (content.id === `tab-${tabName}`) {
+            if (content.id === `right-tab-${tabName}`) {
                 content.classList.add('active');
             } else {
                 content.classList.remove('active');
@@ -89,11 +90,11 @@ class Sidebar {
     }
 
     getTabContainer(tabName) {
-        return document.getElementById(`tab-${tabName}`);
+        return document.getElementById(`right-tab-${tabName}`);
     }
 
     saveState() {
-        localStorage.setItem('sidebarState', JSON.stringify({
+        localStorage.setItem('rightPanelState', JSON.stringify({
             isOpen: this.isOpen,
             activeTab: this.activeTab
         }));

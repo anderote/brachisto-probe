@@ -1,27 +1,30 @@
 /**
- * Web Worker for Game Engine V2
+ * Web Worker for Game Engine
  * 
  * Runs game tick loop in background thread
  */
 
 // Import dependencies using importScripts
 importScripts(
+    '/static/js/game/config.js',             // Config must load first
     '/static/js/game/data_loader.js',
-    '/static/js/game/engine_v2/core/time_manager.js',
-    '/static/js/game/engine_v2/core/game_state.js',
-    '/static/js/game/engine_v2/calculations/skills_calculator.js',
-    '/static/js/game/engine_v2/calculations/orbital_mechanics.js',
-    '/static/js/game/engine_v2/calculations/production_calculator.js',
-    '/static/js/game/engine_v2/calculations/energy_calculator.js',
-    '/static/js/game/engine_v2/calculations/research_calculator.js',
-    '/static/js/game/engine_v2/calculations/composite_skills.js',
-    '/static/js/game/engine_v2/systems/probe_system.js',
-    '/static/js/game/engine_v2/systems/structure_system.js',
-    '/static/js/game/engine_v2/systems/mining_system.js',
-    '/static/js/game/engine_v2/systems/dyson_system.js',
-    '/static/js/game/engine_v2/systems/transfer_system.js',
-    '/static/js/game/engine_v2/systems/recycling_system.js',
-    '/static/js/game/engine_v2/engine.js'
+    '/static/js/game/skill_definitions.js',  // Skill definitions (load before TechTree)
+    '/static/js/game/engine/core/time_manager.js',
+    '/static/js/game/engine/core/game_state.js',
+    '/static/js/game/engine/tech_tree.js',   // TechTree (new unified research/skills system)
+    '/static/js/game/engine/calculations/skills_calculator.js',
+    '/static/js/game/engine/calculations/orbital_mechanics.js',
+    '/static/js/game/engine/calculations/production_calculator.js',
+    '/static/js/game/engine/calculations/energy_calculator.js',
+    '/static/js/game/engine/calculations/research_calculator.js',
+    '/static/js/game/engine/calculations/composite_skills.js',
+    '/static/js/game/engine/systems/probe_system.js',
+    '/static/js/game/engine/systems/structure_system.js',
+    '/static/js/game/engine/systems/mining_system.js',
+    '/static/js/game/engine/systems/dyson_system.js',
+    '/static/js/game/engine/systems/transfer_system.js',
+    '/static/js/game/engine/systems/recycling_system.js',
+    '/static/js/game/engine/engine.js'
 );
 
 let engine = null;
@@ -111,11 +114,20 @@ async function handleStart(data) {
         isRunning = true;
         uiUpdateCounter = 0;
         
+        // Calculate initial derived values before sending state
+        // This ensures UI has correct probe counts and economic data from the start
+        if (engine && engine.initialized) {
+            const skills = engine.state.skills || {};
+            const dysonPower = { economy: 0, intelligence: 0 };
+            const energyBalance = { production: 0, consumption: 0, net: 0 };
+            engine.calculateDerivedValues(skills, dysonPower, energyBalance);
+        }
+        
         // Start tick loop (60fps)
         const tickIntervalMs = 1000 / 60;  // ~16.67ms
         tickInterval = setInterval(() => tick(), tickIntervalMs);
         
-        // Send initial state
+        // Send initial state (now with derived values)
         const gameState = engine.getState();
         self.postMessage({
             type: 'startComplete',
@@ -210,6 +222,20 @@ function tick() {
         // Execute game tick
         engine.tick();
         
+        // Check for invalid time values that might indicate a problem
+        const currentTime = engine.timeManager ? engine.timeManager.getTime() : (engine.state ? engine.state.time : null);
+        if (currentTime !== null && currentTime !== undefined) {
+            if (isNaN(currentTime) || !isFinite(currentTime)) {
+                console.error('Worker: Invalid time value detected:', currentTime);
+                self.postMessage({
+                    type: 'error',
+                    error: `Invalid time value: ${currentTime}`,
+                    stack: new Error().stack
+                });
+                // Don't stop - let it continue but log the error
+            }
+        }
+        
         // Update UI every N ticks
         uiUpdateCounter++;
         if (uiUpdateCounter >= UI_UPDATE_INTERVAL) {
@@ -233,11 +259,13 @@ function tick() {
             }
         }
     } catch (error) {
+        console.error('Worker tick error:', error);
         self.postMessage({
             type: 'error',
             error: error.message,
             stack: error.stack
         });
+        // Don't stop isRunning - let it try to continue
     }
 }
 

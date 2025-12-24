@@ -17,7 +17,9 @@ class SceneManager {
 
         // Camera - wide FOV for solar system view
         const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
-        this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 10000);
+        // Parameters: FOV (degrees), aspect ratio, near clipping plane, far clipping plane
+        // Increased far clipping plane from 10000 to 50000 to match increased maxZoom
+        this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 50000);
         this.camera.position.set(0, 0, 15);
 
         // Renderer
@@ -28,6 +30,10 @@ class SceneManager {
             });
             this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
             this.renderer.setPixelRatio(window.devicePixelRatio);
+            
+            // Enable shadow maps
+            this.renderer.shadowMap.enabled = true;
+            this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         } catch (error) {
             console.error('Failed to create WebGL renderer:', error);
             // Try fallback renderer without antialiasing
@@ -38,6 +44,10 @@ class SceneManager {
                 });
                 this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
                 this.renderer.setPixelRatio(window.devicePixelRatio);
+                
+                // Enable shadow maps
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             } catch (fallbackError) {
                 console.error('Failed to create fallback WebGL renderer:', fallbackError);
                 throw new Error('WebGL is not supported in this browser');
@@ -235,6 +245,25 @@ class SceneManager {
             z: this.camera.position.z
         };
     }
+    
+    /**
+     * Start tracking a target position (camera will follow it)
+     * @param {Function} getPositionFn - Function that returns the current THREE.Vector3 position
+     */
+    startTracking(getPositionFn) {
+        if (this.cameraController) {
+            this.cameraController.startTracking(getPositionFn);
+        }
+    }
+    
+    /**
+     * Stop tracking and return camera to origin
+     */
+    stopTracking() {
+        if (this.cameraController) {
+            this.cameraController.stopTracking();
+        }
+    }
 
     destroy() {
         if (this.animationId) {
@@ -262,12 +291,40 @@ class CameraController {
         
         this.targetRadius = 15;
         this.targetPanOffset = new THREE.Vector3(0, 0, 0);
-        this.minZoom = 5;
-        this.maxZoom = 100;
+        this.minZoom = 1;
+        this.maxZoom = 2000; // Increased from 500 to allow zooming out further
         this.smoothness = 0.1;
+        
+        // Tracking state
+        this.trackingTarget = null; // Function that returns current position to track
+        this.isTracking = false;
         
         // Update initial position
         this.updatePosition();
+    }
+    
+    /**
+     * Start tracking a target position
+     * @param {Function} getPositionFn - Function that returns the current THREE.Vector3 position to track
+     */
+    startTracking(getPositionFn) {
+        this.trackingTarget = getPositionFn;
+        this.isTracking = true;
+        
+        // Immediately move to the target
+        const pos = getPositionFn();
+        if (pos) {
+            this.targetPanOffset.copy(pos);
+        }
+    }
+    
+    /**
+     * Stop tracking and return camera to origin
+     */
+    stopTracking() {
+        this.trackingTarget = null;
+        this.isTracking = false;
+        this.targetPanOffset.set(0, 0, 0);
     }
 
     rotate(deltaTheta, deltaPhi) {
@@ -312,6 +369,14 @@ class CameraController {
     }
 
     update(deltaTime) {
+        // If tracking, update target pan offset to current tracked position
+        if (this.isTracking && this.trackingTarget) {
+            const targetPos = this.trackingTarget();
+            if (targetPos) {
+                this.targetPanOffset.copy(targetPos);
+            }
+        }
+        
         // Smooth interpolation for radius
         this.radius += (this.targetRadius - this.radius) * this.smoothness;
         
@@ -321,7 +386,7 @@ class CameraController {
         // Update position
         this.updatePosition();
 
-        // Always look at origin (sun) plus pan offset
+        // Always look at the pan offset (tracked object or origin)
         this.camera.lookAt(this.panOffset);
     }
 }

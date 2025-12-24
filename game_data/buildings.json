@@ -1,521 +1,133 @@
 {
-  "description": "Simplified 5-tier building system with exponential scaling",
-  "pricing_system": {
-    "description": "Each tier: 100x output, 30% cheaper per unit (70% cost per unit), final tier ~1Bx cost of first",
-    "tier_multipliers": {
-      "tier_1": {"output": 1, "cost": 1},
-      "tier_2": {"output": 100, "cost": 70},
-      "tier_3": {"output": 10000, "cost": 4900},
-      "tier_4": {"output": 1000000, "cost": 343000},
-      "tier_5": {"output": 100000000, "cost": 24010000}
-    }
-  },
+  "description": "Simplified structure system - all structures defined as multipliers of probe base values",
   "buildings": {
-    "energy": [
-      {
-        "id": "solar_array_basic",
-        "name": "Basic Solar Array",
-        "description": "Simple solar panel array for energy production. 10 MW output.",
-        "base_cost_metal": 10000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.4,
-          "venus": 1.1,
-          "earth": 1.0,
-          "mars": 0.6,
-          "asteroid_belt": 0.4
-        },
-        "effects": {
-          "energy_production_per_second": 10000000,
-          "energy_consumption_per_second": 0
-        },
-        "prerequisites": [],
-        "tier": 1
+    "refinery": {
+      "id": "refinery",
+      "name": "Refinery",
+      "description": "Specialized mining and refining facility. Mines 120x probe rate, consumes 80x probe energy.",
+      "mass_multiplier": 100,
+      "mining_rate_multiplier": 120,
+      "energy_cost_multiplier": 80,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
+      "orbital_efficiency": {
+        "mercury": 1.0,
+        "venus": 1.0,
+        "earth": 1.0,
+        "mars": 1.0,
+        "asteroid_belt": 1.0
       },
-      {
-        "id": "solar_mass_reactor",
-        "name": "Solar Mass Reactor",
-        "description": "Advanced solar concentrator with thermal storage. 1 GW output.",
-        "base_cost_metal": 1000000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
-        "orbital_efficiency": {
-          "mercury": 1.4,
-          "venus": 1.1,
-          "earth": 1.0,
-          "mars": 0.6
-        },
-        "effects": {
-          "energy_production_per_second": 1000000000,
-          "energy_consumption_per_second": 0
-        },
-        "prerequisites": [],
-        "tier": 2
+      "research_skills": {
+        "mining_rate": ["robotics", "locomotion", "strength", "materials"],
+        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
       }
-    ],
-    "mining": [
-      {
-        "id": "mobile_refinery",
-        "name": "Mobile Refinery",
-        "description": "Portable mining and refining facility. Mines 11,000 kg metal/day with 2% improved efficiency.",
-        "base_cost_metal": 10000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.0,
-          "venus": 1.0,
-          "earth": 1.0,
-          "mars": 1.0,
-          "asteroid_belt": 1.0
-        },
-        "effects": {
-          "metal_production_per_day": 11000,
-          "metal_efficiency_bonus": 0.02,
-          "energy_consumption_per_second": 100000
-        },
-        "prerequisites": [],
-        "tier": 1
+    },
+    "factory": {
+      "id": "factory",
+      "name": "Factory",
+      "description": "Specialized manufacturing facility. Replicates at 150x probe rate, consumes 100x probe energy.",
+      "mass_multiplier": 100,
+      "build_rate_multiplier": 150,
+      "energy_cost_multiplier": 100,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
+      "orbital_efficiency": {
+        "mercury": 1.2,
+        "venus": 1.1,
+        "earth": 1.0,
+        "mars": 0.95,
+        "asteroid_belt": 0.9
       },
-      {
-        "id": "industrial_mining_complex",
-        "name": "Industrial Mining Complex",
-        "description": "Large-scale mining operation. Mines 1,402,500 kg metal/day with 4% improved efficiency.",
-        "base_cost_metal": 1000000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.2,
-          "venus": 1.1,
-          "earth": 1.0,
-          "mars": 0.95,
-          "asteroid_belt": 1.3
-        },
-        "effects": {
-          "metal_production_per_day": 1402500,
-          "metal_efficiency_bonus": 0.04,
-          "energy_consumption_per_second": 10196175
-        },
-        "prerequisites": [],
-        "tier": 2
+      "research_skills": {
+        "build_rate": ["robotics", "production", "materials"],
+        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
       }
-    ],
-    "factories": [
-      {
-        "id": "mobile_factory",
-        "name": "Mobile Factory",
-        "description": "Portable manufacturing facility. Produces probes at 30% discount vs manual replication. 800 kg/day probe production.",
-        "base_cost_metal": 10000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.2,
-          "venus": 1.1,
-          "earth": 1.0,
-          "mars": 0.95,
-          "asteroid_belt": 0.9
-        },
-        "effects": {
-          "probe_production_per_day": 800,
-          "metal_per_probe": 7.0,
-          "energy_consumption_per_second": 50000
-        },
-        "prerequisites": [],
-        "tier": 1
+    },
+    "power_station": {
+      "id": "power_station",
+      "name": "Power Station",
+      "description": "Specialized energy production facility. Produces 100 MW base power.",
+      "mass_multiplier": 100,
+      "power_output_mw": 100,
+      "energy_cost_multiplier": 0,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
+      "orbital_efficiency": {
+        "mercury": 1.4,
+        "venus": 1.1,
+        "earth": 1.0,
+        "mars": 0.6,
+        "asteroid_belt": 0.4
       },
-      {
-        "id": "probe_factory",
-        "name": "Probe Factory",
-        "description": "Standard manufacturing facility. Produces probes 30% cheaper than tier 1. 80,000 kg/day probe production.",
-        "base_cost_metal": 1000000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.3,
-          "venus": 1.2,
-          "earth": 1.0,
-          "mars": 0.95,
-          "asteroid_belt": 0.9
-        },
-        "effects": {
-          "probe_production_per_day": 80000,
-          "metal_per_probe": 4.9,
-          "energy_consumption_per_second": 3500000
-        },
-        "prerequisites": [],
-        "tier": 2
+      "research_skills": {
+        "power_output": ["solar_pv", "energy_converter", "radiator"],
+        "energy_cost": []
       }
-    ],
-    "compute": [
-      {
-        "id": "orbital_data_center",
-        "name": "Orbital Data Center",
-        "description": "Basic computing facility for research. 1 PFLOPS output.",
-        "base_cost_metal": 10000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
-        "orbital_efficiency": {
-          "mercury": 1.5,
-          "venus": 1.4,
-          "earth": 1.2,
-          "mars": 1.0
-        },
-        "effects": {
-          "intelligence_flops": 1e15,
-          "energy_consumption_per_second": 500000
-        },
-        "prerequisites": [],
-        "tier": 1
+    },
+    "data_center": {
+      "id": "data_center",
+      "name": "Orbital Data Center",
+      "description": "Specialized computing facility for research. Produces 10 EFLOPS base compute.",
+      "mass_multiplier": 100,
+      "compute_eflops": 10,
+      "energy_cost_multiplier": 50,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
+      "orbital_efficiency": {
+        "mercury": 1.5,
+        "venus": 1.4,
+        "earth": 1.2,
+        "mars": 1.0
       },
-      {
-        "id": "quantum_compute_hub",
-        "name": "Quantum Compute Hub",
-        "description": "Advanced quantum computing facility. 100 PFLOPS output.",
-        "base_cost_metal": 1000000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth"],
-        "orbital_efficiency": {
-          "mercury": 1.6,
-          "venus": 1.5,
-          "earth": 1.3
-        },
-        "effects": {
-          "intelligence_flops": 1e17,
-          "energy_consumption_per_second": 3500000
-        },
-        "prerequisites": [],
-        "tier": 2
+      "research_skills": {
+        "compute": ["cpu", "gpu", "interconnect", "io_bandwidth"],
+        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
       }
-    ],
-    "omni": [
-      {
-        "id": "omni_fab",
-        "name": "Omni-Fab",
-        "description": "Jack-of-all-trades fabrication facility. Produces a little bit of everything (energy, mining, probes, intelligence) but with poor efficiency compared to specialized tier 1 structures. Useful for early game flexibility.",
-        "base_cost_metal": 12000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.0,
-          "venus": 1.0,
-          "earth": 1.0,
-          "mars": 1.0,
-          "asteroid_belt": 1.0
-        },
-        "effects": {
-          "energy_production_per_second": 5000000,
-          "metal_production_per_day": 5500,
-          "probe_production_per_day": 400,
-          "intelligence_flops": 5e14,
-          "energy_consumption_per_second": 150000
-        },
-        "prerequisites": [],
-        "tier": 1
-      }
-    ],
-    "transport": [
-      {
-        "id": "transport_hub",
-        "name": "Transport Hub",
-        "description": "Basic transportation facility for material transfer. 2x transfer speed.",
-        "base_cost_metal": 10000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.0,
-          "venus": 1.0,
-          "earth": 1.0,
-          "mars": 1.0,
-          "asteroid_belt": 1.0
-        },
-        "effects": {
-          "transfer_speed_multiplier": 2.0,
-          "energy_consumption_per_second": 200000
-        },
-        "prerequisites": [],
-        "tier": 1
+    },
+    "omni_fab": {
+      "id": "omni_fab",
+      "name": "Omni-Fab",
+      "description": "General purpose fabrication facility. Produces some energy, mining, probes, and compute at 50% efficiency compared to specialized structures. Costs 2x specialist structures.",
+      "mass_multiplier": 200,
+      "efficiency": 0.5,
+      "mining_rate_multiplier": 60,
+      "build_rate_multiplier": 75,
+      "power_output_mw": 50,
+      "compute_eflops": 5,
+      "energy_cost_multiplier": 160,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
+      "orbital_efficiency": {
+        "mercury": 1.0,
+        "venus": 1.0,
+        "earth": 1.0,
+        "mars": 1.0,
+        "asteroid_belt": 1.0
       },
-      {
-        "id": "quantum_relay",
-        "name": "Quantum Relay",
-        "description": "Advanced transportation using quantum entanglement. 5x transfer speed.",
-        "base_cost_metal": 1000000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.2,
-          "venus": 1.1,
-          "earth": 1.0,
-          "mars": 0.95,
-          "asteroid_belt": 0.9
-        },
-        "effects": {
-          "transfer_speed_multiplier": 5.0,
-          "energy_consumption_per_second": 3500000
-        },
-        "prerequisites": [],
-        "tier": 2
+      "research_skills": {
+        "all": ["robotics", "locomotion", "strength", "materials", "production", "solar_pv", "energy_converter", "cpu", "gpu", "interconnect", "io_bandwidth"]
+      }
+    },
+    "mass_driver": {
+      "id": "mass_driver",
+      "name": "Mass Driver",
+      "description": "Electromagnetic launcher for orbital mass transfers. Reduces travel time by 90% for probes and metal leaving this zone. Required at source zone for metal transfers.",
+      "mass_multiplier": 500,
+      "base_capacity_kg": 10000,
+      "base_delta_v": 5000,
+      "energy_cost_multiplier": 200,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt", "jupiter", "saturn", "uranus", "neptune", "kuiper"],
+      "orbital_efficiency": {
+        "mercury": 1.0,
+        "venus": 1.0,
+        "earth": 1.0,
+        "mars": 1.0,
+        "asteroid_belt": 1.0,
+        "jupiter": 1.0,
+        "saturn": 1.0,
+        "uranus": 1.0,
+        "neptune": 1.0,
+        "kuiper": 1.0
       },
-      {
-        "id": "wormhole_gate",
-        "name": "Wormhole Gate",
-        "description": "Instantaneous transportation facility. 10x transfer speed, bypasses speed limits.",
-        "base_cost_metal": 100000000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
-        "orbital_efficiency": {
-          "mercury": 1.3,
-          "venus": 1.2,
-          "earth": 1.1,
-          "mars": 1.0
-        },
-        "effects": {
-          "transfer_speed_multiplier": 10.0,
-          "bypass_speed_limit": true,
-          "energy_consumption_per_second": 245000000
-        },
-        "prerequisites": [],
-        "tier": 3
+      "research_skills": {
+        "capacity": ["strength", "locomotion"],
+        "delta_v": ["energy_converter", "propulsion", "thrust"]
       }
-    ],
-    "storage": [
-      {
-        "id": "energy_storage_basic",
-        "name": "Basic Energy Storage",
-        "description": "Basic energy storage facility using electrochemical batteries. Stores 10 MW·d (10 megawatt-days) of energy.",
-        "base_cost_metal": 10000,
-        "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-        "orbital_efficiency": {
-          "mercury": 1.0,
-          "venus": 1.0,
-          "earth": 1.0,
-          "mars": 1.0,
-          "asteroid_belt": 1.0
-        },
-        "effects": {
-          "energy_storage_capacity": 10000000,
-          "energy_consumption_per_second": 0
-        },
-        "prerequisites": [],
-        "tier": 1
-      }
-    ],
-    "_archived_tiers_3_5": {
-      "note": "Tiers 3-5 structures preserved for future expansion. Currently disabled for single zone testing.",
-      "energy": [
-        {
-          "id": "orbital_power_station",
-          "name": "Orbital Power Station",
-          "description": "Massive orbital energy facility. 100 GW output.",
-          "base_cost_metal": 100000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth"],
-          "orbital_efficiency": {
-            "mercury": 1.5,
-            "venus": 1.2,
-            "earth": 1.0
-          },
-          "effects": {
-            "energy_production_per_second": 100000000000,
-            "energy_consumption_per_second": 0
-          },
-          "prerequisites": [],
-          "tier": 3
-        },
-        {
-          "id": "stellar_harvester",
-          "name": "Stellar Harvester",
-          "description": "Planetary-scale energy collection facility. 10 TW output.",
-          "base_cost_metal": 10000000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth"],
-          "orbital_efficiency": {
-            "mercury": 1.6,
-            "venus": 1.3,
-            "earth": 1.1
-          },
-          "effects": {
-            "energy_production_per_second": 10000000000000,
-            "energy_consumption_per_second": 0
-          },
-          "prerequisites": [],
-          "tier": 4
-        },
-        {
-          "id": "dyson_energy_core",
-          "name": "Dyson Energy Core",
-          "description": "Ultimate energy production facility harnessing stellar output. 1 PW output.",
-          "base_cost_metal": 1000000000000,
-          "allowed_orbital_zones": ["dyson_sphere"],
-          "orbital_efficiency": {
-            "dyson_sphere": 2.0
-          },
-          "effects": {
-            "energy_production_per_second": 1000000000000000,
-            "energy_consumption_per_second": 0
-          },
-          "prerequisites": [],
-          "tier": 5
-        }
-      ],
-      "mining": [
-        {
-          "id": "planetary_excavator",
-          "name": "Planetary Excavator",
-          "description": "Massive planetary mining facility. Mines 178,200,000 kg metal/day with 6% improved efficiency.",
-          "base_cost_metal": 100000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
-          "orbital_efficiency": {
-            "mercury": 1.3,
-            "venus": 1.2,
-            "earth": 1.1,
-            "mars": 1.0
-          },
-          "effects": {
-            "metal_production_per_day": 178200000,
-            "metal_efficiency_bonus": 0.06,
-            "energy_consumption_per_second": 1037124000
-          },
-          "prerequisites": [],
-          "tier": 3
-        },
-        {
-          "id": "asteroid_processor",
-          "name": "Asteroid Processor",
-          "description": "Asteroid belt processing facility. Mines 22,572,000,000 kg metal/day with 8% improved efficiency.",
-          "base_cost_metal": 10000000000,
-          "allowed_orbital_zones": ["asteroid_belt"],
-          "orbital_efficiency": {
-            "asteroid_belt": 1.8
-          },
-          "effects": {
-            "metal_production_per_day": 22572000000,
-            "metal_efficiency_bonus": 0.08,
-            "energy_consumption_per_second": 104959800000
-          },
-          "prerequisites": [],
-          "tier": 4
-        },
-        {
-          "id": "molecular_dissembler",
-          "name": "Molecular Dissembler",
-          "description": "Ultimate mining facility using nanobots. Mines 2,851,200,000,000 kg metal/day with 10% improved efficiency.",
-          "base_cost_metal": 1000000000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-          "orbital_efficiency": {
-            "mercury": 1.5,
-            "venus": 1.4,
-            "earth": 1.3,
-            "mars": 1.2,
-            "asteroid_belt": 2.0
-          },
-          "effects": {
-            "metal_production_per_day": 2851200000000,
-            "metal_efficiency_bonus": 0.10,
-            "energy_consumption_per_second": 10606464000000
-          },
-          "prerequisites": [],
-          "tier": 5
-        }
-      ],
-      "factories": [
-        {
-          "id": "orbital_shipyard",
-          "name": "Orbital Shipyard",
-          "description": "Large-scale construction facility. Produces probes 30% cheaper than tier 2. 8,000,000 kg/day probe production.",
-          "base_cost_metal": 100000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
-          "orbital_efficiency": {
-            "mercury": 1.4,
-            "venus": 1.3,
-            "earth": 1.2,
-            "mars": 1.1
-          },
-          "effects": {
-            "probe_production_per_day": 8000000,
-            "metal_per_probe": 3.43,
-            "energy_consumption_per_second": 245000000
-          },
-          "prerequisites": [],
-          "tier": 3
-        },
-        {
-          "id": "mega_shipyard",
-          "name": "Mega Shipyard",
-          "description": "Massive orbital construction facility. Produces probes 30% cheaper than tier 3. 800,000,000 kg/day probe production.",
-          "base_cost_metal": 10000000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth"],
-          "orbital_efficiency": {
-            "mercury": 1.5,
-            "venus": 1.4,
-            "earth": 1.3
-          },
-          "effects": {
-            "probe_production_per_day": 800000000,
-            "metal_per_probe": 2.401,
-            "energy_consumption_per_second": 17150000000
-          },
-          "prerequisites": [],
-          "tier": 4
-        },
-        {
-          "id": "system_fabrication_network",
-          "name": "System Fabrication Network",
-          "description": "Ultimate manufacturing network. Produces probes 30% cheaper than tier 4. 80,000,000,000 kg/day probe production.",
-          "base_cost_metal": 1000000000000,
-          "allowed_orbital_zones": ["earth"],
-          "orbital_efficiency": {
-            "earth": 2.0
-          },
-          "effects": {
-            "probe_production_per_day": 80000000000,
-            "metal_per_probe": 1.6807,
-            "energy_consumption_per_second": 1200500000000
-          },
-          "prerequisites": [],
-          "tier": 5
-        }
-      ],
-      "compute": [
-        {
-          "id": "research_complex",
-          "name": "Research Complex",
-          "description": "Massive research computing facility. 10,000 PFLOPS output.",
-          "base_cost_metal": 100000000,
-          "allowed_orbital_zones": ["mercury", "venus", "earth"],
-          "orbital_efficiency": {
-            "mercury": 1.7,
-            "venus": 1.6,
-            "earth": 1.4
-          },
-          "effects": {
-            "intelligence_flops": 1e19,
-            "energy_consumption_per_second": 245000000
-          },
-          "prerequisites": [],
-          "tier": 3
-        },
-        {
-          "id": "stellar_compute_network",
-          "name": "Stellar Compute Network",
-          "description": "Planetary-scale computing network. 1,000,000 PFLOPS output.",
-          "base_cost_metal": 10000000000,
-          "allowed_orbital_zones": ["mercury", "earth"],
-          "orbital_efficiency": {
-            "mercury": 1.8,
-            "earth": 1.5
-          },
-          "effects": {
-            "intelligence_flops": 1e21,
-            "energy_consumption_per_second": 17150000000
-          },
-          "prerequisites": [],
-          "tier": 4
-        },
-        {
-          "id": "dyson_compute_core",
-          "name": "Dyson Compute Core",
-          "description": "Ultimate computing facility. 100,000,000 PFLOPS output.",
-          "base_cost_metal": 1000000000000,
-          "allowed_orbital_zones": ["dyson_sphere"],
-          "orbital_efficiency": {
-            "dyson_sphere": 2.0
-          },
-          "effects": {
-            "intelligence_flops": 1e23,
-            "energy_consumption_per_second": 1200500000000
-          },
-          "prerequisites": [],
-          "tier": 5
-        }
-      ]
     }
   }
 }
-

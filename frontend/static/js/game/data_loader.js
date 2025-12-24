@@ -94,7 +94,17 @@ class GameDataLoader {
             return null;
         }
         
-        // Search through all categories
+        // Handle flat structure: buildings is a dict where keys are building IDs
+        if (this.buildings[buildingId]) {
+            const building = this.buildings[buildingId];
+            // Ensure it has an 'id' field
+            if (building && typeof building === 'object' && !building.id) {
+                building.id = buildingId;
+            }
+            return building;
+        }
+        
+        // Fallback: search through categories (old format support)
         for (const category in this.buildings) {
             const items = this.buildings[category];
             if (Array.isArray(items)) {

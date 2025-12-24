@@ -3,12 +3,16 @@
  * 
  * Computes all skill values from research state
  * Skills inform all downstream calculations (probe properties, structure properties, etc.)
+ * 
+ * NOTE: This class is now a legacy wrapper. The primary skills system is TechTree.
+ * This class is kept for backward compatibility and will delegate to TechTree when available.
  */
 
 class SkillsCalculator {
     constructor(dataLoader) {
         this.dataLoader = dataLoader;
         this.researchTrees = null;
+        this.techTree = null; // Reference to TechTree if available
     }
     
     /**
@@ -20,12 +24,27 @@ class SkillsCalculator {
     }
     
     /**
+     * Set TechTree reference for delegation
+     * @param {TechTree} techTree - TechTree instance
+     */
+    setTechTree(techTree) {
+        this.techTree = techTree;
+    }
+    
+    /**
      * Calculate all skills from research state
      * @param {Object} researchState - Current research progress state
      * @param {number} currentTime - Current time in days (for compounding)
      * @returns {Object} Complete skills object
      */
     calculateSkills(researchState, currentTime = 0) {
+        // If TechTree is available, delegate to it
+        if (this.techTree) {
+            this.techTree.loadFromState({ research: researchState });
+            return this.techTree.getLegacySkills();
+        }
+        
+        // Legacy calculation (kept for backward compatibility)
         if (!this.researchTrees) {
             // Return base skills if research trees not loaded
             return this.getBaseSkills();
@@ -67,6 +86,13 @@ class SkillsCalculator {
         skills.energy_storage = skills.battery_density;  // Map to battery_density
         skills.energy_transport = this.calculateEnergyTransportSkill(researchState, currentTime);
         skills.dyson_construction = this.calculateDysonConstructionSkill(researchState, currentTime);
+        
+        // ACDS (Autonomous Control and Decision Systems) - defaults to 1.0 for now
+        // TODO: Add research tree for ACDS if needed
+        skills.acds = this.calculateACDSSkill(researchState, currentTime);
+        
+        // Robotic skill (maps to manipulation for now)
+        skills.robotic = skills.manipulation;
         
         // Computer skills (geometric mean of 4 separate trees)
         const computerSkills = this.calculateComputerSkills(researchState, currentTime);
@@ -114,6 +140,8 @@ class SkillsCalculator {
             energy_storage: 1.0,      // Legacy - maps to battery_density
             energy_transport: 1.0,    // Energy transport efficiency
             dyson_construction: 1.0,  // Dyson construction efficiency
+            acds: 1.0,                // Autonomous Control and Decision Systems
+            robotic: 1.0,             // Robotic systems (maps to manipulation)
             
             // Computer skills (geometric mean)
             computer: {
@@ -124,6 +152,16 @@ class SkillsCalculator {
                 total: 1.0
             }
         };
+    }
+    
+    /**
+     * Calculate ACDS skill (Autonomous Control and Decision Systems)
+     * For now, defaults to 1.0 - can be connected to research tree later
+     */
+    calculateACDSSkill(researchState, currentTime) {
+        // TODO: Add research tree for ACDS if needed
+        // For now, return base value
+        return 1.0;
     }
     
     /**

@@ -5,6 +5,7 @@ class ResearchPanel {
         this.researchData = null;
         this.gameState = null;
         this.activeResearch = {}; // Track which tier is currently active per tree
+        this.collapsedCategories = new Set(); // Track collapsed categories
         this.init();
         this.loadResearch();
     }
@@ -87,13 +88,16 @@ class ResearchPanel {
             return;
         }
 
-        let html = '<div class="research-panel-new">';
-        html += '<div class="research-header">';
-        html += '<div class="research-header-title">Research</div>';
-        html += '<div class="research-header-info">Intelligence (FLOPS) automatically allocated equally across all enabled research</div>';
-        html += '<label class="research-enable-all-toggle">';
+        let html = '<div class="probe-summary-panel">';
+        html += '<div class="probe-summary-title">Research</div>';
+        
+        // Info and enable all toggle as a summary item
+        html += '<div class="probe-summary-item">';
+        html += '<div class="probe-summary-label">Info</div>';
+        html += '<div class="probe-summary-value" style="font-size: 9px; font-weight: normal; margin-bottom: 8px;">Intelligence (FLOPS) automatically allocated equally across all enabled research</div>';
+        html += '<label class="research-enable-all-toggle" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 10px; margin-top: 5px;">';
         html += '<input type="checkbox" class="research-enable-all-checkbox" onchange="researchPanel.toggleAllCategories(this.checked)">';
-        html += '<span class="research-enable-all-label">Enable All Categories</span>';
+        html += '<span class="research-enable-all-label" style="color: rgba(255, 255, 255, 0.7);">Enable All Categories</span>';
         html += '</label>';
         html += '</div>';
 
@@ -128,39 +132,62 @@ class ResearchPanel {
 
         this.container.innerHTML = html;
         
-        // Add click handlers for tree buttons after rendering
-        this.attachTreeButtonHandlers();
+        // Add click handlers for research cards after rendering
+        this.attachResearchCardHandlers();
     }
     
-    attachTreeButtonHandlers() {
-        // Add click handlers to all research tree buttons
-        const treeButtons = this.container.querySelectorAll('.research-tree-button');
-        treeButtons.forEach(button => {
-            const treeId = button.getAttribute('data-tree-id');
-            if (treeId) {
-                // Add click handler (but not on the toggle circle itself)
-                button.addEventListener('click', (e) => {
-                    // Don't trigger if clicking on the toggle circle, checkbox, or label
-                    if (e.target.closest('.research-toggle-circle') || 
-                        e.target.closest('.tier-toggle-circle') ||
-                        e.target.closest('.toggle-circle') ||
-                        e.target.closest('label') ||
-                        e.target.tagName === 'INPUT' ||
-                        e.target.tagName === 'LABEL') {
-                        return;
-                    }
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.toggleTreeExpansion(treeId);
-                });
+    attachResearchCardHandlers() {
+        // Use event delegation on the container to handle clicks on research cards
+        // This avoids issues with cloning and ensures handlers persist after re-renders
+        // Remove any existing listener first to avoid duplicates
+        if (this._researchCardHandler) {
+            this.container.removeEventListener('click', this._researchCardHandler);
+        }
+        
+        this._researchCardHandler = (e) => {
+            // Find the closest research card element
+            const researchCard = e.target.closest('.research-card');
+            if (!researchCard) return;
+            
+            // Don't trigger if clicking on disabled cards
+            if (researchCard.classList.contains('disabled')) {
+                return;
             }
-        });
+            
+            // Don't trigger if clicking on links, buttons, checkboxes, labels, or toggle circles
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON' || 
+                e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL' ||
+                e.target.closest('label') || e.target.closest('.toggle-circle') ||
+                e.target.closest('.research-toggle-circle')) {
+                return;
+            }
+            
+            const treeId = researchCard.getAttribute('data-tree-id');
+            const subcatId = researchCard.getAttribute('data-subcat-id');
+            const tierId = researchCard.getAttribute('data-tier-id');
+            
+            if (!treeId || !tierId) {
+                // No tier available (complete), just toggle expansion
+                const treeKey = subcatId ? `${treeId}_${subcatId}` : treeId;
+                this.toggleTreeExpansion(treeKey);
+                return;
+            }
+            
+            // Get current enabled state
+            const isCurrentlyEnabled = researchCard.classList.contains('research-enabled');
+            const newEnabledState = !isCurrentlyEnabled;
+            
+            console.log('[ResearchPanel] Research card clicked:', { treeId, tierId, enabled: newEnabledState });
+            this.toggleResearch(treeId, tierId, newEnabledState);
+        };
+        
+        this.container.addEventListener('click', this._researchCardHandler);
         
         // Also ensure toggle circle checkboxes stop propagation
         const toggleCheckboxes = this.container.querySelectorAll('.research-toggle-circle-checkbox, .tier-toggle-circle-checkbox');
         toggleCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent triggering tree button click
+                e.stopPropagation(); // Prevent triggering card click
             });
         });
     }
@@ -206,16 +233,21 @@ class ResearchPanel {
         }
         
         const categoryEnabled = allEnabled && anyEnabled; // If all are enabled, category is enabled
+        const isCollapsed = this.collapsedCategories.has(categoryId);
         
-        let html = '<div class="research-category-section">';
-        html += '<div class="research-category-header">';
-        html += '<span>' + categoryName + '</span>';
-        html += '<label class="category-toggle">';
+        let html = '<div class="collapsible-category">';
+        html += '<div class="collapsible-category-header' + (isCollapsed ? ' collapsed' : '') + '" onclick="researchPanel.toggleCategoryCollapse(\'' + categoryId + '\')">';
+        html += '<span class="collapsible-category-title">' + categoryName + '</span>';
+        html += '<div style="display: flex; align-items: center; gap: 8px;">';
+        html += '<label class="category-toggle" onclick="event.stopPropagation();" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 9px;">';
         html += '<input type="checkbox" class="category-toggle-checkbox" data-category="' + categoryId + '" ';
         html += (categoryEnabled ? 'checked' : '') + ' onchange="researchPanel.toggleCategory(\'' + categoryId + '\', this.checked)">';
         html += '<span class="category-toggle-label">Enable All</span>';
         html += '</label>';
+        html += '<span class="collapsible-category-toggle">' + (isCollapsed ? '▶' : '▼') + '</span>';
         html += '</div>';
+        html += '</div>';
+        html += '<div class="collapsible-category-content' + (isCollapsed ? ' collapsed' : '') + '">';
         
         trees.forEach(([treeId, treeData]) => {
             // Handle computer_systems subcategories specially - render each subcategory directly
@@ -228,8 +260,17 @@ class ResearchPanel {
             }
         });
         
-        html += '</div>';
+        html += '</div></div>';
         return html;
+    }
+
+    toggleCategoryCollapse(categoryId) {
+        if (this.collapsedCategories.has(categoryId)) {
+            this.collapsedCategories.delete(categoryId);
+        } else {
+            this.collapsedCategories.add(categoryId);
+        }
+        this.render();
     }
     
     renderIntelligenceSubcategory(subcatId, subcatData, parentTreeId) {
@@ -269,46 +310,139 @@ class ResearchPanel {
             }
         }
         
-        let html = '<div class="research-tree-button intelligence-subcategory-tree" data-tree-id="' + treeId + '">';
+        // Calculate progress for this subcategory
+        let totalTranches = 0;
+        let completedTranches = 0;
+        if (subcatData.tiers) {
+            subcatData.tiers.forEach(tier => {
+                const tierKey = subcatId + '_' + tier.id;
+                const progress = this.getTierProgress(parentTreeId, tierKey);
+                const maxTranches = tier.tranches || 10;
+                totalTranches += maxTranches;
+                completedTranches += (progress.tranches_completed || 0);
+            });
+        }
+        const progressPercent = totalTranches > 0 ? (completedTranches / totalTranches) * 100 : 0;
         
-        // Subcategory header (like a tree header)
-        html += '<div class="research-tree-header">';
-        html += '<div class="research-tree-name">' + subcatData.name + '</div>';
+        // Get current tier progress for display
+        let currentTierProgress = null;
+        let currentTierProgressPercent = 0;
+        let allocatedFLOPS = 0;
+        let timeToComplete = Infinity;
         
-        // Toggle circle (red/green)
-        html += '<div class="research-toggle-circle-container">';
-        if (nextTier) {
+        if (nextTier && nextTierEnabled) {
             const tierKey = subcatId + '_' + nextTier.id;
-            html += '<label class="research-toggle-circle">';
-            html += '<input type="checkbox" class="research-toggle-circle-checkbox" data-tree-id="' + parentTreeId + '" data-tier-id="' + tierKey + '" ';
-            html += (nextTierEnabled ? 'checked' : '') + ' ';
-            html += 'onchange="researchPanel.toggleResearch(\'' + parentTreeId + '\', \'' + tierKey + '\', this.checked)">';
-            html += '<span class="toggle-circle ' + (nextTierEnabled ? 'enabled' : 'disabled') + '"></span>';
-            html += '</label>';
+            const tierProgress = this.getTierProgress(parentTreeId, tierKey);
+            const completed = tierProgress.tranches_completed || 0;
+            const maxTranches = nextTier.tranches || 10;
+            currentTierProgressPercent = (completed / maxTranches) * 100;
+            currentTierProgress = { completed, maxTranches };
             
-            if (nextTierEnabled) {
-                html += '<div class="research-tree-status">';
-                html += '<span class="current-research-label">Researching:</span> ';
-                html += '<span class="current-research-name">' + nextTier.name + '</span>';
-                html += '</div>';
+            // Get allocated FLOPS
+            if (this.gameState && this.gameState.research_allocation_info) {
+                const treeAlloc = this.gameState.research_allocation_info[parentTreeId];
+                if (treeAlloc && treeAlloc[tierKey] !== undefined) {
+                    allocatedFLOPS = treeAlloc[tierKey];
+                }
+            }
+            
+            // Calculate time to complete
+            if (allocatedFLOPS > 0 && nextTier.tranche_cost_intelligence) {
+                const remainingTranches = maxTranches - completed;
+                const flopsPerTranche = nextTier.tranche_cost_intelligence;
+                const remainingFLOPS = remainingTranches * flopsPerTranche;
+                timeToComplete = remainingFLOPS / (allocatedFLOPS * 86400);
+            }
+        }
+        
+        const enabledClass = nextTierEnabled ? 'research-enabled' : '';
+        const clickableClass = nextTier ? 'building-card-clickable' : '';
+        
+        let html = `<div class="probe-summary-item building-card research-card ${clickableClass} ${enabledClass}" 
+                     id="research-${treeId}" 
+                     data-tree-id="${parentTreeId}"
+                     data-subcat-id="${subcatId}"
+                     data-tier-id="${nextTier ? (subcatId + '_' + nextTier.id) : ''}"
+                     style="cursor: ${nextTier ? 'pointer' : 'default'};">
+            <div class="probe-summary-label">
+                ${subcatData.name}
+                <span class="construction-status-indicator" id="status-${treeId}" style="float: right; font-size: 9px; color: rgba(255, 255, 255, 0.4);"></span>
+            </div>`;
+        
+        if (subcatData.description) {
+            html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px; margin-top: 2px;">${subcatData.description}</div>`;
+        }
+        
+        // Current tier info
+        if (nextTier) {
+            html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 5px;">
+                <strong>Current:</strong> ${nextTier.name}
+            </div>`;
+            
+            if (nextTier.description) {
+                html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px;">${nextTier.description}</div>`;
+            }
+            
+            // Find next project after current one
+            if (subcatData.tiers) {
+                const currentIndex = subcatData.tiers.findIndex(t => t.id === nextTier.id);
+                if (currentIndex >= 0 && currentIndex < subcatData.tiers.length - 1) {
+                    const nextProject = subcatData.tiers[currentIndex + 1];
+                    html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.4); margin-top: 5px; margin-bottom: 5px;">
+                        <strong>Next:</strong> ${nextProject.name}
+                    </div>`;
+                }
             }
         } else {
-            html += '<span class="toggle-circle complete"></span>';
-            html += '<div class="research-tree-status">';
-            html += '<span class="current-research-label">Complete</span>';
-            html += '</div>';
+            html += `<div style="font-size: 9px; color: rgba(74, 158, 255, 0.8); margin-bottom: 5px;">Complete</div>`;
         }
-        html += '</div>';
-        html += '</div>';
-
-        // Expanded content shows all tiers
-        if (isExpanded && subcatData.tiers) {
-            html += '<div class="research-tree-content">';
-            subcatData.tiers.forEach(tier => {
-                html += this.renderTierDetails(parentTreeId, tier, subcatData, subcatId);
-            });
-            html += '</div>';
+        
+        // Progress breakdown
+        html += `<div class="probe-summary-breakdown" style="margin-top: 5px;">
+            <div class="probe-summary-breakdown-item">
+                <span class="probe-summary-breakdown-label">Progress:</span>
+                <span class="probe-summary-breakdown-count">${completedTranches} / ${totalTranches} tranches</span>
+            </div>`;
+        
+        if (nextTier && nextTierEnabled && allocatedFLOPS > 0) {
+            html += `<div class="probe-summary-breakdown-item">
+                <span class="probe-summary-breakdown-label">FLOPS:</span>
+                <span class="probe-summary-breakdown-count">${this.formatFLOPS(allocatedFLOPS)}/s</span>
+            </div>`;
         }
+        
+        html += `</div>`;
+        
+        // Progress bar for current tier
+        if (nextTier && nextTierEnabled && currentTierProgress) {
+            html += `<div class="building-progress-container" id="progress-${treeId}" style="margin-top: 8px; padding: 6px; background: rgba(0, 0, 0, 0.2); border-radius: 3px;">
+                <div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">Research Progress</div>
+                <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
+                    <div id="progress-bar-${treeId}" style="height: 100%; width: ${Math.min(100, Math.max(0, currentTierProgressPercent))}%; background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(74, 158, 255, 1)); transition: width 0.3s ease;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="probe-summary-breakdown-count" id="progress-percent-${treeId}" style="font-size: 10px;">${currentTierProgressPercent.toFixed(1)}%</span>
+                    <span class="probe-summary-breakdown-count" id="progress-time-${treeId}" style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">${timeToComplete === Infinity ? '—' : FormatUtils.formatTime(timeToComplete)}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Toggle circle
+        html += `<div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">`;
+        if (nextTier) {
+            const tierKey = subcatId + '_' + nextTier.id;
+            html += `<label class="research-toggle-circle" onclick="event.stopPropagation();">
+                <input type="checkbox" class="research-toggle-circle-checkbox" data-tree-id="${parentTreeId}" data-tier-id="${tierKey}" 
+                       ${nextTierEnabled ? 'checked' : ''} 
+                       onchange="researchPanel.toggleResearch('${parentTreeId}', '${tierKey}', this.checked)">
+                <span class="toggle-circle ${nextTierEnabled ? 'enabled' : 'disabled'}"></span>
+            </label>`;
+            html += `<span style="font-size: 9px; color: rgba(255, 255, 255, 0.6);">${nextTierEnabled ? 'Researching' : 'Click to enable research'}</span>`;
+        } else {
+            html += `<span class="toggle-circle complete"></span>`;
+            html += `<span style="font-size: 9px; color: rgba(74, 158, 255, 0.8);">Complete</span>`;
+        }
+        html += `</div>`;
 
         html += '</div>';
         return html;
@@ -316,9 +450,10 @@ class ResearchPanel {
     
     getCurrentTierForSubcategory(parentTreeId, subcatId) {
         // Find the current tier in a subcategory
-        if (!this.gameState || !this.gameState.research) return null;
+        const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
+        if (!this.gameState || !researchState) return null;
         
-        const treeState = this.gameState.research[parentTreeId];
+        const treeState = researchState[parentTreeId];
         if (!treeState) return null;
 
         const treeData = this.researchData[parentTreeId];
@@ -356,9 +491,10 @@ class ResearchPanel {
     
     getCurrentTier(treeId, tierId = null) {
         // Updated to handle both regular tiers and subcategory tiers
-        if (!this.gameState || !this.gameState.research) return null;
+        const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
+        if (!this.gameState || !researchState) return null;
         
-        const treeState = this.gameState.research[treeId];
+        const treeState = researchState[treeId];
         if (!treeState) return null;
 
         const treeData = this.researchData[treeId];
@@ -514,46 +650,125 @@ class ResearchPanel {
             nextTierEnabled = progress.enabled || false;
         }
 
-        let html = '<div class="research-tree-button" data-tree-id="' + treeId + '">';
+        // Calculate overall progress for the tree
+        let totalTranches = 0;
+        let completedTranches = 0;
+        tiers.forEach(tier => {
+            const progress = this.getTierProgress(treeId, tier.id);
+            const maxTranches = tier.tranches || 10;
+            totalTranches += maxTranches;
+            completedTranches += (progress.tranches_completed || 0);
+        });
+        const progressPercent = totalTranches > 0 ? (completedTranches / totalTranches) * 100 : 0;
+
+        // Get current tier progress for display
+        let currentTierProgress = null;
+        let currentTierProgressPercent = 0;
+        let allocatedFLOPS = 0;
+        let timeToComplete = Infinity;
         
-        // Tree header (always visible)
-        html += '<div class="research-tree-header">';
-        html += '<div class="research-tree-name">' + treeData.name + '</div>';
-        
-        // Toggle circle (red/green)
-        html += '<div class="research-toggle-circle-container">';
-        if (nextTier) {
+        if (nextTier && nextTierEnabled) {
+            const tierProgress = this.getTierProgress(treeId, nextTier.id);
             const tierKey = nextTier.id;
-            html += '<label class="research-toggle-circle">';
-            html += '<input type="checkbox" class="research-toggle-circle-checkbox" data-tree-id="' + treeId + '" data-tier-id="' + tierKey + '" ';
-            html += (nextTierEnabled ? 'checked' : '') + ' ';
-            html += 'onchange="researchPanel.toggleResearch(\'' + treeId + '\', \'' + tierKey + '\', this.checked)">';
-            html += '<span class="toggle-circle ' + (nextTierEnabled ? 'enabled' : 'disabled') + '"></span>';
-            html += '</label>';
+            const completed = tierProgress.tranches_completed || 0;
+            const maxTranches = nextTier.tranches || 10;
+            currentTierProgressPercent = (completed / maxTranches) * 100;
+            currentTierProgress = { completed, maxTranches };
             
-            if (nextTierEnabled) {
-                html += '<div class="research-tree-status">';
-                html += '<span class="current-research-label">Researching:</span> ';
-                html += '<span class="current-research-name">' + nextTier.name + '</span>';
-                html += '</div>';
+            // Get allocated FLOPS
+            if (this.gameState && this.gameState.research_allocation_info) {
+                const treeAlloc = this.gameState.research_allocation_info[treeId];
+                if (treeAlloc && treeAlloc[tierKey] !== undefined) {
+                    allocatedFLOPS = treeAlloc[tierKey];
+                }
+            }
+            
+            // Calculate time to complete (if we have FLOPS allocation and cost)
+            if (allocatedFLOPS > 0 && nextTier.tranche_cost_intelligence) {
+                const remainingTranches = maxTranches - completed;
+                const flopsPerTranche = nextTier.tranche_cost_intelligence;
+                const remainingFLOPS = remainingTranches * flopsPerTranche;
+                // FLOPS is per second, convert to days: remainingFLOPS / (allocatedFLOPS * 86400)
+                timeToComplete = remainingFLOPS / (allocatedFLOPS * 86400);
+            }
+        }
+
+        const enabledClass = nextTierEnabled ? 'research-enabled' : '';
+        const clickableClass = nextTier ? 'building-card-clickable' : '';
+        
+        let html = `<div class="probe-summary-item building-card research-card ${clickableClass} ${enabledClass}" 
+                     id="research-${treeId}" 
+                     data-tree-id="${treeId}"
+                     data-tier-id="${nextTier ? nextTier.id : ''}"
+                     style="cursor: ${nextTier ? 'pointer' : 'default'};">
+            <div class="probe-summary-label">
+                ${treeData.name}
+                <span class="construction-status-indicator" id="status-${treeId}" style="float: right; font-size: 9px; color: rgba(255, 255, 255, 0.4);"></span>
+            </div>`;
+        
+        if (treeData.description) {
+            html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px; margin-top: 2px;">${treeData.description}</div>`;
+        }
+        
+        // Current tier info
+        if (nextTier) {
+            html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 5px;">
+                <strong>Current Tier:</strong> ${nextTier.name}
+            </div>`;
+            
+            if (nextTier.description) {
+                html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px;">${nextTier.description}</div>`;
             }
         } else {
-            html += '<span class="toggle-circle complete"></span>';
-            html += '<div class="research-tree-status">';
-            html += '<span class="current-research-label">Complete</span>';
-            html += '</div>';
+            html += `<div style="font-size: 9px; color: rgba(74, 158, 255, 0.8); margin-bottom: 5px;">Complete</div>`;
         }
-        html += '</div>';
-        html += '</div>';
-
-        // Expanded content (tier details) - show all tiers
-        if (isExpanded && tiers.length > 0) {
-            html += '<div class="research-tree-content">';
-            tiers.forEach(tier => {
-                html += this.renderTierDetails(treeId, tier, treeData);
-            });
-            html += '</div>';
+        
+        // Progress breakdown
+        html += `<div class="probe-summary-breakdown" style="margin-top: 5px;">
+            <div class="probe-summary-breakdown-item">
+                <span class="probe-summary-breakdown-label">Progress:</span>
+                <span class="probe-summary-breakdown-count">${completedTranches} / ${totalTranches} tranches</span>
+            </div>`;
+        
+        if (nextTier && nextTierEnabled && allocatedFLOPS > 0) {
+            html += `<div class="probe-summary-breakdown-item">
+                <span class="probe-summary-breakdown-label">FLOPS:</span>
+                <span class="probe-summary-breakdown-count">${this.formatFLOPS(allocatedFLOPS)}/s</span>
+            </div>`;
         }
+        
+        html += `</div>`;
+        
+        // Progress bar for current tier
+        if (nextTier && nextTierEnabled && currentTierProgress) {
+            html += `<div class="building-progress-container" id="progress-${treeId}" style="margin-top: 8px; padding: 6px; background: rgba(0, 0, 0, 0.2); border-radius: 3px;">
+                <div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">Research Progress</div>
+                <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
+                    <div id="progress-bar-${treeId}" style="height: 100%; width: ${Math.min(100, Math.max(0, currentTierProgressPercent))}%; background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(74, 158, 255, 1)); transition: width 0.3s ease;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="probe-summary-breakdown-count" id="progress-percent-${treeId}" style="font-size: 10px;">${currentTierProgressPercent.toFixed(1)}%</span>
+                    <span class="probe-summary-breakdown-count" id="progress-time-${treeId}" style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">${timeToComplete === Infinity ? '—' : FormatUtils.formatTime(timeToComplete)}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Toggle circle
+        html += `<div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">`;
+        if (nextTier) {
+            const tierKey = nextTier.id;
+            html += `<label class="research-toggle-circle" onclick="event.stopPropagation();">
+                <input type="checkbox" class="research-toggle-circle-checkbox" data-tree-id="${treeId}" data-tier-id="${tierKey}" 
+                       ${nextTierEnabled ? 'checked' : ''} 
+                       onchange="researchPanel.toggleResearch('${treeId}', '${tierKey}', this.checked)">
+                <span class="toggle-circle ${nextTierEnabled ? 'enabled' : 'disabled'}"></span>
+            </label>`;
+            html += `<span style="font-size: 9px; color: rgba(255, 255, 255, 0.6);">${nextTierEnabled ? 'Researching' : 'Click to enable research'}</span>`;
+        } else {
+            html += `<span class="toggle-circle complete"></span>`;
+            html += `<span style="font-size: 9px; color: rgba(74, 158, 255, 0.8);">Complete</span>`;
+        }
+        html += `</div>`;
 
         html += '</div>';
         return html;
@@ -698,9 +913,10 @@ class ResearchPanel {
     }
 
     getCurrentTier(treeId) {
-        if (!this.gameState || !this.gameState.research) return null;
+        const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
+        if (!this.gameState || !researchState) return null;
         
-        const treeState = this.gameState.research[treeId];
+        const treeState = researchState[treeId];
         if (!treeState) return null;
 
         const treeData = this.researchData[treeId];
@@ -733,9 +949,10 @@ class ResearchPanel {
 
     getActiveResearchTier(treeId) {
         // Find tier with intelligence allocated (active research)
-        if (!this.gameState || !this.gameState.research) return null;
+        const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
+        if (!this.gameState || !researchState) return null;
         
-        const treeState = this.gameState.research[treeId];
+        const treeState = researchState[treeId];
         if (!treeState) return null;
 
         const treeData = this.researchData[treeId];
@@ -752,11 +969,14 @@ class ResearchPanel {
     }
 
     getTierProgress(treeId, tierId) {
-        if (!this.gameState || !this.gameState.research) {
+        // Check both tech_tree.research_state (new format) and research (legacy format)
+        const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
+        
+        if (!this.gameState || !researchState) {
             return { tranches_completed: 0, enabled: false };
         }
         
-        const treeState = this.gameState.research[treeId];
+        const treeState = researchState[treeId];
         if (!treeState) {
             return { tranches_completed: 0, enabled: false };
         }
@@ -777,6 +997,44 @@ class ResearchPanel {
                 return;
             }
             
+            // Determine the tree key (could be a subcategory tree)
+            let treeKey = treeId;
+            if (treeId === 'computer_systems' && tierId.includes('_')) {
+                const parts = tierId.split('_');
+                if (parts.length >= 2) {
+                    const treeData = this.researchData[treeId];
+                    if (treeData && treeData.subcategories) {
+                        for (const [subcatId, subcatData] of Object.entries(treeData.subcategories)) {
+                            if (tierId.startsWith(subcatId + '_')) {
+                                treeKey = treeId + '_' + subcatId;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Find the card element
+            const cardId = `research-${treeKey}`;
+            const card = document.getElementById(cardId);
+            const statusIndicator = document.getElementById(`status-${treeKey}`);
+            
+            // Immediately update the card state for instant feedback
+            if (card) {
+                if (enabled) {
+                    card.classList.add('research-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '● Researching';
+                        statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                    }
+                } else {
+                    card.classList.remove('research-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '';
+                    }
+                }
+            }
+            
             const response = await gameEngine.performAction('allocate_research', {
                 tree_id: treeId,
                 tier_id: tierId,
@@ -793,45 +1051,58 @@ class ResearchPanel {
                 
                 // If enabling, expand the research item to show details
                 if (enabled) {
-                    // Determine the tree key (could be a subcategory tree)
-                    let treeKey = treeId;
-                    
-                    if (treeId === 'computer_systems' && tierId.includes('_')) {
-                        // This is a subcategory tier (format: "subcatId_tierId")
-                        // Extract subcategory from tierId (e.g., "processing_tier1" -> "processing")
-                        const parts = tierId.split('_');
-                        if (parts.length >= 2) {
-                            // The subcategory is everything before the last underscore
-                            // But we need to find which subcategory matches
-                            const treeData = this.researchData[treeId];
-                            if (treeData && treeData.subcategories) {
-                                // Try to match by checking if tierId starts with any subcategory name
-                                for (const [subcatId, subcatData] of Object.entries(treeData.subcategories)) {
-                                    if (tierId.startsWith(subcatId + '_')) {
-                                        treeKey = treeId + '_' + subcatId;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
                     // Expand if not already expanded
                     if (this.activeResearch[treeKey] === undefined) {
-                        // Set any value to mark as expanded (the actual value doesn't matter for expansion)
                         this.activeResearch[treeKey] = true;
                     }
-                    
-                    // Re-render to show expanded state
                     this.render();
                 } else {
-                    // When disabling, just re-render (don't collapse)
                     this.render();
                 }
+            } else {
+                // Revert card state on failure
+                if (card) {
+                    if (enabled) {
+                        card.classList.remove('research-enabled');
+                        if (statusIndicator) {
+                            statusIndicator.textContent = '';
+                        }
+                    } else {
+                        card.classList.add('research-enabled');
+                        if (statusIndicator) {
+                            statusIndicator.textContent = '● Researching';
+                            statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                        }
+                    }
+                }
+                const errorMsg = response.error || 'Unknown error';
+                alert(`Failed to toggle research: ${errorMsg}`);
             }
         } catch (error) {
             console.error('Error toggling research:', error);
             alert('Failed to toggle research: ' + (error.message || 'Unknown error'));
+            
+            // Revert card state on error
+            const treeKey = treeId === 'computer_systems' && tierId.includes('_') 
+                ? treeId + '_' + tierId.split('_')[0] 
+                : treeId;
+            const cardId = `research-${treeKey}`;
+            const card = document.getElementById(cardId);
+            const statusIndicator = document.getElementById(`status-${treeKey}`);
+            if (card) {
+                if (!enabled) {
+                    card.classList.add('research-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '● Researching';
+                        statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                    }
+                } else {
+                    card.classList.remove('research-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '';
+                    }
+                }
+            }
         }
     }
     
@@ -976,8 +1247,120 @@ class ResearchPanel {
 
         if (!this.researchData) return;
 
-        // Re-render to update all displays
-        this.render();
+        // If container is empty or doesn't have research cards rendered, render first
+        if (!this.container.querySelector('.research-card')) {
+            this.render();
+            return;
+        }
+        
+        // Update enabled research state on cards
+        // Check both tech_tree.research_state (new format) and research (legacy format)
+        const researchState = gameState.tech_tree?.research_state || gameState.research || {};
+        
+        // Cache research cards to avoid repeated queries
+        const researchCards = Array.from(this.container.querySelectorAll('.research-card'));
+        researchCards.forEach(card => {
+            const treeId = card.getAttribute('data-tree-id');
+            const tierId = card.getAttribute('data-tier-id');
+            const subcatId = card.getAttribute('data-subcat-id');
+            
+            if (!treeId || !tierId) return;
+            
+            // Check if this tier is enabled
+            const treeState = researchState[treeId];
+            if (!treeState) return;
+            
+            const tierState = treeState[tierId] || {};
+            const shouldBeEnabled = tierState.enabled || false;
+            const statusIndicator = document.getElementById(`status-${card.id.replace('research-', '')}`);
+            const currentlyEnabled = card.classList.contains('research-enabled');
+            
+            // Only update if state changed to avoid unnecessary DOM writes
+            if (shouldBeEnabled !== currentlyEnabled) {
+                if (shouldBeEnabled) {
+                    card.classList.add('research-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '● Researching';
+                        statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                    }
+                } else {
+                    card.classList.remove('research-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '';
+                    }
+                }
+            }
+            
+            // Update progress bars
+            if (shouldBeEnabled && tierState.tranches_completed !== undefined) {
+                const tierDef = this.getTierDefinition(treeId, tierId, subcatId);
+                if (tierDef) {
+                    const completed = tierState.tranches_completed || 0;
+                    const maxTranches = tierDef.tranches || 10;
+                    const progressPercent = (completed / maxTranches) * 100;
+                    
+                    const progressBar = document.getElementById(`progress-bar-${card.id.replace('research-', '')}`);
+                    const progressPercentEl = document.getElementById(`progress-percent-${card.id.replace('research-', '')}`);
+                    
+                    if (progressBar) {
+                        progressBar.style.width = `${Math.min(100, Math.max(0, progressPercent))}%`;
+                    }
+                    if (progressPercentEl) {
+                        progressPercentEl.textContent = `${progressPercent.toFixed(1)}%`;
+                    }
+                    
+                    // Update time estimate if we have FLOPS allocation
+                    if (gameState.research_allocation_info) {
+                        const treeAlloc = gameState.research_allocation_info[treeId];
+                        if (treeAlloc && treeAlloc[tierId] !== undefined) {
+                            const allocatedFLOPS = treeAlloc[tierId];
+                            if (allocatedFLOPS > 0 && tierDef.tranche_cost_intelligence) {
+                                const remainingTranches = maxTranches - completed;
+                                const flopsPerTranche = tierDef.tranche_cost_intelligence;
+                                const remainingFLOPS = remainingTranches * flopsPerTranche;
+                                const timeToComplete = remainingFLOPS / (allocatedFLOPS * 86400);
+                                
+                                const progressTimeEl = document.getElementById(`progress-time-${card.id.replace('research-', '')}`);
+                                if (progressTimeEl) {
+                                    if (timeToComplete === 0 || remainingTranches === 0) {
+                                        progressTimeEl.textContent = 'Complete';
+                                    } else if (timeToComplete === Infinity || !isFinite(timeToComplete)) {
+                                        progressTimeEl.textContent = '—';
+                                    } else {
+                                        progressTimeEl.textContent = FormatUtils.formatTime(timeToComplete);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    getTierDefinition(treeId, tierId, subcatId) {
+        if (!this.researchData) return null;
+        
+        const treeData = this.researchData[treeId];
+        if (!treeData) return null;
+        
+        // Handle subcategories (computer systems)
+        if (subcatId && treeData.subcategories) {
+            const subcatData = treeData.subcategories[subcatId];
+            if (subcatData && subcatData.tiers) {
+                // Extract tier ID from tierId (format: "subcatId_tierId")
+                const parts = tierId.split('_');
+                const actualTierId = parts.length > 1 ? parts.slice(1).join('_') : tierId;
+                return subcatData.tiers.find(t => t.id === actualTierId);
+            }
+        }
+        
+        // Regular tiers
+        if (treeData.tiers) {
+            return treeData.tiers.find(t => t.id === tierId);
+        }
+        
+        return null;
     }
 }
 

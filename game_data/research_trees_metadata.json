@@ -1040,63 +1040,6 @@
           ]
         },
         {
-          "id": "energy_matter_conversion",
-          "name": "Energy-Matter Conversion",
-          "description": "Research enabling conversion between energy and matter. Creates matter from energy and vice versa.",
-          "tiers": [
-            {
-              "id": "particle_accelerator_synthesis",
-              "name": "Particle Accelerator Synthesis",
-              "description": "Particle accelerators convert energy into matter through high-energy collisions."
-            },
-            {
-              "id": "laser_plasma_matter_synthesis",
-              "name": "Laser-Plasma Matter Synthesis",
-              "description": "Intense laser-plasma interactions create matter from pure energy."
-            },
-            {
-              "id": "hawking_radiation_harvesting",
-              "name": "Hawking Radiation Harvesting",
-              "description": "Hawking radiation extraction converts black hole energy into usable matter."
-            },
-            {
-              "id": "vacuum_polarization_extraction",
-              "name": "Vacuum Polarization Extraction",
-              "description": "Vacuum polarization allows matter to be extracted from quantum fluctuations."
-            },
-            {
-              "id": "quantum_foam_condensation",
-              "name": "Quantum Foam Condensation",
-              "description": "Quantum foam condensation converts virtual particles into real matter."
-            },
-            {
-              "id": "spacetime_geometry_manipulation",
-              "name": "Spacetime Geometry Manipulation",
-              "description": "Spacetime curvature manipulation directly creates matter from geometry."
-            },
-            {
-              "id": "matter_antimatter_reversible_converters",
-              "name": "Matter-Antimatter Reversible Converters",
-              "description": "Perfect matter-antimatter conversion enables bidirectional energy-matter exchange."
-            },
-            {
-              "id": "multiverse_exchange_tunnel",
-              "name": "Multiverse Exchange Tunnel",
-              "description": "Multiverse tunneling allows matter extraction from parallel universes."
-            },
-            {
-              "id": "perfect_e=mc\u00b2_conversion",
-              "name": "Perfect E=mc\u00b2 Conversion",
-              "description": "Perfect E=mc\u00b2 conversion achieves theoretical limits of energy-matter equivalence."
-            },
-            {
-              "id": "spacetime_matter_synthesis",
-              "name": "Spacetime Matter Synthesis",
-              "description": "Direct spacetime manipulation creates matter without energy input, achieving infinite conversion."
-            }
-          ]
-        },
-        {
           "id": "energy_storage",
           "name": "Energy Storage & Accumulators",
           "description": "Research improving energy storage capacity and efficiency.",

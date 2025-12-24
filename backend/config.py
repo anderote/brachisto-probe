@@ -13,7 +13,7 @@ class Config:
         'sqlite:///brachisto_probe.db'  # Use SQLite for development
     
     # Game configuration
-    DYSON_SPHERE_TARGET_MASS = 5e24  # kg, base value (can be reduced by research)
+    DYSON_SPHERE_TARGET_MASS = 20e22  # kg, base value (can be reduced by research)
     INITIAL_PROBES = 1
     INITIAL_METAL = 1000  # kg
     INITIAL_ENERGY = 0  # watts - energy cannot be stored, use constant supply

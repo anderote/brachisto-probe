@@ -25,6 +25,7 @@ class ProbeSummaryPanel {
     }
 
     formatNumber(value) {
+        if (value === null || value === undefined || isNaN(value)) return '0';
         if (value === 0) return '0';
         // Use scientific notation for numbers >= 10
         if (value >= 10) {
@@ -39,6 +40,7 @@ class ProbeSummaryPanel {
     }
 
     formatNumberWithCommas(value) {
+        if (value === null || value === undefined || isNaN(value)) return '0';
         if (value >= 1e6) {
             return value.toExponential(2);
         }
@@ -55,7 +57,7 @@ class ProbeSummaryPanel {
             let html = '<div class="probe-summary-panel">';
             
             // Title
-            html += '<div class="probe-summary-title">Probe Summary</div>';
+            html += '<div class="probe-summary-title">Summary</div>';
             
             // Total Probes
             html += '<div class="probe-summary-item">';
@@ -75,30 +77,37 @@ class ProbeSummaryPanel {
             html += '<div class="probe-summary-value" id="probe-summary-doubling">—</div>';
             html += '</div>';
 
-            // Dexterity Breakdown (merged from metrics panel)
+            // Probe Allocation
             html += '<div class="probe-summary-item">';
-            html += '<div class="probe-summary-label">Dexterity Breakdown</div>';
-            html += '<div class="probe-summary-breakdown" id="probe-summary-dexterity">';
+            html += '<div class="probe-summary-label">Probe Allocation</div>';
+            html += '<div class="probe-summary-breakdown" id="probe-summary-allocation">';
             html += '<div class="probe-summary-breakdown-item">';
             html += '<span class="probe-summary-breakdown-label">Dyson:</span>';
-            html += '<span class="probe-summary-breakdown-value" id="probe-dex-dyson-rate">0 kg/s</span>';
-            html += '<span class="probe-summary-breakdown-count" id="probe-dex-dyson-count">0</span>';
+            html += '<span class="probe-summary-breakdown-count" id="probe-alloc-dyson-count">0</span>';
+            html += '</div>';
+            html += '<div class="probe-summary-breakdown-item">';
+            html += '<span class="probe-summary-breakdown-label">Replication:</span>';
+            html += '<span class="probe-summary-breakdown-count" id="probe-alloc-replication-count">0</span>';
             html += '</div>';
             html += '<div class="probe-summary-breakdown-item">';
             html += '<span class="probe-summary-breakdown-label">Mining:</span>';
-            html += '<span class="probe-summary-breakdown-value" id="probe-dex-mining-rate">0 kg/s</span>';
-            html += '<span class="probe-summary-breakdown-count" id="probe-dex-mining-count">0</span>';
+            html += '<span class="probe-summary-breakdown-count" id="probe-alloc-mining-count">0</span>';
             html += '</div>';
             html += '<div class="probe-summary-breakdown-item">';
-            html += '<span class="probe-summary-breakdown-label">Probes:</span>';
-            html += '<span class="probe-summary-breakdown-value" id="probe-dex-probes-rate">0 kg/s</span>';
-            html += '<span class="probe-summary-breakdown-count" id="probe-dex-probes-count">0</span>';
+            html += '<span class="probe-summary-breakdown-label">Construct:</span>';
+            html += '<span class="probe-summary-breakdown-count" id="probe-alloc-construct-count">0</span>';
             html += '</div>';
             html += '<div class="probe-summary-breakdown-item">';
-            html += '<span class="probe-summary-breakdown-label">Structures:</span>';
-            html += '<span class="probe-summary-breakdown-value" id="probe-dex-structures-rate">0 kg/s</span>';
-            html += '<span class="probe-summary-breakdown-count" id="probe-dex-structures-count">0</span>';
+            html += '<span class="probe-summary-breakdown-label">Transit:</span>';
+            html += '<span class="probe-summary-breakdown-count" id="probe-alloc-transit-count">0</span>';
             html += '</div>';
+            html += '</div>';
+            html += '</div>';
+
+            // Structure Allocation
+            html += '<div class="probe-summary-item">';
+            html += '<div class="probe-summary-label">Structures</div>';
+            html += '<div class="probe-summary-breakdown" id="structure-summary-allocation">';
             html += '</div>';
             html += '</div>';
 
@@ -138,27 +147,26 @@ class ProbeSummaryPanel {
 
         this.gameState = gameState;
 
-        // Use shared probe count cache to avoid redundant calculations
-        const probeCache = window.probeCountCache;
-        if (probeCache) {
-            probeCache.update(gameState);
-            var totalProbes = probeCache.getTotalProbes();
-        } else {
-            // Fallback: calculate manually if cache not available
-            let totalProbes = 0;
+        // Read from derived.totals (pre-calculated in worker)
+        // Fallback: calculate from raw state if derived values not available
+        const derived = gameState.derived || {};
+        const totals = derived.totals || {};
+        let totalProbes = totals.probe_count || 0;
+        
+        // Fallback: if derived values not calculated yet, calculate from raw state
+        if (totalProbes === 0 && (!derived.totals || Object.keys(derived.totals).length === 0)) {
             const probesByZone = gameState.probes_by_zone || {};
             for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
                 if (zoneProbes && typeof zoneProbes === 'object') {
-                    totalProbes += Object.values(zoneProbes).reduce((sum, count) => sum + (count || 0), 0);
+                    totalProbes += zoneProbes['probe'] || 0;
                 }
             }
-            
-            // Only use legacy probes if probesByZone is empty (backward compatibility for old saves)
-            // Single probe type only: directly access 'probe' key
-            if (totalProbes === 0) {
-                totalProbes += gameState.probes?.['probe'] || 0;
+            // Also check legacy probes
+            if (totalProbes === 0 && gameState.probes) {
+                totalProbes += gameState.probes['probe'] || 0;
             }
         }
+        
         const totalEl = document.getElementById('probe-summary-total');
         if (totalEl) {
             totalEl.textContent = this.formatNumberWithCommas(Math.floor(totalProbes));
@@ -166,13 +174,14 @@ class ProbeSummaryPanel {
 
         // Probe production rate (includes both factory production and manual probe building)
         // Rate is in probes/day (fundamental time unit)
-        const totalProbeProductionRate = gameState.probe_production_rate !== undefined 
-            ? gameState.probe_production_rate 
+        // Read from rates.probe_production (calculated in worker)
+        const totalProbeProductionRate = gameState.rates?.probe_production !== undefined 
+            ? gameState.rates.probe_production 
             : 0;
         const rateEl = document.getElementById('probe-summary-rate');
         if (rateEl) {
             // Format in scientific notation for probes per day
-            if (totalProbeProductionRate === 0) {
+            if (!totalProbeProductionRate || totalProbeProductionRate === 0) {
                 rateEl.textContent = '0.00 probes/day';
             } else {
                 rateEl.textContent = `${totalProbeProductionRate.toExponential(2)} probes/day`;
@@ -211,203 +220,135 @@ class ProbeSummaryPanel {
             }
         }
 
-        // Dexterity Breakdown (merged from metrics panel)
-        // Cache expensive calculations - only recalculate when inputs change
-        const allocations = gameState.probe_allocations || {};
-        const allocationsByZone = gameState.probe_allocations_by_zone || {};
-        const breakdown = gameState.resource_breakdowns?.dexterity;
-        const buildAllocation = gameState.build_allocation || 50;
+        // Probe Allocation (replaces Dexterity Breakdown)
+        // Read from derived.totals (pre-calculated in worker)
+        // Fallback: calculate from raw state if derived values not available
+        let totalDyson = totals.probes_dyson || 0;
+        let totalReplication = totals.probes_replicating || 0;
+        let totalMining = totals.probes_mining || 0;
+        let totalConstruct = totals.probes_constructing || 0;
+        let totalTransit = totals.probes_transit || 0;
         
-        // Create cache key from relevant inputs (use efficient hash instead of JSON.stringify)
-        let hash = 0;
-        hash = ((hash << 5) - hash) + (buildAllocation || 0);
-        hash = ((hash << 5) - hash) + ((breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0) * 1000);
-        
-        // Hash allocations efficiently
-        for (const [key, alloc] of Object.entries(allocations)) {
-            hash = ((hash << 5) - hash) + key.charCodeAt(0);
-            if (alloc && typeof alloc === 'object') {
-                for (const count of Object.values(alloc)) {
-                    hash = ((hash << 5) - hash) + (count || 0);
-                }
+        // Fallback: if derived values not calculated yet, calculate from raw state
+        if ((totalDyson + totalReplication + totalMining + totalConstruct) === 0 && 
+            (!derived.totals || Object.keys(derived.totals).length === 0)) {
+            const probesByZone = gameState.probes_by_zone || {};
+            const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
+            const activeTransfers = gameState.active_transfers || [];
+            
+            for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+                if (zoneId === 'transfer') continue; // Skip transfer zone
+                const probeCount = zoneProbes['probe'] || 0;
+                const allocations = probeAllocationsByZone[zoneId] || {};
+                
+                // Use fractional values (don't floor to 0)
+                totalMining += probeCount * (allocations.harvest || 0);
+                totalConstruct += probeCount * (allocations.construct || 0);
+                totalReplication += probeCount * (allocations.replicate || 0);
+                totalDyson += probeCount * (allocations.dyson || 0);
             }
-        }
-        
-        // Hash allocationsByZone efficiently
-        for (const [zoneId, zoneAllocs] of Object.entries(allocationsByZone)) {
-            hash = ((hash << 5) - hash) + zoneId.charCodeAt(0);
-            if (zoneAllocs && typeof zoneAllocs === 'object') {
-                for (const [key, alloc] of Object.entries(zoneAllocs)) {
-                    hash = ((hash << 5) - hash) + key.charCodeAt(0);
-                    if (alloc && typeof alloc === 'object') {
-                        for (const count of Object.values(alloc)) {
-                            hash = ((hash << 5) - hash) + (count || 0);
+            
+            // Count transit probes (handles both one-time and continuous)
+            for (const transfer of activeTransfers) {
+                if (transfer.type === 'continuous') {
+                    // Sum all batches in transit
+                    if (transfer.in_transit) {
+                        for (const batch of transfer.in_transit) {
+                            totalTransit += batch.count || 0;
                         }
+                    }
+                } else {
+                    // One-time transfer: count if still traveling
+                    if (transfer.status === 'traveling' || transfer.status === 'paused') {
+                        totalTransit += transfer.probe_count || 0;
                     }
                 }
             }
         }
         
-        const calculationKey = hash.toString();
+        // Update probe allocation counts
+        // Display fractional probe assignments with one decimal place
+        const dysonCountEl = document.getElementById('probe-alloc-dyson-count');
+        const replicationCountEl = document.getElementById('probe-alloc-replication-count');
+        const miningCountEl = document.getElementById('probe-alloc-mining-count');
+        const constructCountEl = document.getElementById('probe-alloc-construct-count');
+        const transitCountEl = document.getElementById('probe-alloc-transit-count');
         
-        // Reuse cached calculations if inputs haven't changed
-        if (this.lastCalculationKey !== calculationKey || !this.cachedCalculations) {
-            // Get research multiplier
-            const roboticBonus = breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0;
-            const totalMultiplier = 1.0 + (roboticBonus || 0);
-            
-            // Calculate actual rates in kg/day
-            // Base rates from config
-            const PROBE_HARVEST_RATE = Config.PROBE_HARVEST_RATE; // 100 kg/day per probe
-            const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // 10 kg/day per probe
-            
-            // Helper function to calculate dexterity rate in kg/day
-            const calculateDexterityRateForProbes = (probes, baseRatePerProbe, multiplier = 1.0) => {
-                return probes * baseRatePerProbe * multiplier; // kg/day
-            };
-            
-            // Sum allocations across all zones
-            let totalDysonProbes = 0;
-            let totalDysonDexterityPerDay = 0; // kg/day
-            let totalMiningProbes = 0;
-            let totalMiningDexterityPerDay = 0; // kg/day
-            let totalProbeConstructProbes = 0;
-            let totalProbeConstructDexterityPerDay = 0; // kg/day
-            let totalStructureProbes = 0;
-            let totalStructureDexterityPerDay = 0; // kg/day
-            
-            // Legacy allocations
-            totalDysonProbes += (allocations.dyson?.probe || 0) + (allocations.dyson?.construction_probe || 0);
-            totalDysonDexterityPerDay += calculateDexterityRateForProbes(
-                (allocations.dyson?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
-            ) + calculateDexterityRateForProbes(
-                (allocations.dyson?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
-            );
-            
-            totalMiningProbes += (allocations.harvest?.probe || 0) + (allocations.harvest?.miner_probe || 0);
-            totalMiningDexterityPerDay += calculateDexterityRateForProbes(
-                (allocations.harvest?.probe || 0), PROBE_HARVEST_RATE, totalMultiplier
-            ) + calculateDexterityRateForProbes(
-                (allocations.harvest?.miner_probe || 0), PROBE_HARVEST_RATE * 1.5, totalMultiplier
-            );
-            
-            totalProbeConstructProbes += (allocations.construct?.probe || 0) + (allocations.construct?.construction_probe || 0);
-            totalProbeConstructDexterityPerDay += calculateDexterityRateForProbes(
-                (allocations.construct?.probe || 0), PROBE_BUILD_RATE, totalMultiplier
-            ) + calculateDexterityRateForProbes(
-                (allocations.construct?.construction_probe || 0), PROBE_BUILD_RATE * 1.8, totalMultiplier
-            );
-            
-            // Zone-based allocations - use probe cache for probe counts
-            const probeCache = window.probeCountCache;
-            const cachedProbes = probeCache ? probeCache.update(gameState) : null;
-            
-            for (const [zoneId, zoneAllocs] of Object.entries(allocationsByZone)) {
-                // Use cached probe counts if available
-                let zoneDysonProbes = 0;
-                let zoneMiningProbes = 0;
-                let constructProbes = 0;
-                
-                if (cachedProbes) {
-                    // Get probe counts from allocations and cache
-                    const zoneProbeCount = cachedProbes.probesByZone[zoneId] || 0;
-                    const dysonAlloc = zoneAllocs.dyson || 0;
-                    const harvestAlloc = zoneAllocs.harvest || 0;
-                    const constructAlloc = zoneAllocs.construct || 0;
-                    
-                    zoneDysonProbes = Math.floor(zoneProbeCount * dysonAlloc);
-                    zoneMiningProbes = Math.floor(zoneProbeCount * harvestAlloc);
-                    constructProbes = Math.floor(zoneProbeCount * constructAlloc);
-                } else {
-                    // Fallback: calculate from allocations
-                    zoneDysonProbes = Object.values(zoneAllocs.dyson || {}).reduce((sum, count) => sum + (count || 0), 0);
-                    zoneMiningProbes = Object.values(zoneAllocs.harvest || {}).reduce((sum, count) => sum + (count || 0), 0);
-                    constructProbes = Object.values(zoneAllocs.construct || {}).reduce((sum, count) => sum + (count || 0), 0);
-                }
-                
-                totalDysonProbes += zoneDysonProbes;
-                totalDysonDexterityPerDay += calculateDexterityRateForProbes(
-                    zoneDysonProbes, PROBE_BUILD_RATE, totalMultiplier
-                );
-                
-                totalMiningProbes += zoneMiningProbes;
-                totalMiningDexterityPerDay += calculateDexterityRateForProbes(
-                    zoneMiningProbes, PROBE_HARVEST_RATE, totalMultiplier
-                );
-                
-                totalProbeConstructProbes += constructProbes;
-                totalProbeConstructDexterityPerDay += calculateDexterityRateForProbes(
-                    constructProbes, PROBE_BUILD_RATE, totalMultiplier
-                );
-                
-                // Structure building probes (based on build_allocation slider)
-                const structureFraction = (100 - buildAllocation) / 100.0;
-                const structureBuildingProbes = constructProbes * structureFraction;
-                totalStructureProbes += structureBuildingProbes;
-                totalStructureDexterityPerDay += calculateDexterityRateForProbes(
-                    structureBuildingProbes, PROBE_BUILD_RATE, totalMultiplier
-                );
+        // Format function: show one decimal place for fractional probe assignments, scientific notation when > 100
+        const formatProbeCount = (count) => {
+            if (count === 0) return '0.0';
+            // Use scientific notation for values > 100
+            if (count > 100) {
+                return count.toExponential(2);
             }
-            
-            // Also calculate structure probes from legacy allocations
-            const legacyConstructProbes = (allocations.construct?.probe || 0) + (allocations.construct?.construction_probe || 0);
-            const structureFraction = (100 - buildAllocation) / 100.0;
-            const legacyStructureProbes = legacyConstructProbes * structureFraction;
-            totalStructureProbes += legacyStructureProbes;
-            totalStructureDexterityPerDay += calculateDexterityRateForProbes(
-                legacyStructureProbes, PROBE_BUILD_RATE, totalMultiplier
-            );
-            
-            // Cache the results
-            this.cachedCalculations = {
-                totalDysonProbes,
-                totalDysonDexterityPerDay,
-                totalMiningProbes,
-                totalMiningDexterityPerDay,
-                totalProbeConstructProbes,
-                totalProbeConstructDexterityPerDay,
-                totalStructureProbes,
-                totalStructureDexterityPerDay
-            };
-            this.lastCalculationKey = calculationKey;
+            // Always show one decimal place for values <= 100
+            return count.toFixed(1);
+        };
+        
+        if (dysonCountEl) dysonCountEl.textContent = formatProbeCount(totalDyson);
+        if (replicationCountEl) replicationCountEl.textContent = formatProbeCount(totalReplication);
+        if (miningCountEl) miningCountEl.textContent = formatProbeCount(totalMining);
+        if (constructCountEl) constructCountEl.textContent = formatProbeCount(totalConstruct);
+        if (transitCountEl) transitCountEl.textContent = formatProbeCount(totalTransit);
+        
+        // Update Structure Allocation
+        this.updateStructureAllocation(gameState);
+    }
+    
+    updateStructureAllocation(gameState) {
+        const structureContainer = document.getElementById('structure-summary-allocation');
+        if (!structureContainer) return;
+        
+        // Count structures across all zones
+        const structuresByZone = gameState.structures_by_zone || {};
+        const structureTotals = {};
+        
+        for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
+            for (const [structureId, count] of Object.entries(zoneStructures)) {
+                if (count > 0) {
+                    structureTotals[structureId] = (structureTotals[structureId] || 0) + count;
+                }
+            }
         }
         
-        // Use cached calculations
-        const {
-            totalDysonProbes,
-            totalDysonDexterityPerDay,
-            totalMiningProbes,
-            totalMiningDexterityPerDay,
-            totalProbeConstructProbes,
-            totalProbeConstructDexterityPerDay,
-            totalStructureProbes,
-            totalStructureDexterityPerDay
-        } = this.cachedCalculations;
+        // Format structure counts
+        const formatCount = (count) => {
+            if (count === 0) return '0';
+            if (count >= 1000) {
+                return count.toExponential(2);
+            }
+            return Math.floor(count).toLocaleString('en-US');
+        };
         
-        // Update Dyson dexterity - use actual Dyson construction rate from gameState (kg/day)
-        const dysonConstructionRate = gameState.dyson_construction_rate || 0; // kg/day from backend
-        const dysonRateEl = document.getElementById('probe-dex-dyson-rate');
-        const dysonCountEl = document.getElementById('probe-dex-dyson-count');
-        if (dysonRateEl) dysonRateEl.textContent = FormatUtils.formatRate(dysonConstructionRate, 'kg');
-        if (dysonCountEl) dysonCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalDysonProbes))}`;
-
-        // Update Mining dexterity (rates are in kg/day)
-        const miningRateEl = document.getElementById('probe-dex-mining-rate');
-        const miningCountEl = document.getElementById('probe-dex-mining-count');
-        if (miningRateEl) miningRateEl.textContent = FormatUtils.formatRate(totalMiningDexterityPerDay, 'kg');
-        if (miningCountEl) miningCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalMiningProbes))}`;
-
-        // Update Probe construction dexterity (rates are in kg/day)
-        const probeConstructRateEl = document.getElementById('probe-dex-probes-rate');
-        const probeCountEl = document.getElementById('probe-dex-probes-count');
-        if (probeConstructRateEl) probeConstructRateEl.textContent = FormatUtils.formatRate(totalProbeConstructDexterityPerDay, 'kg');
-        if (probeCountEl) probeCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalProbeConstructProbes))}`;
-
-        // Update Structure construction dexterity (rates are in kg/day)
-        const structureRateEl = document.getElementById('probe-dex-structures-rate');
-        const structureCountEl = document.getElementById('probe-dex-structures-count');
-        if (structureRateEl) structureRateEl.textContent = FormatUtils.formatRate(totalStructureDexterityPerDay, 'kg');
-        if (structureCountEl) structureCountEl.textContent = `${this.formatNumberWithCommas(Math.floor(totalStructureProbes))}`;
+        // Get structure display names
+        const getStructureName = (structureId) => {
+            if (window.gameDataLoader) {
+                const building = window.gameDataLoader.getBuildingById(structureId);
+                if (building && building.name) {
+                    return building.name;
+                }
+            }
+            // Fallback: format the ID nicely
+            return structureId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        };
+        
+        // Build HTML for structure list
+        let html = '';
+        const sortedStructures = Object.entries(structureTotals).sort((a, b) => b[1] - a[1]);
+        
+        if (sortedStructures.length === 0) {
+            html = '<div class="probe-summary-breakdown-item" style="color: rgba(255,255,255,0.5);">None</div>';
+        } else {
+            for (const [structureId, count] of sortedStructures) {
+                const name = getStructureName(structureId);
+                html += `<div class="probe-summary-breakdown-item">`;
+                html += `<span class="probe-summary-breakdown-label">${name}:</span>`;
+                html += `<span class="probe-summary-breakdown-count">${formatCount(count)}</span>`;
+                html += `</div>`;
+            }
+        }
+        
+        structureContainer.innerHTML = html;
     }
 }
 

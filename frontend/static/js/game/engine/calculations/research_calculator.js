@@ -2,12 +2,16 @@
  * Research Calculator
  * 
  * Research progress and intelligence (FLOPS) calculations
+ * 
+ * NOTE: Research progression is now primarily handled by TechTree.
+ * This class provides backward compatibility and intelligence calculation.
  */
 
 class ResearchCalculator {
     constructor(dataLoader) {
         this.dataLoader = dataLoader;
         this.researchTrees = null;
+        this.techTree = null; // Reference to TechTree if available
     }
     
     /**
@@ -16,6 +20,14 @@ class ResearchCalculator {
      */
     initialize(researchTrees) {
         this.researchTrees = researchTrees;
+    }
+    
+    /**
+     * Set TechTree reference for delegation
+     * @param {TechTree} techTree - TechTree instance
+     */
+    setTechTree(techTree) {
+        this.techTree = techTree;
     }
     
     /**
@@ -30,40 +42,42 @@ class ResearchCalculator {
         
         // Intelligence comes from compute structures
         const structuresByZone = state.structures_by_zone || {};
-        const computeBuildings = buildings?.compute || [];
+        // Handle both formats: buildings.buildings (nested) or buildings (direct)
+        const allBuildings = buildings?.buildings || buildings || {};
         
         for (const zoneId in structuresByZone) {
             const zoneStructures = structuresByZone[zoneId] || {};
             
-            for (const building of computeBuildings) {
-                const count = zoneStructures[building.id] || 0;
+            for (const [buildingId, building] of Object.entries(allBuildings)) {
+                const count = zoneStructures[buildingId] || 0;
                 if (count === 0) continue;
                 
-                // Get FLOPS production from building
-                // Check both field names for compatibility
-                const baseFLOPS = building.effects?.intelligence_flops || 
-                                 building.effects?.intelligence_production_per_second || 0;
-                
-                // Apply computer skill (geometric mean of sub-skills)
-                const effectiveFLOPS = baseFLOPS * count * skills.computer.total;
-                
-                totalFLOPS += effectiveFLOPS;
-            }
-            
-            // Also check omni structures for intelligence production
-            const omniBuildings = buildings?.omni || [];
-            for (const building of omniBuildings) {
-                const count = zoneStructures[building.id] || 0;
-                if (count === 0) continue;
-                
-                // Get FLOPS production from building
-                const baseFLOPS = building.effects?.intelligence_flops || 
-                                 building.effects?.intelligence_production_per_second || 0;
-                
-                // Apply computer skill
-                const effectiveFLOPS = baseFLOPS * count * skills.computer.total;
-                
-                totalFLOPS += effectiveFLOPS;
+                // Check if building has compute output
+                if (building.compute_eflops) {
+                    // New multiplier-based system
+                    const baseComputeEFLOPS = building.compute_eflops;
+                    const baseComputeFLOPS = baseComputeEFLOPS * 1e18; // Convert EFLOPS to FLOPS
+                    
+                    // Apply structure performance upgrade factor
+                    const perfFactor = state.upgrade_factors?.structure?.compute?.performance || 1.0;
+                    
+                    // Apply computer skill (geometric mean of sub-skills)
+                    const computerSkill = skills.computer?.total || 1.0;
+                    
+                    // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
+                    const geometricFactor = Math.pow(count, 2.1);
+                    const effectiveFLOPS = baseComputeFLOPS * geometricFactor * perfFactor * computerSkill;
+                    totalFLOPS += effectiveFLOPS;
+                } else if (building.effects?.intelligence_flops || building.effects?.intelligence_production_per_second) {
+                    // Legacy system fallback
+                    const baseFLOPS = building.effects?.intelligence_flops || 
+                                     building.effects?.intelligence_production_per_second || 0;
+                    const computerSkill = skills.computer?.total || 1.0;
+                    // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
+                    const geometricFactor = Math.pow(count, 2.1);
+                    const effectiveFLOPS = baseFLOPS * geometricFactor * computerSkill;
+                    totalFLOPS += effectiveFLOPS;
+                }
             }
         }
         
@@ -79,8 +93,34 @@ class ResearchCalculator {
      * @param {number} deltaTime - Time delta in days
      * @param {Object} skills - Current skills
      * @returns {Object} Updated state
+     * 
+     * NOTE: If TechTree is available, this should be called via the engine's
+     * updateResearchWithTechTree method instead. This legacy method is kept
+     * for backward compatibility.
      */
     updateResearch(state, deltaTime, skills) {
+        // If TechTree is available, delegate to it
+        if (this.techTree) {
+            const intelligenceRate = this.calculateIntelligenceProduction(state, null, skills);
+            if (intelligenceRate <= 0) return state;
+            
+            const enabledProjects = this.techTree.getEnabledResearchProjects();
+            if (enabledProjects.length === 0) return state;
+            
+            const flopsPerProject = (intelligenceRate * deltaTime) / enabledProjects.length;
+            
+            for (const project of enabledProjects) {
+                this.techTree.addResearchProgress(project.treeId, project.tierId, flopsPerProject, state.time);
+            }
+            
+            // Update state with new research state
+            const newState = JSON.parse(JSON.stringify(state));
+            newState.tech_tree = this.techTree.exportToState();
+            newState.research = this.techTree.researchState;
+            return newState;
+        }
+        
+        // Legacy calculation
         const newState = JSON.parse(JSON.stringify(state));  // Deep clone
         const researchState = newState.research || {};
         const intelligenceRate = this.calculateIntelligenceProduction(newState, null, skills);

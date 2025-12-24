@@ -86,12 +86,29 @@ class GameDataLoader:
         if self._buildings is None:
             self.load_buildings()
         
-        # Search through all categories
-        for category, items in self._buildings.items():
-            if isinstance(items, list):
-                for building in items:
-                    if building.get('id') == building_id:
-                        return building
+        # Handle flat structure: buildings is a dict where keys are building IDs
+        if isinstance(self._buildings, dict):
+            # Check if building_id is a direct key
+            if building_id in self._buildings:
+                building = self._buildings[building_id]
+                # Ensure it has an 'id' field
+                if isinstance(building, dict):
+                    if 'id' not in building:
+                        building['id'] = building_id
+                    return building
+            
+            # Fallback: search through categories (old format support)
+            for category, items in self._buildings.items():
+                if isinstance(items, list):
+                    for building in items:
+                        if building.get('id') == building_id:
+                            return building
+                elif isinstance(items, dict) and building_id in items:
+                    # Handle nested dict structure
+                    building = items[building_id]
+                    if isinstance(building, dict) and 'id' not in building:
+                        building['id'] = building_id
+                    return building
         return None
     
     def get_factories(self):

@@ -46,9 +46,9 @@ class TimeControls {
             }
         });
 
-        // Update game engine time speed
+        // Update game engine time speed (sends message to worker thread)
         if (typeof gameEngine !== 'undefined') {
-            gameEngine.timeSpeed = speed;
+            gameEngine.setTimeSpeed(speed);
         }
     }
 

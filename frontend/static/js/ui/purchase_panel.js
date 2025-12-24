@@ -11,7 +11,7 @@ class PurchasePanel {
         // Performance optimization: Cache DOM elements
         this.cachedElements = {
             purchaseItems: null,
-            constructionCheckboxes: null,
+            buildingCards: null,
             buildingProgressContainers: null,
             lastCacheTime: 0
         };
@@ -34,7 +34,47 @@ class PurchasePanel {
             // Load buildings
             const buildingsResponse = await fetch('/game_data/buildings.json');
             const buildingsData = await buildingsResponse.json();
-            this.buildings = buildingsData.buildings || buildingsData;
+            const rawBuildings = buildingsData.buildings || buildingsData;
+            
+            // Convert to flat list with specific ordering
+            if (rawBuildings && typeof rawBuildings === 'object' && !Array.isArray(rawBuildings)) {
+                // Check if it's the new format (has building IDs as keys)
+                const buildingKeys = Object.keys(rawBuildings);
+                if (buildingKeys.length > 0 && rawBuildings[buildingKeys[0]] && rawBuildings[buildingKeys[0]].id) {
+                    // Define the order: omni_fab, power_station, data_center, refinery, factory, mass_driver
+                    const order = ['omni_fab', 'power_station', 'data_center', 'refinery', 'factory', 'mass_driver'];
+                    
+                    // Store buildings in a flat array with the specified order
+                    this.buildings = [];
+                    
+                    // First, add buildings in the specified order
+                    for (const buildingId of order) {
+                        if (rawBuildings[buildingId]) {
+                            const building = rawBuildings[buildingId];
+                            if (!building.id) {
+                                building.id = buildingId;
+                            }
+                            this.buildings.push(building);
+                        }
+                    }
+                    
+                    // Then add any other buildings not in the order list (for future extensibility)
+                    for (const [buildingId, building] of Object.entries(rawBuildings)) {
+                        if (!order.includes(buildingId)) {
+                            if (!building.id) {
+                                building.id = buildingId;
+                            }
+                            this.buildings.push(building);
+                        }
+                    }
+                } else {
+                    // Old format - convert to flat array
+                    this.buildings = Object.values(rawBuildings || {});
+                }
+            } else {
+                // Old format - use as is (should be array)
+                this.buildings = Array.isArray(rawBuildings) ? rawBuildings : Object.values(rawBuildings || {});
+            }
             
             // Load orbital zones
             const zonesResponse = await fetch('/game_data/orbital_mechanics.json');
@@ -60,10 +100,10 @@ class PurchasePanel {
                             this.purchaseItem(item.category, item.buildingId);
                         } else {
                             // For buildings, toggle construction
-                            const checkbox = element.querySelector('.construction-toggle-checkbox');
-                            if (checkbox) {
-                                checkbox.checked = !checkbox.checked;
-                                this.toggleConstruction(item.category, item.buildingId, checkbox.checked);
+                            const card = element.querySelector('.building-card[data-building-id]');
+                            if (card && !card.classList.contains('disabled')) {
+                                const isCurrentlyEnabled = card.classList.contains('construction-enabled');
+                                this.toggleConstruction(item.category, item.buildingId, !isCurrentlyEnabled);
                             }
                         }
                     }
@@ -73,149 +113,106 @@ class PurchasePanel {
 
     render() {
         if (!this.buildings || !this.orbitalZones) {
-            this.container.innerHTML = '<div>Loading buildings...</div>';
+            this.container.innerHTML = '<div class="probe-summary-panel"><div class="probe-summary-title">Structures</div><div class="probe-summary-item"><div class="probe-summary-value">Loading buildings...</div></div></div>';
             return;
         }
 
-        let html = '';
+        let html = '<div class="probe-summary-panel">';
+        html += '<div class="probe-summary-title">Structures</div>';
         
-        // Show zone selection status
+        // Show zone selection status as a summary item
+        html += '<div class="probe-summary-item">';
+        html += '<div class="probe-summary-label">Zone</div>';
         if (this.selectedZone) {
             const zone = this.orbitalZones.find(z => z.id === this.selectedZone);
             const zoneName = zone ? zone.name.replace(/\s+Orbit\s*$/i, '') : this.selectedZone;
-            html += `<div class="zone-selection-header" style="padding: 10px; background: rgba(74, 158, 255, 0.2); border-bottom: 1px solid rgba(74, 158, 255, 0.3); margin-bottom: 10px;">`;
-            html += `<strong>Selected Zone: ${zoneName}</strong>`;
-            html += `<div style="font-size: 12px; color: rgba(255, 255, 255, 0.7); margin-top: 5px;">Buildings shown are for this zone</div>`;
-            html += `</div>`;
+            html += `<div class="probe-summary-value" style="color: rgba(74, 158, 255, 0.9);">${zoneName}</div>`;
         } else {
-            html += `<div class="zone-selection-header" style="padding: 10px; background: rgba(255, 255, 255, 0.1); border-bottom: 1px solid rgba(255, 255, 255, 0.2); margin-bottom: 10px;">`;
-            html += `<div style="font-size: 12px; color: rgba(255, 255, 255, 0.7);">Click an orbital zone to view and manage its buildings</div>`;
-            html += `</div>`;
+            html += `<div class="probe-summary-value" style="font-size: 9px; font-weight: normal; color: rgba(255, 255, 255, 0.5);">Click an orbital zone to view and manage its buildings</div>`;
         }
-
-        // Energy section (first)
-        const energy = this.buildings.energy || [];
-        if (energy.length > 0) {
-            const isCollapsed = this.collapsedCategories.has('energy');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('energy')">`;
-            html += '<span class="collapse-icon">▼</span>Energy</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderBuildings(energy, 'energy');
-            html += '</div></div>';
-        }
-
-        // Mining section (second)
-        const mining = this.buildings.mining || [];
-        if (mining.length > 0) {
-            const isCollapsed = this.collapsedCategories.has('mining');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('mining')">`;
-            html += '<span class="collapse-icon">▼</span>Mining</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderBuildings(mining, 'mining');
-            html += '</div></div>';
-        }
-
-        // Factories section (third)
-        const factories = this.buildings.factories || [];
-        if (factories.length > 0) {
-            const isCollapsed = this.collapsedCategories.has('factories');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('factories')">`;
-            html += '<span class="collapse-icon">▼</span>Factories</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderBuildings(factories, 'factories');
-            html += '</div></div>';
-        }
-        
-        // Computing section
-        const computing = this.buildings.computing || [];
-        if (computing.length > 0) {
-            const isCollapsed = this.collapsedCategories.has('computing');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('computing')">`;
-            html += '<span class="collapse-icon">▼</span>Computing</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderBuildings(computing, 'computing');
-            html += '</div></div>';
-        }
-
-        // Transportation section
-        const transportation = this.buildings.transportation || [];
-        if (transportation.length > 0) {
-            const isCollapsed = this.collapsedCategories.has('transportation');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('transportation')">`;
-            html += '<span class="collapse-icon">▼</span>Transportation</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderBuildings(transportation, 'transportation');
-            html += '</div></div>';
-        }
-
-        // Storage section
-        const storage = this.buildings.storage || [];
-        if (storage.length > 0) {
-            const isCollapsed = this.collapsedCategories.has('storage');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('storage')">`;
-            html += '<span class="collapse-icon">▼</span>Storage</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderBuildings(storage, 'storage');
-            html += '</div></div>';
-        }
-
-        // Specialized Units section
-        if (this.buildings.specialized_units && this.buildings.specialized_units.probes) {
-            const isCollapsed = this.collapsedCategories.has('probes');
-            html += '<div class="purchase-section">';
-            html += `<div class="section-title ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('probes')">`;
-            html += '<span class="collapse-icon">▼</span>Probes</div>';
-            html += `<div class="section-content ${isCollapsed ? 'collapsed' : ''}">`;
-            html += this.renderUnits(this.buildings.specialized_units.probes);
-            html += '</div></div>';
-        }
-
-        // Factory recycling section (for depleted zones)
-        html += '<div class="purchase-section" id="recycling-section" style="display: none;">';
-        html += '<div class="section-title">Factory Recycling</div>';
-        html += '<div id="recycling-list"></div>';
         html += '</div>';
 
-        if (html === '') {
-            html = '<div>No buildings available. Check console for errors.</div>';
+        // Render all structures in flat list (already in correct order from loadData)
+        if (Array.isArray(this.buildings) && this.buildings.length > 0) {
+            html += this.renderBuildingsFlat(this.buildings);
+        } else {
+            html += '<div class="probe-summary-item"><div class="probe-summary-value" style="font-size: 10px; color: rgba(255, 255, 255, 0.5);">No buildings available. Check console for errors.</div></div>';
         }
+        
+        html += '</div>'; // Close probe-summary-panel
 
         this.container.innerHTML = html;
         
         // Invalidate cache when rendering
         this.cachedElements.purchaseItems = null;
-        this.cachedElements.constructionCheckboxes = null;
+        this.cachedElements.buildingCards = null;
         this.cachedElements.buildingProgressContainers = null;
         this.cachedElements.lastCacheTime = Date.now();
 
         // Attach event listeners for construction toggles (better than inline onclick)
         this.attachConstructionToggleHandlers();
+    }
 
-        // Zone selector removed - all buildings at 0.5 AU
+    renderCollapsibleCategory(categoryId, categoryName, buildings, buildingCategory, isCollapsed) {
+        let html = '<div class="collapsible-category">';
+        html += `<div class="collapsible-category-header ${isCollapsed ? 'collapsed' : ''}" onclick="purchasePanel.toggleCategory('${categoryId}')">`;
+        html += `<span class="collapsible-category-title">${categoryName}</span>`;
+        html += `<span class="collapsible-category-toggle">${isCollapsed ? '▶' : '▼'}</span>`;
+        html += '</div>';
+        html += `<div class="collapsible-category-content ${isCollapsed ? 'collapsed' : ''}">`;
+        html += this.renderBuildings(buildings, buildingCategory);
+        html += '</div></div>';
+        return html;
     }
     
     attachConstructionToggleHandlers() {
-        // Add event listeners to all construction toggle checkboxes
-        const checkboxes = this.container.querySelectorAll('.construction-toggle-checkbox');
-        checkboxes.forEach(checkbox => {
-            // Remove existing listeners to avoid duplicates
-            const newCheckbox = checkbox.cloneNode(true);
-            checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+        // Use event delegation on the container to handle clicks on building cards
+        // This avoids issues with cloning and ensures handlers persist after re-renders
+        // Remove any existing listener first to avoid duplicates
+        if (this._constructionToggleHandler) {
+            this.container.removeEventListener('click', this._constructionToggleHandler);
+        }
+        
+        this._constructionToggleHandler = (e) => {
+            // Find the closest building card element
+            const buildingCard = e.target.closest('.building-card');
+            if (!buildingCard) return;
             
-            // Add new listener
-            newCheckbox.addEventListener('change', (e) => {
-                const category = e.target.getAttribute('data-category');
-                const buildingId = e.target.getAttribute('data-building-id');
-                const enabled = e.target.checked;
-                this.toggleConstruction(category, buildingId, enabled);
-            });
-        });
+            // Don't trigger if clicking on disabled cards
+            if (buildingCard.classList.contains('disabled')) {
+                console.log('[PurchasePanel] Card is disabled, cannot toggle');
+                return;
+            }
+            
+            // Check if zone is selected before proceeding
+            if (!this.selectedZone) {
+                console.warn('[PurchasePanel] No zone selected, cannot toggle construction');
+                alert('Please select an orbital zone first by clicking on it in the zone selector.');
+                return;
+            }
+            
+            // Don't trigger if clicking on links or other interactive elements
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON' || e.target.closest('a, button')) {
+                return;
+            }
+            
+            const category = buildingCard.getAttribute('data-category');
+            const buildingId = buildingCard.getAttribute('data-building-id');
+            
+            if (!buildingId) {
+                console.warn('[PurchasePanel] No building ID found on card');
+                return;
+            }
+            
+            // Get current enabled state from the card's class
+            const isCurrentlyEnabled = buildingCard.classList.contains('construction-enabled');
+            const newEnabledState = !isCurrentlyEnabled;
+            
+            console.log('[PurchasePanel] Building card clicked:', { buildingId, zone: this.selectedZone, enabled: newEnabledState, currentlyEnabled: isCurrentlyEnabled });
+            this.toggleConstruction(category, buildingId, newEnabledState);
+        };
+        
+        this.container.addEventListener('click', this._constructionToggleHandler);
     }
 
     toggleCategory(category) {
@@ -225,6 +222,29 @@ class PurchasePanel {
             this.collapsedCategories.add(category);
         }
         this.render();
+    }
+
+    getBuildingCategory(building) {
+        // Determine category based on building properties
+        if (building.power_output_mw) {
+            return 'energy';
+        } else if (building.mining_rate_multiplier && !building.build_rate_multiplier) {
+            return 'mining';
+        } else if (building.build_rate_multiplier) {
+            return 'factories';
+        } else if (building.compute_eflops) {
+            return 'computing';
+        } else if (building.efficiency !== undefined && building.efficiency < 1.0) {
+            return 'omni';
+        } else if (building.base_capacity_kg || building.base_delta_v) {
+            return 'transport';
+        }
+        return 'structures'; // default
+    }
+
+    renderBuildingsFlat(buildings) {
+        // Render buildings in flat list, determining category dynamically
+        return this.renderBuildings(buildings, null);
     }
 
     renderBuildings(buildings, category) {
@@ -237,9 +257,12 @@ class PurchasePanel {
             const hotkey = hotkeys[hotkeyIndex % hotkeys.length];
             hotkeyIndex++;
 
+            // Determine category if not provided
+            const buildingCategory = category || this.getBuildingCategory(building);
+
             // Store hotkey mapping
             this.hotkeys[hotkey] = {
-                category: category,
+                category: buildingCategory,
                 buildingId: buildingId
             };
             
@@ -247,8 +270,129 @@ class PurchasePanel {
             let statsHtml = '';
             const effects = building.effects || {};
             
-            // Factory stats
-            if (effects.probe_production_per_day !== undefined) {
+            // Get current structure count in selected zone for geometric scaling
+            const structuresByZone = this.gameState?.structures_by_zone || {};
+            const zoneStructures = this.selectedZone ? (structuresByZone[this.selectedZone] || {}) : {};
+            const currentCount = zoneStructures[buildingId] || 0;
+            const geometricFactor = Math.pow(currentCount, 2.1);
+            
+            // Get upgrade factors from game state
+            const upgradeFactors = this.gameState?.upgrade_factors || {};
+            const structureUpgrades = upgradeFactors.structure || {};
+            
+            // New format: calculate base values from multipliers
+            if (building.build_rate_multiplier) {
+                // Factory - show scaled replication rate with upgrade factors
+                const baseProbeBuildRate = Config.PROBE_BUILD_RATE || 20; // kg/day per probe
+                const baseRate = baseProbeBuildRate * building.build_rate_multiplier;
+                const perfFactor = structureUpgrades.building?.performance || 1.0;
+                const scaledRate = baseRate * geometricFactor * perfFactor;
+                const probesPerDay = scaledRate / Config.PROBE_MASS; // probes per day
+                const probesDisplay = probesPerDay >= 1e6 ? `${(probesPerDay/1e6).toFixed(1)}M` : 
+                                      probesPerDay >= 1e3 ? `${(probesPerDay/1e3).toFixed(1)}k` : 
+                                      probesPerDay.toFixed(2);
+                statsHtml = '<div class="building-stats">';
+                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
+                statsHtml += `<div class="building-stat-line">${probesDisplay} probes/day${countLabel}</div>`;
+                if (building.energy_cost_multiplier) {
+                    const baseEnergyCost = Config.PROBE_ENERGY_CONSUMPTION || 100000; // W per probe
+                    const energyCost = baseEnergyCost * building.energy_cost_multiplier;
+                    const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
+                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
+                                         `${energyCost.toFixed(0)} W`;
+                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                }
+                statsHtml += '</div>';
+            } else if (building.mining_rate_multiplier && !building.build_rate_multiplier) {
+                // Refinery - show scaled mining rate with upgrade factors
+                const baseProbeMiningRate = Config.PROBE_HARVEST_RATE || 100; // kg/day per probe
+                const baseRate = baseProbeMiningRate * building.mining_rate_multiplier;
+                const perfFactor = structureUpgrades.mining?.performance || 1.0;
+                const scaledRate = baseRate * geometricFactor * perfFactor;
+                const metalDisplay = scaledRate >= 1e6 ? `${(scaledRate/1e6).toFixed(1)}M` : 
+                                     scaledRate >= 1e3 ? `${(scaledRate/1e3).toFixed(1)}k` : 
+                                     scaledRate.toFixed(1);
+                statsHtml = '<div class="building-stats">';
+                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
+                statsHtml += `<div class="building-stat-line">${metalDisplay} kg/day${countLabel}</div>`;
+                if (building.energy_cost_multiplier) {
+                    const baseEnergyCost = Config.PROBE_ENERGY_CONSUMPTION || 100000; // W per probe
+                    const energyCost = baseEnergyCost * building.energy_cost_multiplier;
+                    const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
+                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
+                                         `${energyCost.toFixed(0)} W`;
+                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                }
+                statsHtml += '</div>';
+            } else if (building.power_output_mw) {
+                // Power station - show scaled power output with upgrade factors
+                const basePowerMW = building.power_output_mw;
+                const perfFactor = structureUpgrades.energy?.performance || 1.0;
+                const scaledPowerMW = basePowerMW * geometricFactor * perfFactor;
+                const scaledPowerW = scaledPowerMW * 1e6; // Convert to watts for display
+                const powerDisplay = scaledPowerW >= 1e9 ? `${(scaledPowerW/1e9).toFixed(1)} GW` : 
+                                    scaledPowerW >= 1e6 ? `${(scaledPowerW/1e6).toFixed(1)} MW` : 
+                                    scaledPowerW >= 1e3 ? `${(scaledPowerW/1e3).toFixed(1)} kW` :
+                                    `${scaledPowerW.toFixed(0)} W`;
+                statsHtml = '<div class="building-stats">';
+                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
+                statsHtml += `<div class="building-stat-line">${powerDisplay}${countLabel}</div>`;
+                statsHtml += '</div>';
+            } else if (building.compute_eflops) {
+                // Data center - show scaled compute output with upgrade factors
+                const baseComputeEFLOPS = building.compute_eflops;
+                const perfFactor = structureUpgrades.compute?.performance || 1.0;
+                const scaledComputeEFLOPS = baseComputeEFLOPS * geometricFactor * perfFactor;
+                const computeDisplay = scaledComputeEFLOPS >= 1e3 ? `${(scaledComputeEFLOPS/1e3).toFixed(2)} ZFLOPS` :
+                                      `${scaledComputeEFLOPS.toFixed(2)} EFLOPS`;
+                statsHtml = '<div class="building-stats">';
+                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
+                statsHtml += `<div class="building-stat-line">${computeDisplay}${countLabel}</div>`;
+                if (building.energy_cost_multiplier) {
+                    const baseEnergyCost = Config.PROBE_ENERGY_CONSUMPTION || 100000; // W per probe
+                    const energyCost = baseEnergyCost * building.energy_cost_multiplier;
+                    const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
+                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
+                                         `${energyCost.toFixed(0)} W`;
+                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                }
+                statsHtml += '</div>';
+            } else if (building.efficiency !== undefined && building.efficiency < 1.0) {
+                // Omni-fab - show all capabilities at reduced efficiency
+                statsHtml = '<div class="building-stats">';
+                statsHtml += `<div class="building-stat-line">50% efficiency (all functions)</div>`;
+                if (building.mining_rate_multiplier) {
+                    const baseRate = (Config.PROBE_HARVEST_RATE || 100) * building.mining_rate_multiplier;
+                    statsHtml += `<div class="building-stat-line">Mining: ${baseRate.toFixed(0)} kg/day</div>`;
+                }
+                if (building.build_rate_multiplier) {
+                    const baseRate = (Config.PROBE_BUILD_RATE || 20) * building.build_rate_multiplier;
+                    statsHtml += `<div class="building-stat-line">Build: ${baseRate.toFixed(0)} kg/day</div>`;
+                }
+                if (building.power_output_mw) {
+                    statsHtml += `<div class="building-stat-line">Power: ${building.power_output_mw} MW</div>`;
+                }
+                if (building.compute_eflops) {
+                    statsHtml += `<div class="building-stat-line">Compute: ${building.compute_eflops} EFLOPS</div>`;
+                }
+                statsHtml += '</div>';
+            } else if (building.base_capacity_kg || building.base_delta_v) {
+                // Mass driver
+                statsHtml = '<div class="building-stats">';
+                if (building.base_capacity_kg) {
+                    const capacityDisplay = building.base_capacity_kg >= 1e6 ? `${(building.base_capacity_kg/1e6).toFixed(1)}M kg` :
+                                           building.base_capacity_kg >= 1e3 ? `${(building.base_capacity_kg/1e3).toFixed(1)}k kg` :
+                                           `${building.base_capacity_kg.toFixed(0)} kg`;
+                    statsHtml += `<div class="building-stat-line">Capacity: ${capacityDisplay}</div>`;
+                }
+                if (building.base_delta_v) {
+                    statsHtml += `<div class="building-stat-line">Delta-V: ${building.base_delta_v.toFixed(0)} m/s</div>`;
+                }
+                statsHtml += '</div>';
+            }
+            
+            // Legacy format: Factory stats
+            if (statsHtml === '' && effects.probe_production_per_day !== undefined) {
                 const probesPerDay = effects.probe_production_per_day;
                 const metalPerProbe = effects.metal_per_probe || 10;
                 // Use energy_per_probe_kw if available, otherwise calculate from total energy / probes per day
@@ -330,9 +474,6 @@ class PurchasePanel {
                 const zone = this.orbitalZones.find(z => z.id === this.selectedZone);
                 const isDysonZone = zone && zone.is_dyson_zone;
                 
-                // Get building category
-                const buildingCategory = category;
-                
                 // Mining buildings cannot be built in Dyson zone (no minerals to mine)
                 if (isDysonZone && buildingCategory === 'mining') {
                     isAllowed = false;
@@ -347,35 +488,44 @@ class PurchasePanel {
             }
             
             const disabledClass = (!this.selectedZone || !isAllowed) ? 'disabled' : '';
+            const clickableClass = (!disabledClass) ? 'building-card-clickable' : '';
             
             html += `
-                <div class="purchase-item ${disabledClass}" id="building-${buildingId}" data-building-id="${buildingId}" data-category="${category}">
-                    <div class="purchase-item-name">
+                <div class="probe-summary-item building-card ${disabledClass} ${clickableClass}" 
+                     id="building-${buildingId}" 
+                     data-building-id="${buildingId}" 
+                     data-category="${buildingCategory}"
+                     ${!disabledClass ? 'style="cursor: pointer;"' : ''}>
+                    <div class="probe-summary-label">
                         ${building.name}
-                        <span class="purchase-hotkey">[${hotkey.toUpperCase()}]</span>
+                        <span style="color: rgba(255, 255, 255, 0.4); font-weight: normal; margin-left: 4px;">[${hotkey.toUpperCase()}]</span>
+                        <span class="construction-status-indicator" id="status-${buildingId}" style="float: right; font-size: 9px; color: rgba(255, 255, 255, 0.4);"></span>
                     </div>
-                    <div class="purchase-item-description">${building.description || ''}</div>
-                    ${statsHtml}
-                    <div class="purchase-item-cost">
-                        <div class="cost-item">
-                            <span class="cost-label">Metal Cost:</span>
-                            <span class="cost-value">${this.formatNumber(building.base_cost_metal)}</span>
+                    ${building.description ? `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px; margin-top: 2px;">${building.description}</div>` : ''}
+                    ${statsHtml ? `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 5px; font-family: 'Courier New', monospace; line-height: 1.4;">${statsHtml}</div>` : ''}
+                    <div class="probe-summary-breakdown" style="margin-top: 5px;">
+                        <div class="probe-summary-breakdown-item">
+                            <span class="probe-summary-breakdown-label">Cost:</span>
+                            <span class="probe-summary-breakdown-count" id="cost-${buildingId}">${this.formatNumber(this.getBuildingCost(building, buildingId))}</span>
+                        </div>
+                        <div class="probe-summary-breakdown-item">
+                            <span class="probe-summary-breakdown-label">Count:</span>
+                            <span class="probe-summary-breakdown-count" id="count-${buildingId}">0</span>
                         </div>
                     </div>
-                    <div class="purchase-item-count" id="count-${buildingId}">Count: 0</div>
-                    <div class="building-progress-container" id="progress-${buildingId}">
-                        <div class="building-progress-label">Building Progress:</div>
-                        <div class="building-progress-info">
-                            <div class="building-progress-percentage" id="progress-percent-${buildingId}">0%</div>
-                            <div class="building-progress-time" id="progress-time-${buildingId}">—</div>
+                    <div class="building-progress-container" id="progress-${buildingId}" style="margin-top: 8px; padding: 6px; background: rgba(0, 0, 0, 0.2); border-radius: 3px;">
+                        <div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">Building Progress</div>
+                        <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
+                            <div id="progress-bar-${buildingId}" style="height: 100%; width: 0%; background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(74, 158, 255, 1)); transition: width 0.3s ease;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="probe-summary-breakdown-count" id="progress-percent-${buildingId}" style="font-size: 10px;">0%</span>
+                            <span class="probe-summary-breakdown-count" id="progress-time-${buildingId}" style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">—</span>
                         </div>
                     </div>
-                    <label class="construction-toggle">
-                        <input type="checkbox" class="construction-toggle-checkbox" data-category="${category}" data-building-id="${buildingId}" ${!this.selectedZone || !isAllowed ? 'disabled' : ''}>
-                        <span class="construction-toggle-label">Enable Construction</span>
-                    </label>
-                    ${!this.selectedZone ? '<div style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 5px;">Select a zone to enable</div>' : ''}
-                    ${this.selectedZone && !isAllowed ? `<div style="font-size: 11px; color: rgba(255, 100, 100, 0.8); margin-top: 5px;">Not allowed in ${this.selectedZone}</div>` : ''}
+                    ${!this.selectedZone ? '<div style="font-size: 9px; color: rgba(255, 255, 255, 0.4); margin-top: 8px;">Select a zone to enable construction</div>' : ''}
+                    ${this.selectedZone && !isAllowed ? `<div style="font-size: 9px; color: rgba(255, 100, 100, 0.8); margin-top: 8px;">Not allowed in ${this.selectedZone}</div>` : ''}
+                    ${!disabledClass ? '<div style="font-size: 9px; color: rgba(74, 158, 255, 0.7); margin-top: 8px;">Click to toggle construction</div>' : ''}
                 </div>
             `;
         });
@@ -428,6 +578,28 @@ class PurchasePanel {
         if (value >= 1e3) return (value / 1e3).toFixed(1) + 'k';
         return value.toString();
     }
+    
+    getBuildingCost(building, buildingId = null) {
+        // New format: calculate from mass_multiplier
+        if (building.mass_multiplier !== undefined) {
+            const baseProbeMass = Config.PROBE_MASS || 100; // kg
+            const baseCost = baseProbeMass * building.mass_multiplier;
+            
+            // Apply exponential scaling if zone and building ID are provided
+            if (this.selectedZone && buildingId && this.gameState) {
+                const structuresByZone = this.gameState.structures_by_zone || {};
+                const zoneStructures = structuresByZone[this.selectedZone] || {};
+                const currentCount = zoneStructures[buildingId] || 0;
+                // Next building will cost baseCost * (currentCount + 1)^2.1
+                const scalingFactor = Math.pow(currentCount + 1, 2.1);
+                return baseCost * scalingFactor;
+            }
+            
+            return baseCost;
+        }
+        // Legacy format: use base_cost_metal
+        return building.base_cost_metal || 0;
+    }
 
     async purchaseItem(category, buildingId) {
         // Legacy method - now redirects to toggleConstruction
@@ -436,6 +608,8 @@ class PurchasePanel {
     
     async toggleConstruction(category, buildingId, enabled) {
         try {
+            console.log('[PurchasePanel] toggleConstruction called:', { category, buildingId, enabled, selectedZone: this.selectedZone });
+            
             if (category === 'units' || category === 'probes') {
                 // Probes still use purchase_probe
                 const zoneId = this.selectedZone || 'mercury'; // Default to mercury if no zone selected
@@ -447,36 +621,108 @@ class PurchasePanel {
                 // Buildings use toggle construction - require zone selection
                 if (!this.selectedZone) {
                     alert('Please select an orbital zone first by clicking on it in the zone selector.');
-                    // Revert checkbox
-                    const checkbox = document.querySelector(`.construction-toggle-checkbox[data-building-id="${buildingId}"]`);
-                    if (checkbox) {
-                        checkbox.checked = !enabled;
+                    // Revert card state
+                    const card = document.getElementById(`building-${buildingId}`);
+                    const statusIndicator = document.getElementById(`status-${buildingId}`);
+                    if (card) {
+                        if (!enabled) {
+                            card.classList.add('construction-enabled');
+                            if (statusIndicator) {
+                                statusIndicator.textContent = '● Building';
+                                statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                            }
+                        } else {
+                            card.classList.remove('construction-enabled');
+                            if (statusIndicator) {
+                                statusIndicator.textContent = '';
+                            }
+                        }
                     }
                     return;
                 }
                 
                 // Buildings use toggle construction
-                const response = await gameEngine.performAction('purchase_structure', {
+                const actionData = {
                     building_id: buildingId,
                     zone_id: this.selectedZone,
                     enabled: enabled
-                });
+                };
+                console.log('[PurchasePanel] Sending purchase_structure action:', actionData);
                 
-                // Update checkbox state if action succeeded
-                if (response.success) {
-                    const checkbox = document.querySelector(`.construction-toggle-checkbox[data-building-id="${buildingId}"]`);
-                    if (checkbox) {
-                        checkbox.checked = enabled;
+                const response = await gameEngine.performAction('purchase_structure', actionData);
+                
+                console.log('[PurchasePanel] Action response:', response);
+                
+                // Check both response.success (from worker) and response.result.success (from engine)
+                const actionSuccess = response.success && response.result && response.result.success !== false;
+                
+                if (actionSuccess) {
+                    console.log('[PurchasePanel] Construction toggled successfully:', { buildingId, enabled, result: response.result });
+                    
+                    // Immediately update the card state for instant feedback
+                    // The update() method will sync it with gameState on next frame
+                    const card = document.getElementById(`building-${buildingId}`);
+                    const statusIndicator = document.getElementById(`status-${buildingId}`);
+                    if (card) {
+                        if (enabled) {
+                            card.classList.add('construction-enabled');
+                            if (statusIndicator) {
+                                statusIndicator.textContent = '● Building';
+                                statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                            }
+                        } else {
+                            card.classList.remove('construction-enabled');
+                            if (statusIndicator) {
+                                statusIndicator.textContent = '';
+                            }
+                        }
+                    }
+                } else {
+                    console.warn('[PurchasePanel] Action failed:', response);
+                    const errorMsg = response.result?.error || response.error || 'Unknown error';
+                    alert(`Failed to toggle construction: ${errorMsg}`);
+                    
+                    // Revert card state on failure
+                    const card = document.getElementById(`building-${buildingId}`);
+                    const statusIndicator = document.getElementById(`status-${buildingId}`);
+                    if (card) {
+                        // Revert to opposite of what we tried to set
+                        if (enabled) {
+                            // Tried to enable but failed - remove enabled class
+                            card.classList.remove('construction-enabled');
+                            if (statusIndicator) {
+                                statusIndicator.textContent = '';
+                            }
+                        } else {
+                            // Tried to disable but failed - keep enabled
+                            card.classList.add('construction-enabled');
+                            if (statusIndicator) {
+                                statusIndicator.textContent = '● Building';
+                                statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                            }
+                        }
                     }
                 }
             }
         } catch (error) {
-            console.error('Toggle construction failed:', error);
+            console.error('[PurchasePanel] Toggle construction failed:', error);
             alert(error.message || 'Toggle construction failed');
-            // Revert checkbox on error
-            const checkbox = document.querySelector(`.construction-toggle-checkbox[data-building-id="${buildingId}"]`);
-            if (checkbox) {
-                checkbox.checked = !enabled;
+            // Revert card state on error
+            const card = document.getElementById(`building-${buildingId}`);
+            const statusIndicator = document.getElementById(`status-${buildingId}`);
+            if (card) {
+                if (!enabled) {
+                    card.classList.add('construction-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '● Building';
+                        statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                    }
+                } else {
+                    card.classList.remove('construction-enabled');
+                    if (statusIndicator) {
+                        statusIndicator.textContent = '';
+                    }
+                }
             }
         }
     }
@@ -493,7 +739,7 @@ class PurchasePanel {
         this.updateZoneInfo();
         
         // If container is empty or doesn't have buildings rendered, render first
-        if (!this.container.querySelector('.purchase-item')) {
+        if (!this.container.querySelector('.probe-summary-item[data-building-id]')) {
             this.render();
             return;
         }
@@ -502,11 +748,11 @@ class PurchasePanel {
         const now = Date.now();
         if (now - this.cachedElements.lastCacheTime > this.cacheValidFor) {
             this.cachedElements.purchaseItems = null;
-            this.cachedElements.constructionCheckboxes = null;
+            this.cachedElements.buildingCards = null;
             this.cachedElements.buildingProgressContainers = null;
         }
 
-        // Update counts for buildings - zone-specific if zone is selected
+        // Update counts and costs for buildings - zone-specific if zone is selected
         if (this.selectedZone) {
             const structuresByZone = gameState.structures_by_zone || {};
             const zoneStructures = structuresByZone[this.selectedZone] || {};
@@ -515,11 +761,20 @@ class PurchasePanel {
                 if (countElement) {
                     countElement.textContent = `Count: ${count}`;
                 }
+                // Update cost display (cost increases with count)
+                const costElement = document.getElementById(`cost-${buildingId}`);
+                if (costElement) {
+                    const building = this.getBuildingById(buildingId);
+                    if (building) {
+                        const nextCost = this.getBuildingCost(building, buildingId);
+                        costElement.textContent = this.formatNumber(nextCost);
+                    }
+                }
             });
-            // Set count to 0 for buildings not in this zone
+            // Set count to 0 and update cost for buildings not in this zone
             // Cache purchase items to avoid repeated queries
             if (!this.cachedElements.purchaseItems) {
-                this.cachedElements.purchaseItems = Array.from(this.container.querySelectorAll('.purchase-item[data-building-id]'));
+                this.cachedElements.purchaseItems = Array.from(this.container.querySelectorAll('.probe-summary-item[data-building-id]'));
                 this.cachedElements.lastCacheTime = Date.now();
             }
             this.cachedElements.purchaseItems.forEach(item => {
@@ -528,6 +783,15 @@ class PurchasePanel {
                     const countElement = document.getElementById(`count-${buildingId}`);
                     if (countElement) {
                         countElement.textContent = `Count: 0`;
+                    }
+                    // Update cost display (base cost when count is 0)
+                    const costElement = document.getElementById(`cost-${buildingId}`);
+                    if (costElement) {
+                        const building = this.getBuildingById(buildingId);
+                        if (building) {
+                            const nextCost = this.getBuildingCost(building, buildingId);
+                            costElement.textContent = this.formatNumber(nextCost);
+                        }
                     }
                 }
             });
@@ -541,28 +805,59 @@ class PurchasePanel {
             });
         }
         
-        // Update enabled construction checkboxes - zone-specific
+        // Update enabled construction state on building cards - zone-specific
         const enabledConstruction = gameState.enabled_construction || [];
-        // Cache checkboxes to avoid repeated queries
-        if (!this.cachedElements.constructionCheckboxes) {
-            this.cachedElements.constructionCheckboxes = Array.from(this.container.querySelectorAll('.construction-toggle-checkbox'));
+        
+        // Cache building cards to avoid repeated queries
+        if (!this.cachedElements.buildingCards) {
+            this.cachedElements.buildingCards = Array.from(this.container.querySelectorAll('.building-card[data-building-id]'));
             this.cachedElements.lastCacheTime = Date.now();
         }
-        this.cachedElements.constructionCheckboxes.forEach(checkbox => {
-            const buildingId = checkbox.getAttribute('data-building-id');
+        this.cachedElements.buildingCards.forEach(card => {
+            const buildingId = card.getAttribute('data-building-id');
             if (buildingId && this.selectedZone) {
                 // Check if this building is enabled for the selected zone
                 const enabledKey = `${this.selectedZone}::${buildingId}`;
-                const shouldBeChecked = enabledConstruction.includes(enabledKey);
-                // Only update if changed to avoid unnecessary DOM writes
-                if (checkbox.checked !== shouldBeChecked) {
-                    checkbox.checked = shouldBeChecked;
+                const shouldBeEnabled = enabledConstruction.includes(enabledKey);
+                const statusIndicator = document.getElementById(`status-${buildingId}`);
+                const currentlyEnabled = card.classList.contains('construction-enabled');
+                
+                // Only update if state changed to avoid unnecessary DOM writes
+                if (shouldBeEnabled !== currentlyEnabled) {
+                    if (shouldBeEnabled) {
+                        card.classList.add('construction-enabled');
+                        if (statusIndicator) {
+                            statusIndicator.textContent = '● Building';
+                            statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                        }
+                        console.log(`[PurchasePanel] ✓ Enabled construction for ${buildingId} in ${this.selectedZone}`);
+                    } else {
+                        card.classList.remove('construction-enabled');
+                        if (statusIndicator) {
+                            statusIndicator.textContent = '';
+                        }
+                        console.log(`[PurchasePanel] ✗ Disabled construction for ${buildingId} in ${this.selectedZone}`);
+                    }
                 }
             } else if (buildingId) {
                 // No zone selected - check if enabled in any zone (for legacy compatibility)
-                const shouldBeChecked = enabledConstruction.some(key => key.endsWith(`::${buildingId}`));
-                if (checkbox.checked !== shouldBeChecked) {
-                    checkbox.checked = shouldBeChecked;
+                const shouldBeEnabled = enabledConstruction.some(key => key.endsWith(`::${buildingId}`));
+                const statusIndicator = document.getElementById(`status-${buildingId}`);
+                const currentlyEnabled = card.classList.contains('construction-enabled');
+                
+                if (shouldBeEnabled !== currentlyEnabled) {
+                    if (shouldBeEnabled) {
+                        card.classList.add('construction-enabled');
+                        if (statusIndicator) {
+                            statusIndicator.textContent = '● Building';
+                            statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                        }
+                    } else {
+                        card.classList.remove('construction-enabled');
+                        if (statusIndicator) {
+                            statusIndicator.textContent = '';
+                        }
+                    }
                 }
             }
         });
@@ -575,37 +870,55 @@ class PurchasePanel {
                 ? gameState.enabled_construction 
                 : [];
             
+            // Get energy throttle from game state (accounts for energy limitations)
+            const energyThrottle = gameState.derived?.totals?.energy_throttle || 1.0;
+            
             // Cache calculations - only recalculate if relevant values changed
             const progressCacheKey = JSON.stringify({
                 probeAllocations: gameState.probe_allocations_by_zone,
-                buildAllocation: gameState.build_allocation,
                 enabledConstruction: enabledConstruction,
-                roboticBonus: gameState.resource_breakdowns?.dexterity?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0
+                energyThrottle: energyThrottle,
+                techUpgradeFactors: gameState.tech_upgrade_factors
             });
             
             // Reuse cached calculations if nothing changed
             if (this.lastProgressCacheKey !== progressCacheKey) {
-                // Calculate structure building dexterity per zone
+                // Calculate structure building rate per zone using same method as structure system
                 const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
-                const buildAllocation = gameState.build_allocation || 100; // 0 = all structures, 100 = all probes
-                const structureFraction = (100 - buildAllocation) / 100.0;
+                const probesByZone = gameState.probes_by_zone || {};
+                const techUpgradeFactors = gameState.tech_upgrade_factors || {};
                 
-                // Get research multiplier for build rate
-                const breakdown = gameState.resource_breakdowns?.dexterity;
-                const roboticBonus = breakdown?.probes?.upgrades?.find(u => u.name === 'Robotic Systems')?.bonus || 0;
-                const totalMultiplier = 1.0 + (roboticBonus || 0);
+                // Get build rate upgrade factor (same as structure system uses)
+                const buildRateUpgradeFactor = techUpgradeFactors.probe_build || 1.0;
                 
-                // Base build rate: 10 kg/day per probe (from Config.PROBE_BUILD_RATE)
-                const PROBE_BUILD_RATE = 10.0; // kg/day per probe
+                // Base build rate: 20 kg/day per probe (from ProductionCalculator.BASE_BUILDING_RATE)
+                const BASE_BUILDING_RATE = 20.0; // kg/day per probe
                 
                 // Calculate build rate per zone
                 const buildRateByZone = {};
                 for (const [zoneId, zoneAllocations] of Object.entries(probeAllocationsByZone)) {
-                    const constructAllocation = zoneAllocations.construct || {};
-                    const constructingProbes = Object.values(constructAllocation).reduce((sum, count) => sum + (count || 0), 0);
-                    const structureBuildingProbes = constructingProbes * structureFraction;
-                    const zoneBuildRateKgPerDay = structureBuildingProbes * PROBE_BUILD_RATE * totalMultiplier;
-                    buildRateByZone[zoneId] = zoneBuildRateKgPerDay;
+                    // Get construct allocation (0-1 fraction) - this is now directly the fraction for structure building
+                    let constructAllocation = zoneAllocations.construct || 0;
+                    if (typeof constructAllocation === 'object' && constructAllocation !== null) {
+                        // Fallback: if it's an object, sum values (legacy format)
+                        constructAllocation = Object.values(constructAllocation).reduce((sum, count) => sum + (count || 0), 0);
+                    }
+                    constructAllocation = typeof constructAllocation === 'number' ? constructAllocation : 0;
+                    
+                    // Get total probes in this zone
+                    const zoneProbes = probesByZone[zoneId] || {};
+                    const totalProbes = Object.values(zoneProbes).reduce((sum, count) => sum + (count || 0), 0);
+                    
+                    // Calculate structure building probes directly from construct allocation
+                    const structureBuildingProbes = totalProbes * constructAllocation;
+                    
+                    // Calculate base build rate with upgrade factors (same as structure system)
+                    const baseBuildRateKgPerDay = structureBuildingProbes * BASE_BUILDING_RATE * buildRateUpgradeFactor;
+                    
+                    // Apply energy throttle (same as structure system does)
+                    const effectiveBuildRateKgPerDay = baseBuildRateKgPerDay * energyThrottle;
+                    
+                    buildRateByZone[zoneId] = effectiveBuildRateKgPerDay;
                 }
                 
                 // Count enabled buildings per zone
@@ -640,7 +953,7 @@ class PurchasePanel {
                 const building = this.getBuildingById(buildingId);
                 if (!building) return;
                 
-                const costMetal = building.base_cost_metal || 0;
+                const costMetal = this.getBuildingCost(building, buildingId);
                 let progress = 0;
                 let buildRatePerBuilding = 0;
                 let timeToComplete = Infinity;
@@ -650,14 +963,34 @@ class PurchasePanel {
                     const enabledKey = `${this.selectedZone}::${buildingId}`;
                     progress = structureProgress[enabledKey] || 0;
                     
+                    // Get zone metal availability for throttling calculation
+                    const zones = gameState.zones || {};
+                    const zone = zones[this.selectedZone];
+                    const storedMetal = zone?.stored_metal || 0;
+                    
                     // Calculate build rate per building in this zone
                     const zoneBuildRate = buildRateByZone[this.selectedZone] || 0;
                     const numEnabledInZone = (enabledBuildingsByZone[this.selectedZone] || []).length;
                     if (numEnabledInZone > 0) {
                         buildRatePerBuilding = zoneBuildRate / numEnabledInZone; // kg/day per building
+                        
+                        // Account for metal throttling (same as structure system)
+                        // If metal is limited, actual progress rate is reduced
+                        const remainingToBuild = costMetal - progress;
+                        const metalNeededPerDay = buildRatePerBuilding; // 1:1 ratio
+                        if (storedMetal < metalNeededPerDay && metalNeededPerDay > 0) {
+                            // Metal throttling: reduce effective rate based on available metal
+                            const metalThrottle = storedMetal / metalNeededPerDay;
+                            buildRatePerBuilding = buildRatePerBuilding * metalThrottle;
+                        }
                     }
                     
-                    // Calculate time to complete
+                    // Debug log progress (occasionally)
+                    if (progress > 0 && Math.random() < 0.05) { // 5% chance
+                        console.log(`[PurchasePanel] ${buildingId} in ${this.selectedZone}: progress=${progress.toFixed(2)}/${costMetal.toFixed(2)} kg, rate=${buildRatePerBuilding.toFixed(2)} kg/day, metal=${storedMetal.toFixed(2)} kg`);
+                    }
+                    
+                    // Calculate time to complete based on effective rate
                     const remainingToBuild = costMetal - progress;
                     if (buildRatePerBuilding > 0 && remainingToBuild > 0) {
                         timeToComplete = remainingToBuild / buildRatePerBuilding; // days
@@ -698,9 +1031,15 @@ class PurchasePanel {
                 
                 const progressPercentEl = document.getElementById(`progress-percent-${buildingId}`);
                 const progressTimeEl = document.getElementById(`progress-time-${buildingId}`);
+                const progressBarEl = document.getElementById(`progress-bar-${buildingId}`);
                 
                 // Always show the container
                 container.style.display = 'block';
+                
+                // Update progress bar
+                if (progressBarEl) {
+                    progressBarEl.style.width = `${Math.min(100, Math.max(0, progressPercent))}%`;
+                }
                 
                 if (progressPercentEl) {
                     progressPercentEl.textContent = `${progressPercent.toFixed(1)}%`;
@@ -759,7 +1098,12 @@ class PurchasePanel {
     getBuildingById(buildingId) {
         if (!this.buildings) return null;
 
-        // Search through all categories
+        // If buildings is an array (new flat format)
+        if (Array.isArray(this.buildings)) {
+            return this.buildings.find(b => b.id === buildingId) || null;
+        }
+
+        // Legacy: Search through all categories
         for (const category in this.buildings) {
             const items = this.buildings[category];
             if (Array.isArray(items)) {
@@ -796,7 +1140,7 @@ class PurchasePanel {
                 
                 factories.forEach(({ buildingId, count, building }) => {
                     const recyclingEfficiency = 0.75; // Base, will be updated from research
-                    const metalReturn = building.base_cost_metal * recyclingEfficiency;
+                    const metalReturn = this.getBuildingCost(building) * recyclingEfficiency;
                     
                     html += `
                         <div class="recycling-item">
@@ -821,6 +1165,11 @@ class PurchasePanel {
     }
 
     isFactory(buildingId) {
+        if (Array.isArray(this.buildings)) {
+            const building = this.buildings.find(b => b.id === buildingId);
+            return building && building.build_rate_multiplier !== undefined;
+        }
+        // Legacy: check factories category
         const factories = this.buildings?.factories || [];
         return factories.some(f => f.id === buildingId);
     }

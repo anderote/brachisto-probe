@@ -8,12 +8,18 @@ class OrbitalZoneSelector {
         this.transferSourceZone = null; // First zone selected for transfer (after spacebar)
         this.waitingForTransferDestination = false; // True when spacebar pressed, waiting for destination zone
         this.currentTransferDialog = null; // Reference to open transfer dialog
-        this.probeDots = {}; // Track probe dots per zone: {zoneId: [dots]}
         this.transferArcs = []; // Active transfer arcs: [{from, to, type, count, rate, ...}]
         
         // Performance optimization: Throttle probe visualization updates
         this.probeUpdateFrameCount = 0; // Frame counter for probe UI updates
         this.lastProbeCounts = null; // Cache last probe counts to detect changes
+        
+        // Tooltip update interval
+        this.tooltipUpdateInterval = null; // Interval for updating tooltip every second
+        
+        // Transfer arc animation interval (10 times per second = 100ms)
+        this.transferArcAnimationInterval = null;
+        this.transferArcUpdateRate = 100; // milliseconds (10 times per second)
         
         this.init();
         this.loadData();
@@ -25,6 +31,10 @@ class OrbitalZoneSelector {
             const zonesResponse = await fetch('/game_data/orbital_mechanics.json');
             const zonesData = await zonesResponse.json();
             this.orbitalZones = zonesData.orbital_zones;
+            
+            // Pre-calculate delta-v for each zone relative to Dyson sphere
+            this.precalculateDeltaV();
+            
             this.render();
             // Notify command panel that zones are loaded
             if (window.commandPanel && window.commandPanel.selectedZone) {
@@ -33,6 +43,29 @@ class OrbitalZoneSelector {
         } catch (error) {
             console.error('Failed to load orbital zones:', error);
         }
+    }
+    
+    precalculateDeltaV() {
+        // Calculate delta-v for each zone relative to Dyson sphere and store as property
+        if (!this.orbitalZones) return;
+        
+        // Find Dyson sphere zone
+        const dysonZone = this.orbitalZones.find(z => z.id === 'dyson_sphere');
+        if (!dysonZone) return;
+        
+        const dysonRadiusAU = dysonZone.radius_au || 0.2;
+        
+        // Calculate and store delta-v for each zone
+        this.orbitalZones.forEach(zone => {
+            if (zone.id === 'dyson_sphere') {
+                // Dyson sphere has 0 delta-v relative to itself
+                zone.delta_v_from_dyson_ms = 0;
+            } else {
+                // Calculate Hohmann transfer delta-v from Dyson sphere to this zone
+                const zoneRadiusAU = zone.radius_au || 1.0;
+                zone.delta_v_from_dyson_ms = this.calculateHohmannDeltaV(dysonRadiusAU, zoneRadiusAU);
+            }
+        });
     }
 
     init() {
@@ -46,15 +79,19 @@ class OrbitalZoneSelector {
                 return;
             }
             
-            // Handle spacebar for transfer source selection
+            // Handle spacebar to open transfer dialog
             // Only handle if a zone is selected (otherwise let pause/resume handle it)
             if ((e.key === ' ' || e.key === 'Spacebar') && this.selectedZone) {
                 e.preventDefault();
                 e.stopPropagation();
-                // Mark selected zone as transfer source
-                this.transferSourceZone = this.selectedZone;
-                this.waitingForTransferDestination = true;
-                this.render(); // Re-render to show transfer source highlight
+                // If transfer dialog is already open, close it
+                if (this.currentTransferDialog) {
+                    this.closeTransferDialog();
+                } else {
+                    // Open transfer dialog with selected zone as source
+                    // Destination will be set when user selects another zone
+                    this.showTransferDialog(this.selectedZone, null);
+                }
                 return;
             }
             
@@ -115,17 +152,74 @@ class OrbitalZoneSelector {
     }
 
     calculateDeltaV(zone) {
-        // Delta-v from sun to zone (simplified - proportional to radius_au)
-        // Earth is baseline at 1.0 AU
-        const earthRadiusAU = 1.0;
+        // Calculate delta-v in m/s relative to Dyson sphere
+        // Dyson sphere is at 0.2 AU, so it has 0 m/s delta-v
+        // Other zones show delta-v needed to reach them from Dyson sphere
+        
+        // Find Dyson sphere zone
+        const dysonZone = this.orbitalZones?.find(z => z.id === 'dyson_sphere');
+        if (!dysonZone) {
+            // Fallback: use 0.2 AU as Dyson sphere radius
+            const dysonRadiusAU = 0.2;
+            const zoneRadiusAU = zone.radius_au || 1.0;
+            
+            // If this is the Dyson sphere, return 0
+            if (zone.id === 'dyson_sphere' || Math.abs(zoneRadiusAU - dysonRadiusAU) < 0.01) {
+                return 0;
+            }
+            
+            // Calculate Hohmann transfer delta-v from Dyson sphere to this zone
+            return this.calculateHohmannDeltaV(dysonRadiusAU, zoneRadiusAU);
+        }
+        
+        // If this is the Dyson sphere, return 0
+        if (zone.id === 'dyson_sphere') {
+            return 0;
+        }
+        
+        // Calculate Hohmann transfer delta-v from Dyson sphere to this zone
+        const dysonRadiusAU = dysonZone.radius_au || 0.2;
         const zoneRadiusAU = zone.radius_au || 1.0;
+        return this.calculateHohmannDeltaV(dysonRadiusAU, zoneRadiusAU);
+    }
+    
+    calculateHohmannDeltaV(r1AU, r2AU) {
+        // Calculate Hohmann transfer delta-v between two circular orbits
+        // r1AU: inner orbit radius in AU
+        // r2AU: outer orbit radius in AU
+        // Returns delta-v in m/s
         
-        // Delta-v scales roughly with sqrt of distance ratio (simplified)
-        // Using delta_v_penalty as a multiplier
-        const baseDeltaV = 30.0; // km/s baseline for Earth
-        const deltaV = baseDeltaV * (1 + (zone.delta_v_penalty || 0.1));
+        // Standard gravitational parameter for the Sun: GM = 1.327e20 m³/s²
+        const GM = 1.327e20; // m³/s²
         
-        return deltaV;
+        // Convert AU to meters: 1 AU = 1.496e11 m
+        const AU_TO_M = 1.496e11;
+        const r1 = r1AU * AU_TO_M; // meters
+        const r2 = r2AU * AU_TO_M; // meters
+        
+        // Orbital velocity at inner orbit: v1 = sqrt(GM/r1)
+        const v1 = Math.sqrt(GM / r1);
+        
+        // Orbital velocity at outer orbit: v2 = sqrt(GM/r2)
+        const v2 = Math.sqrt(GM / r2);
+        
+        // Semi-major axis of transfer ellipse: a = (r1 + r2) / 2
+        const a = (r1 + r2) / 2;
+        
+        // Velocity at periapsis of transfer orbit (at r1): v_peri = sqrt(GM * (2/r1 - 1/a))
+        const v_peri = Math.sqrt(GM * (2/r1 - 1/a));
+        
+        // Velocity at apoapsis of transfer orbit (at r2): v_apo = sqrt(GM * (2/r2 - 1/a))
+        const v_apo = Math.sqrt(GM * (2/r2 - 1/a));
+        
+        // First burn: from circular orbit at r1 to transfer orbit
+        const deltaV1 = Math.abs(v_peri - v1);
+        
+        // Second burn: from transfer orbit to circular orbit at r2
+        const deltaV2 = Math.abs(v2 - v_apo);
+        
+        // Total delta-v
+        return deltaV1 + deltaV2;
     }
 
     calculateEnergyCost(zone) {
@@ -180,6 +274,25 @@ class OrbitalZoneSelector {
         
         // Render floating planet squares above the menu
         html += `<div class="orbital-zone-planet-squares" style="width: ${totalTilesWidthWithGaps}px;">`;
+        
+        // Check if transfer dialog is open - if so, calculate travel times
+        const isTransferDialogOpen = this.currentTransferDialog !== null;
+        const transferSourceZone = this.transferSourceZone;
+        let transferSourceZoneData = null;
+        if (isTransferDialogOpen && transferSourceZone) {
+            transferSourceZoneData = this.orbitalZones.find(z => z.id === transferSourceZone);
+        }
+        
+        // Check for mass driver boost if transfer dialog is open
+        let massDriverCount = 0;
+        let hasMassDriver = false;
+        if (isTransferDialogOpen && transferSourceZone && this.gameState) {
+            const structuresByZone = this.gameState.structures_by_zone || {};
+            const zoneStructures = structuresByZone[transferSourceZone] || {};
+            massDriverCount = zoneStructures['mass_driver'] || 0;
+            hasMassDriver = massDriverCount > 0;
+        }
+        
         this.orbitalZones.forEach((zone, index) => {
             const zoneTotalMass = zoneMasses[zone.id] || 0;
             
@@ -196,71 +309,60 @@ class OrbitalZoneSelector {
             const tileCenter = (index * (tileWidth + tileGap)) + (tileWidth / 2);
             const tileLeft = tileCenter - (totalTilesWidthWithGaps / 2);
             
-            // Calculate probe count for this zone (use cache if available)
-            let probeCount = 0;
-            const probeCache = window.probeCountCache;
-            if (probeCache && this.gameState) {
-                probeCache.update(this.gameState);
-                probeCount = probeCache.getZoneProbeCount(zone.id);
-            } else {
-                const probesByZone = (this.gameState && this.gameState.probes_by_zone) ? 
-                    this.gameState.probes_by_zone[zone.id] || {} : {};
-                for (const [probeType, count] of Object.entries(probesByZone)) {
-                    probeCount += count;
+            // Calculate travel time if transfer dialog is open
+            let travelTimeDisplay = '';
+            if (isTransferDialogOpen && transferSourceZoneData && transferSourceZone !== zone.id) {
+                let transferTime = this.calculateTransferTime(transferSourceZoneData, zone);
+                
+                // Apply mass driver speed multiplier if available
+                if (hasMassDriver && window.gameEngine && window.gameEngine.transferSystem) {
+                    const speedMultiplier = window.gameEngine.transferSystem.calculateMassDriverSpeedMultiplier(massDriverCount);
+                    transferTime = transferTime * speedMultiplier;
                 }
+                
+                travelTimeDisplay = this.formatTransferTime(transferTime);
             }
             
-            // Calculate Dyson swarm mass for this zone (if applicable)
-            // For now, show Dyson swarm dots around Earth zone only
-            const dysonMass = (zone.id === 'earth' && this.gameState) ? 
-                (this.gameState.dyson_sphere_mass || 0) : 0;
-            const dysonTargetMass = (zone.id === 'earth' && this.gameState) ? 
-                (this.gameState.dyson_sphere_target_mass || 5e21) : 0;
-            const dysonCompletion = dysonTargetMass > 0 ? dysonMass / dysonTargetMass : 0;
-            
-            // Calculate number of dots to show (logarithmic scale)
-            const maxDots = 20; // Maximum dots to show around each zone
-            const probeDots = Math.min(maxDots, Math.max(0, Math.floor(Math.log10(Math.max(1, probeCount)) * 5)));
-            const dysonDots = Math.min(maxDots, Math.floor(dysonCompletion * maxDots));
-            const totalDots = probeDots + dysonDots;
+            html += `<div class="orbital-zone-planet-square-wrapper" style="left: calc(50% + ${tileLeft}px);">`;
             
             html += `<div class="orbital-zone-planet-square-float" 
                          data-zone="${zone.id}"
                          style="width: ${squareSizePx}px; 
                                 height: ${squareSizePx}px; 
                                 background-color: ${zone.color || '#4a9eff'};
-                                left: calc(50% + ${tileLeft}px);">
-                         <div class="orbital-zone-probe-dots-container" data-zone="${zone.id}"></div>
+                                border: 2px solid rgba(255, 255, 255, 0.3);">
+                         <!-- Probe dots container removed for performance -->
                      </div>`;
+            
+            // Display travel time below square if transfer dialog is open
+            if (travelTimeDisplay) {
+                html += `<div class="orbital-zone-travel-time" data-zone="${zone.id}">${travelTimeDisplay}</div>`;
+            }
+            
+            html += `</div>`;
         });
         html += '</div>';
         
         // Render zone tiles (uniform size, no planet square inside)
         this.orbitalZones.forEach((zone, tileIndex) => {
-            const remainingMetal = (this.gameState && this.gameState.zone_metal_remaining) ? 
-                (this.gameState.zone_metal_remaining[zone.id] || 0) : 0;
-            
-            // Calculate probe count and mass in this zone
-            let probeCount = 0;
-            let probeMass = 0;
-            const PROBE_MASS = 10; // kg per probe
-            const probesByZone = (this.gameState && this.gameState.probes_by_zone) ? 
-                this.gameState.probes_by_zone[zone.id] || {} : {};
-            for (const [probeType, count] of Object.entries(probesByZone)) {
-                probeCount += count;
-                probeMass += (count || 0) * PROBE_MASS;
-            }
-            
-            // Calculate structures count in this zone
-            let structuresCount = 0;
-            const structuresByZone = (this.gameState && this.gameState.structures_by_zone) ? 
-                this.gameState.structures_by_zone[zone.id] || {} : {};
-            for (const count of Object.values(structuresByZone)) {
-                structuresCount += (count || 0);
-            }
-            
             // Remove "Orbit" from zone name
             const zoneName = zone.name.replace(/\s+Orbit\s*$/i, '');
+            
+            // Get fixed zone properties (don't change, so no need to update)
+            // Use pre-calculated delta-v (calculated once when zones are loaded)
+            const deltaVms = zone.delta_v_from_dyson_ms ?? 0;
+            const metalPercent = zone.metal_percentage || 0;
+            const radiusAu = zone.radius_au || 1.0;
+            // Solar flux follows inverse square law: flux = 1 / radius_au^2 (normalized to Earth = 1.0)
+            const solarFlux = radiusAu > 0 ? (1.0 / (radiusAu * radiusAu)).toFixed(2) : '0.00';
+            
+            // Format delta-v: show in km/s if >= 1 km/s, otherwise m/s
+            let deltaVDisplay;
+            if (deltaVms >= 1000) {
+                deltaVDisplay = `${(deltaVms / 1000).toFixed(1)} km/s`;
+            } else {
+                deltaVDisplay = `${Math.round(deltaVms)} m/s`;
+            }
             
             const isSelected = this.selectedZone === zone.id;
             const isTransferSource = this.transferSourceZone === zone.id && this.transferSourceZone !== this.selectedZone;
@@ -276,15 +378,28 @@ class OrbitalZoneSelector {
                 tileClass = 'transfer-source';
             }
             
+            // Get keyboard hotkey for this zone
+            let hotkey = '';
+            if (zone.id === 'neptune') {
+                hotkey = '0';
+            } else if (zone.id === 'kuiper') {
+                hotkey = '-';
+            } else if (tileIndex < 9) {
+                hotkey = String(tileIndex + 1);
+            }
+            
             // Apply dynamic spacing: first tile has no left margin, others have gap
             const tileMarginLeft = tileIndex === 0 ? 0 : tileGap;
             html += `<div class="orbital-zone-tile ${tileClass}" data-zone="${zone.id}" style="margin-left: ${tileMarginLeft}px; width: ${tileWidth}px;">`;
             html += `<div class="orbital-zone-tile-label">${zoneName}</div>`;
             html += `<div class="orbital-zone-tile-stats">`;
-            html += `<div class="orbital-zone-stat">Probe mass: ${this.formatMass(probeMass)}</div>`;
-            html += `<div class="orbital-zone-stat">Metal mass: ${this.formatMass(remainingMetal)}</div>`;
-            html += `<div class="orbital-zone-stat">Structures: ${this.formatNumber(structuresCount)}</div>`;
+            html += `<div class="orbital-zone-stat">Δv: ${deltaVDisplay}</div>`;
+            html += `<div class="orbital-zone-stat">Metal: ${(metalPercent * 100).toFixed(0)}%</div>`;
+            html += `<div class="orbital-zone-stat">Solar: ${solarFlux}x</div>`;
             html += `</div>`;
+            if (hotkey) {
+                html += `<div class="orbital-zone-hotkey">${hotkey}</div>`;
+            }
             html += `</div>`;
         });
 
@@ -304,7 +419,6 @@ class OrbitalZoneSelector {
                 if (this.orbitalZones && this.orbitalZones.length > 0) {
                     this.render();
                     if (this.gameState) {
-                        this.updateProbeDots();
                         this.updateTransferArcs();
                     }
                 }
@@ -312,9 +426,8 @@ class OrbitalZoneSelector {
             window.addEventListener('resize', this.resizeHandler);
         }
         
-        // Update probe dots after render
+        // Update transfer arcs after render
         if (this.gameState) {
-            this.updateProbeDots();
             this.updateTransferArcs();
         }
     }
@@ -349,20 +462,50 @@ class OrbitalZoneSelector {
         let hoveredZoneId = null;
         let hideTimeout = null;
         
+        // Clear any existing tooltip update interval
+        const clearTooltipInterval = () => {
+            if (this.tooltipUpdateInterval) {
+                clearInterval(this.tooltipUpdateInterval);
+                this.tooltipUpdateInterval = null;
+            }
+        };
+        
+        // Start tooltip update interval (updates every second while tooltip is open)
+        const startTooltipInterval = (zoneId) => {
+            clearTooltipInterval(); // Clear any existing interval
+            
+            // Update immediately
+            const planetSquare = this.container.querySelector(`.orbital-zone-planet-square-float[data-zone="${zoneId}"]`);
+            if (planetSquare) {
+                this.showZoneInfoTooltip(zoneId, planetSquare);
+            }
+            
+            // Then update every second
+            this.tooltipUpdateInterval = setInterval(() => {
+                if (hoveredZoneId === zoneId) {
+                    const planetSquare = this.container.querySelector(`.orbital-zone-planet-square-float[data-zone="${zoneId}"]`);
+                    if (planetSquare) {
+                        this.showZoneInfoTooltip(zoneId, planetSquare);
+                    }
+                } else {
+                    // Zone changed, clear interval
+                    clearTooltipInterval();
+                }
+            }, 1000); // Update every second
+        };
+        
         const showTooltip = (zoneId) => {
             if (hideTimeout) {
                 clearTimeout(hideTimeout);
                 hideTimeout = null;
             }
             hoveredZoneId = zoneId;
-            const planetSquare = this.container.querySelector(`.orbital-zone-planet-square-float[data-zone="${zoneId}"]`);
-            if (planetSquare) {
-                this.showZoneInfoTooltip(zoneId, planetSquare);
-            }
+            startTooltipInterval(zoneId);
         };
         
         const hideTooltip = () => {
             hoveredZoneId = null;
+            clearTooltipInterval();
             this.hideZoneInfoTooltip();
         };
         
@@ -390,7 +533,7 @@ class OrbitalZoneSelector {
                 // If moving to planet square or tooltip, keep showing
                 if (relatedTarget && 
                     (relatedTarget.closest('.orbital-zone-planet-square-float') || 
-                     relatedTarget.closest('#zone-info-panel'))) {
+                     relatedTarget.closest('#zone-hover-tooltip'))) {
                     return;
                 }
                 scheduleHide();
@@ -412,7 +555,7 @@ class OrbitalZoneSelector {
                 // If moving to tile or tooltip, keep showing
                 if (relatedTarget && 
                     (relatedTarget.closest('.orbital-zone-tile') || 
-                     relatedTarget.closest('#zone-info-panel'))) {
+                     relatedTarget.closest('#zone-hover-tooltip'))) {
                     return;
                 }
                 scheduleHide();
@@ -420,16 +563,16 @@ class OrbitalZoneSelector {
         });
         
         // Hide tooltip when mouse leaves the tooltip itself
-        const panel = document.getElementById('zone-info-panel');
-        if (panel) {
-            panel.addEventListener('mouseenter', () => {
+        const hoverTooltip = document.getElementById('zone-hover-tooltip');
+        if (hoverTooltip) {
+            hoverTooltip.addEventListener('mouseenter', () => {
                 if (hideTimeout) {
                     clearTimeout(hideTimeout);
                     hideTimeout = null;
                 }
             });
             
-            panel.addEventListener('mouseleave', (e) => {
+            hoverTooltip.addEventListener('mouseleave', (e) => {
                 const relatedTarget = e.relatedTarget;
                 // If moving back to tile or square, keep showing
                 if (relatedTarget && 
@@ -511,20 +654,21 @@ class OrbitalZoneSelector {
         }
         
         // Energy consumption from probes in this zone
-        const probesByZone = this.gameState.probes_by_zone || {};
-        const zoneProbes = probesByZone[zoneId] || {};
-        const PROBE_ENERGY_CONSUMPTION = 100000; // 100kW per probe
-        // Single probe type only: directly access 'probe' key
-        const probeCount = zoneProbes['probe'] || 0;
-        consumption += probeCount * PROBE_ENERGY_CONSUMPTION;
+        // Read from derived.zones (pre-calculated in worker)
+        const derived = this.gameState.derived || {};
+        const zones = derived.zones || {};
+        const zoneData = zones[zoneId] || {};
+        consumption += zoneData.energy_consumed || 0;
         
         // Energy consumption from activities in this zone
         const probeAllocationsByZone = this.gameState.probe_allocations_by_zone || {};
         const zoneAllocations = probeAllocationsByZone[zoneId] || {};
         
-        // Harvesting energy cost
-        const harvestAllocation = zoneAllocations.harvest || {};
-        const harvestProbes = Object.values(harvestAllocation).reduce((a, b) => a + b, 0);
+        // Harvesting energy cost - allocation is a number (0-1 fraction)
+        const harvestAllocation = typeof zoneAllocations.harvest === 'number' ? zoneAllocations.harvest : 0;
+        const zoneProbes = this.gameState.probes_by_zone?.[zoneId] || {};
+        const totalZoneProbes = Object.values(zoneProbes).reduce((sum, count) => sum + (count || 0), 0);
+        const harvestProbes = totalZoneProbes * harvestAllocation;
         if (harvestProbes > 0 && !isDysonZone) {
             const deltaVPenalty = zone.delta_v_penalty || 0.1;
             const miningEnergyCostMultiplier = zone.mining_energy_cost_multiplier || 1.0;
@@ -538,26 +682,29 @@ class OrbitalZoneSelector {
         }
         
         // Probe construction energy cost (from replicate allocation)
-        const replicateAllocation = zoneAllocations.replicate || {};
-        const replicateProbes = Object.values(replicateAllocation).reduce((a, b) => a + b, 0);
+        // replicateAllocation is a number (0-1 fraction)
+        const replicateAllocation = typeof zoneAllocations.replicate === 'number' ? zoneAllocations.replicate : 0;
+        const replicateProbes = totalZoneProbes * replicateAllocation;
         if (replicateProbes > 0) {
             const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
-            const PROBE_MASS = 100; // kg per probe
-            const probeConstructionRateKgS = replicateProbes * PROBE_BUILD_RATE;
+            const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+            const probeConstructionRateKgS = (replicateProbes * PROBE_BUILD_RATE) / SECONDS_PER_DAY;
             const probeConstructionEnergyCost = probeConstructionRateKgS * 250000; // 250kW per kg/s
             consumption += probeConstructionEnergyCost;
         }
         
         // Structure construction energy cost (from construct allocation)
-        const constructAllocation = zoneAllocations.construct || {};
-        const constructProbes = Object.values(constructAllocation).reduce((a, b) => a + b, 0);
+        // constructAllocation is a number (0-1 fraction)
+        const constructAllocation = typeof zoneAllocations.construct === 'number' ? zoneAllocations.construct : 0;
+        const constructProbes = totalZoneProbes * constructAllocation;
         if (constructProbes > 0) {
             const buildAllocation = this.gameState.build_allocation || 100; // 0 = all structures, 100 = all probes
             const structureFraction = (100 - buildAllocation) / 100.0;
             const structureBuildingProbes = constructProbes * structureFraction;
             if (structureBuildingProbes > 0) {
                 const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
-                const structureConstructionRateKgS = structureBuildingProbes * PROBE_BUILD_RATE;
+                const SECONDS_PER_DAY = Config.SECONDS_PER_DAY || 86400;
+                const structureConstructionRateKgS = (structureBuildingProbes * PROBE_BUILD_RATE) / SECONDS_PER_DAY;
                 const structureConstructionEnergyCost = structureConstructionRateKgS * 250000; // 250kW per kg/s
                 consumption += structureConstructionEnergyCost;
             }
@@ -579,7 +726,7 @@ class OrbitalZoneSelector {
     }
     
     showZoneInfoTooltip(zoneId, planetSquareElement) {
-        const panel = document.getElementById('zone-info-panel');
+        const panel = document.getElementById('zone-hover-tooltip');
         if (!panel) return;
         
         const zone = this.orbitalZones.find(z => z.id === zoneId);
@@ -602,29 +749,29 @@ class OrbitalZoneSelector {
         let probesPerDay = 0;
         let dysonBuildRate = 0; // kg/day for dyson zone
         let probeProductionRate = 0; // probes/day from structures in dyson zone
-        let metalRemaining = 0;
+        let storedMetal = 0;
         let massRemaining = 0;
         let slagProduced = 0;
         let buildingCounts = {};
+        let structuresCount = 0;
         let zoneEnergy = { production: 0, consumption: 0 };
         
         if (this.gameState) {
-            // Get probes in this zone
-            const probesByZone = this.gameState.probes_by_zone || {};
-            const zoneProbes = probesByZone[zoneId] || {};
-            // Single probe type only: directly access 'probe' key
-            const probeCount = zoneProbes['probe'] || 0;
-            numProbes += probeCount;
-            totalProbeMass += probeCount * Config.PROBE_MASS; // Config.PROBE_MASS = 100 kg
+            // Read from derived.zones (pre-calculated in worker)
+            const derived = this.gameState.derived || {};
+            const zones = derived.zones || {};
+            const zoneData = zones[zoneId] || {};
+            numProbes += zoneData.probe_count || 0;
+            totalProbeMass += zoneData.probe_mass || 0;
             
             // Get probe allocations for this zone
             const probeAllocationsByZone = this.gameState.probe_allocations_by_zone || {};
             const zoneAllocations = probeAllocationsByZone[zoneId] || {};
             
             if (isDysonZone) {
-                // Dyson zone: calculate construction rate
+                // Dyson zone: calculate construction rate - single probe type: direct access
                 const constructAllocation = zoneAllocations.construct || {};
-                const dysonProbes = Object.values(constructAllocation).reduce((a, b) => a + b, 0);
+                const dysonProbes = constructAllocation.probe || 0;
                 if (dysonProbes > 0) {
                     const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE; // kg/day per probe
                     dysonBuildRate = dysonProbes * PROBE_BUILD_RATE;
@@ -640,47 +787,53 @@ class OrbitalZoneSelector {
                     probeProductionRate = zoneFactoryProduction.rate; // probes/s
                 }
             } else {
-                // Regular zone: calculate mining rate
-                const harvestAllocation = zoneAllocations.harvest || {};
-                const baseHarvestRate = Config.PROBE_HARVEST_RATE; // kg/day per probe (100 kg/day base)
-                for (const [probeType, count] of Object.entries(harvestAllocation)) {
-                    if (count > 0) {
-                        const probeHarvestRatePerDay = baseHarvestRate * miningRateMultiplier * count;
-                        miningRate += probeHarvestRatePerDay; // kg/day
-                    }
-                }
-                
-                // Split into metal and slag based on zone's metal percentage
-                metalMiningRate = miningRate * metalPercentage; // kg/day
-                slagMiningRate = miningRate * (1.0 - metalPercentage); // kg/day
+                // Regular zone: read mining rates from derived values (single source of truth)
+                // These values already account for extraction efficiency, tech upgrades, and probe counts
+                metalMiningRate = zoneData.metal_mined_rate || 0; // kg/day (already accounts for extraction efficiency)
+                slagMiningRate = zoneData.slag_produced_rate || 0; // kg/day
+                // Total mass mining rate = metal + slag
+                miningRate = metalMiningRate + slagMiningRate; // kg/day
             }
             
-            // Get probe production rate for this zone (probes per second)
-            // Calculate from replicate allocation in this zone
-            const replicateAllocation = zoneAllocations.replicate || {};
-            let zoneProbeProductionRate = 0;
-            for (const [probeType, count] of Object.entries(replicateAllocation)) {
-                if (count > 0) {
-                    // Base probe production: 100.0 kg/day per probe (Config.PROBE_BUILD_RATE)
-                    // Probe mass: 10 kg (Config.PROBE_MASS)
-                    // Production rate: (100.0 kg/day) / (10 kg/probe) = 10 probes/day per probe
-                    const probesPerDayPerProbe = Config.PROBE_BUILD_RATE / Config.PROBE_MASS;
-                    zoneProbeProductionRate += count * probesPerDayPerProbe;
-                }
-            }
+            // Get probe production rate from derived values (single source of truth)
+            // This is calculated in the worker thread based on replicate allocation and tech upgrades
+            // For now, calculate from replicate allocation (will be moved to derived values later)
+            // replicateAllocation is a number (0-1 fraction)
+            const replicateAllocation = typeof zoneAllocations.replicate === 'number' ? zoneAllocations.replicate : 0;
+            const zoneProbes = this.gameState.probes_by_zone?.[zoneId] || {};
+            const totalZoneProbes = Object.values(zoneProbes).reduce((sum, count) => sum + (count || 0), 0);
+            const replicatingProbes = totalZoneProbes * replicateAllocation;
+            
+            // Get upgrade factor for probe building (replication uses same upgrades as building)
+            const upgradeFactor = this.gameState.upgrade_factors?.probe?.building?.performance || 
+                                 this.gameState.tech_upgrade_factors?.probe_build || 1.0;
+            
+            // Base probe production: 20.0 kg/day per probe (Config.PROBE_BUILD_RATE)
+            // Probe mass: 100 kg (Config.PROBE_MASS)
+            // Production rate: (20.0 kg/day) / (100 kg/probe) = 0.2 probes/day per probe
+            const baseProbesPerDayPerProbe = Config.PROBE_BUILD_RATE / Config.PROBE_MASS;
+            const zoneProbeProductionRate = replicatingProbes * baseProbesPerDayPerProbe * upgradeFactor;
             probesPerDay = zoneProbeProductionRate;
             
-            // Get remaining resources
-            metalRemaining = (this.gameState.zone_metal_remaining && this.gameState.zone_metal_remaining[zoneId]) || 0;
-            massRemaining = (this.gameState.zone_mass_remaining && this.gameState.zone_mass_remaining[zoneId]) || 0;
-            slagProduced = (this.gameState.zone_slag_produced && this.gameState.zone_slag_produced[zoneId]) || 0;
+            // Get remaining resources from derived values (single source of truth)
+            // These are pre-calculated in the worker thread
+            storedMetal = zoneData.stored_metal || 0; // Metal stored locally for construction
+            massRemaining = zoneData.mass_remaining || 0; // Un-mined mass (decreases as mining happens)
+            slagProduced = zoneData.slag_mass || 0; // Accumulated slag mass in this zone
             
-            // Get building counts for this zone
+            // Get building counts from derived values (single source of truth)
+            structuresCount = zoneData.structure_count || 0; // Pre-calculated in worker thread
+            
+            // Also get building counts dict for detailed breakdown if needed
             const structuresByZone = this.gameState.structures_by_zone || {};
             buildingCounts = structuresByZone[zoneId] || {};
             
-            // Calculate zone energy
-            zoneEnergy = this.calculateZoneEnergy(zoneId);
+            // Get zone energy from derived values (single source of truth)
+            zoneEnergy = {
+                production: zoneData.energy_produced || 0,
+                consumption: zoneData.energy_consumed || 0,
+                net: zoneData.energy_net || 0
+            };
         }
         
         // Format values - use FormatUtils for rates with time units
@@ -755,8 +908,8 @@ class OrbitalZoneSelector {
         // Change detection: Cache tooltip content to avoid unnecessary regeneration
         const tooltipData = {
             zoneId: zone.id,
-            metalRemaining: zoneMetalRemaining,
-            massRemaining: zoneMassRemaining,
+            storedMetal: storedMetal,
+            massRemaining: massRemaining,
             numProbes: numProbes,
             structures: structuresCount,
             zoneEnergy: zoneEnergy,
@@ -773,8 +926,8 @@ class OrbitalZoneSelector {
         let tooltipContent = '';
         if (tooltipHash === this[tooltipCacheKey] && this[tooltipCacheKey] !== null) {
             // Use cached content if available
-            const cachedPanel = document.getElementById('zone-info-panel');
-            if (cachedPanel && cachedPanel.innerHTML) {
+            const cachedPanel = document.getElementById('zone-hover-tooltip');
+            if (cachedPanel && cachedPanel.innerHTML && cachedPanel.style.display !== 'none') {
                 return; // Tooltip already up to date, skip regeneration
             }
         }
@@ -868,10 +1021,18 @@ class OrbitalZoneSelector {
                     <div class="probe-summary-value">${formatRate(probesPerDay, 'probes')}</div>
                 </div>
                 ` : ''}
+                ${miningRate > 0 ? `
                 <div class="probe-summary-item">
-                    <div class="probe-summary-label">Mining Rate</div>
-                    <div class="probe-summary-value">${formatRate(metalMiningRate, 'kg')} metal</div>
+                    <div class="probe-summary-label">Mass Mining Rate</div>
+                    <div class="probe-summary-value">${formatRate(miningRate, 'kg')}</div>
                 </div>
+                ` : ''}
+                ${metalMiningRate > 0 ? `
+                <div class="probe-summary-item">
+                    <div class="probe-summary-label">Metal Production</div>
+                    <div class="probe-summary-value">${formatRate(metalMiningRate, 'kg')}</div>
+                </div>
+                ` : ''}
                 ${slagMiningRate > 0 ? `
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Slag Production</div>
@@ -879,15 +1040,9 @@ class OrbitalZoneSelector {
                 </div>
                 ` : ''}
                 <div class="probe-summary-item">
-                    <div class="probe-summary-label">Metal Remaining</div>
-                    <div class="probe-summary-value">${formatMassWithSigFigs(metalRemaining)}</div>
+                    <div class="probe-summary-label">Stored Metal</div>
+                    <div class="probe-summary-value">${formatMassWithSigFigs(storedMetal)} kg</div>
                 </div>
-                ${massRemaining > 0 ? `
-                <div class="probe-summary-item">
-                    <div class="probe-summary-label">Mass Remaining</div>
-                    <div class="probe-summary-value">${formatMassWithSigFigs(massRemaining)}</div>
-                </div>
-                ` : ''}
                 <div class="probe-summary-item">
                     <div class="probe-summary-label">Energy Produced</div>
                     <div class="probe-summary-value">${formatEnergy(zoneEnergy.production)}</div>
@@ -900,12 +1055,13 @@ class OrbitalZoneSelector {
         }
         
         panel.style.bottom = 'auto';
-        panel.className = 'zone-info-panel probe-summary-panel';
+        panel.style.position = 'fixed';
+        panel.className = 'zone-hover-tooltip probe-summary-panel';
         panel.innerHTML = tooltipContent;
     }
     
     hideZoneInfoTooltip() {
-        const panel = document.getElementById('zone-info-panel');
+        const panel = document.getElementById('zone-hover-tooltip');
         if (panel) {
             panel.style.display = 'none';
         }
@@ -929,17 +1085,23 @@ class OrbitalZoneSelector {
     }
 
     async selectZone(zoneId) {
-        // If waiting for transfer destination and a different zone is selected
-        if (this.waitingForTransferDestination && this.transferSourceZone && this.transferSourceZone !== zoneId) {
-            // This is the destination zone - show transfer dialog
-            this.selectedZone = zoneId;
-            this.showTransferDialog(this.transferSourceZone, zoneId);
-            this.waitingForTransferDestination = false;
+        // If a transfer dialog is open and a different zone is selected, send the transfer
+        if (this.currentTransferDialog && this.transferSourceZone && this.transferSourceZone !== zoneId) {
+            // Update dialog with destination zone first
+            if (this.currentTransferDialog.updateDestination) {
+                this.currentTransferDialog.updateDestination(zoneId);
+            }
+            // This is the destination zone - send the transfer
+            const destinationZoneId = zoneId;
+            this.selectedZone = destinationZoneId;
+            this.startCameraTracking(destinationZoneId); // Track the destination zone
+            this.sendTransferFromDialog(destinationZoneId);
+            this.closeTransferDialog();
             this.render(); // Re-render to show destination highlight
             return;
         }
         
-        // If a transfer dialog is open, close it first
+        // If a transfer dialog is open and same zone is selected, just close it
         if (this.currentTransferDialog) {
             this.closeTransferDialog();
         }
@@ -955,6 +1117,9 @@ class OrbitalZoneSelector {
         // Don't automatically set as transfer source - wait for spacebar
         this.render(); // Re-render to show selection
         
+        // Start camera tracking for the selected zone
+        this.startCameraTracking(zoneId);
+        
         // Notify panels of selection change
         if (window.purchasePanel) {
             window.purchasePanel.setSelectedZone(zoneId);
@@ -962,12 +1127,36 @@ class OrbitalZoneSelector {
         if (window.commandPanel) {
             window.commandPanel.setSelectedZone(zoneId);
         }
+        if (window.zoneInfoPanel) {
+            window.zoneInfoPanel.setSelectedZone(zoneId);
+        }
         
         // Update backend with selected harvest zone
         try {
             await gameEngine.performAction('set_harvest_zone', { zone_id: zoneId });
         } catch (error) {
             console.error('Failed to set harvest zone:', error);
+        }
+    }
+    
+    /**
+     * Start camera tracking for a zone
+     */
+    startCameraTracking(zoneId) {
+        if (window.app && window.app.sceneManager && window.app.solarSystem) {
+            const solarSystem = window.app.solarSystem;
+            // Create a function that returns the current position of the zone's planet
+            const getPositionFn = () => solarSystem.getZonePosition(zoneId);
+            window.app.sceneManager.startTracking(getPositionFn);
+        }
+    }
+    
+    /**
+     * Stop camera tracking
+     */
+    stopCameraTracking() {
+        if (window.app && window.app.sceneManager) {
+            window.app.sceneManager.stopTracking();
         }
     }
     
@@ -987,6 +1176,9 @@ class OrbitalZoneSelector {
         this.selectedZone = null;
         this.closeTransferDialog();
         
+        // Stop camera tracking
+        this.stopCameraTracking();
+        
         // Notify panels of deselection
         if (window.purchasePanel) {
             window.purchasePanel.setSelectedZone(null);
@@ -994,16 +1186,28 @@ class OrbitalZoneSelector {
         if (window.commandPanel) {
             window.commandPanel.setSelectedZone(null);
         }
+        if (window.zoneInfoPanel) {
+            window.zoneInfoPanel.setSelectedZone(null);
+        }
     }
     
     showTransferDialog(fromZoneId, toZoneId) {
         // Get zone data
         const fromZone = this.orbitalZones.find(z => z.id === fromZoneId);
-        const toZone = this.orbitalZones.find(z => z.id === toZoneId);
-        if (!fromZone || !toZone) return;
+        if (!fromZone) return;
         
-        // Calculate delta-v difference (for display purposes)
-        const deltaV = this.calculateTransferDeltaV(fromZone, toZone);
+        // Store source zone for later use
+        this.transferSourceZone = fromZoneId;
+        
+        // Calculate delta-v difference (for display purposes) - use a default if no destination
+        let deltaV = 0;
+        let toZone = null;
+        if (toZoneId) {
+            toZone = this.orbitalZones.find(z => z.id === toZoneId);
+            if (toZone) {
+                deltaV = this.calculateTransferDeltaV(fromZone, toZone);
+            }
+        }
         
         // Transfers don't consume energy - probes use their own propulsion drives
         
@@ -1015,67 +1219,129 @@ class OrbitalZoneSelector {
             availableProbes += zoneProbes['probe'] || 0;
         }
         
-        // Create dialog
+        // Check if zone has mass driver (for metal transfers)
+        const structuresByZone = this.gameState?.structures_by_zone || {};
+        const zoneStructures = structuresByZone[fromZoneId] || {};
+        const hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
+        const massDriverCount = zoneStructures['mass_driver'] || 0;
+        
+        // Get available metal in source zone
+        let availableMetal = 0;
+        if (this.gameState && this.gameState.zones) {
+            const sourceZone = this.gameState.zones[fromZoneId] || {};
+            availableMetal = sourceZone.stored_metal || 0;
+        }
+        
+        // Calculate metal transfer capacity (if mass driver exists)
+        let metalCapacity = 0;
+        if (hasMassDriver && window.gameEngine) {
+            // Get transfer system from engine
+            const transferSystem = window.gameEngine.transferSystem;
+            if (transferSystem && transferSystem.calculateMetalTransferCapacity) {
+                metalCapacity = transferSystem.calculateMetalTransferCapacity(this.gameState, fromZoneId);
+            }
+        }
+        
+        // Create dialog with tabs
         const dialog = document.createElement('div');
         dialog.className = 'transfer-dialog';
         dialog.innerHTML = `
             <div class="transfer-dialog-content">
                 <div class="transfer-dialog-header">
-                    <h3>Hohmann Transfer</h3>
+                    <h3>Transfer</h3>
                     <button class="transfer-dialog-close">&times;</button>
+                </div>
+                <div class="transfer-tabs">
+                    <button class="transfer-tab active" data-tab="probes">Send Probes</button>
+                    <button class="transfer-tab ${hasMassDriver ? '' : 'disabled'}" data-tab="metal" ${hasMassDriver ? '' : 'disabled'}>
+                        Send Metal ${hasMassDriver ? '' : '(Requires Mass Driver)'}
+                    </button>
                 </div>
                 <div class="transfer-dialog-body">
                     <div class="transfer-route">
                         <span class="transfer-zone">${fromZone.name.replace(/\s+Orbit\s*$/i, '')}</span>
                         <span class="transfer-arrow">→</span>
-                        <span class="transfer-zone">${toZone.name.replace(/\s+Orbit\s*$/i, '')}</span>
+                        <span class="transfer-zone">${toZone ? toZone.name.replace(/\s+Orbit\s*$/i, '') : 'Select destination zone'}</span>
                     </div>
                     <div class="transfer-info">
-                    <div class="transfer-info-item">
-                        <span class="transfer-label">Delta-V:</span>
-                        <span class="transfer-value">${deltaV.toFixed(2)} km/s</span>
-                    </div>
-                    <div class="transfer-info-item">
-                        <span class="transfer-label">Specific Impulse (Isp):</span>
-                        <span class="transfer-value" id="transfer-isp">—</span>
-                    </div>
-                    <div class="transfer-info-item">
-                        <span class="transfer-label">Total Thrust:</span>
-                        <span class="transfer-value" id="transfer-thrust">—</span>
-                    </div>
-                    <div class="transfer-info-item">
-                        <span class="transfer-label">Transfer Time:</span>
-                        <span class="transfer-value" id="transfer-time">—</span>
-                    </div>
                         <div class="transfer-info-item">
+                            <span class="transfer-label">Delta-V:</span>
+                            <span class="transfer-value">${toZone ? deltaV.toFixed(2) + ' km/s' : '—'}</span>
+                        </div>
+                        <div class="transfer-info-item">
+                            <span class="transfer-label">Transfer Time:</span>
+                            <span class="transfer-value" id="transfer-time">${toZone ? '—' : 'Select destination zone'}</span>
+                        </div>
+                        <div class="transfer-info-item" id="transfer-probe-info">
                             <span class="transfer-label">Available Probes:</span>
                             <span class="transfer-value">${this.formatNumber(availableProbes)}</span>
                         </div>
-                    </div>
-                    <div class="transfer-options">
-                        <div class="transfer-option">
-                            <label>
-                                <input type="radio" name="transfer-type" value="continuous" checked>
-                                Continuous Transfer
-                            </label>
-                            <input type="number" id="transfer-rate" min="0.01" max="100" step="0.1" value="10" 
-                                   placeholder="% of probe production">
+                        <div class="transfer-info-item" id="transfer-metal-info" style="display: none;">
+                            <span class="transfer-label">Available Metal:</span>
+                            <span class="transfer-value">${this.formatNumber(availableMetal)} kg</span>
                         </div>
-                        <div class="transfer-option">
-                            <label>
-                                <input type="radio" name="transfer-type" value="one-time">
-                                One-Time Transfer
-                            </label>
-                            <div class="transfer-slider-container">
-                                <input type="range" id="transfer-count-slider" min="0" max="100" value="0" step="1">
-                                <div class="transfer-slider-labels">
-                                    <span>1</span>
-                                    <span id="transfer-count-display">10</span>
-                                    <span>${availableProbes}</span>
+                        <div class="transfer-info-item" id="transfer-capacity-info" style="display: none;">
+                            <span class="transfer-label">Transfer Capacity:</span>
+                            <span class="transfer-value">${this.formatNumber(metalCapacity)} kg/day</span>
+                        </div>
+                    </div>
+                    <!-- Probe Transfer Tab -->
+                    <div class="transfer-tab-content active" id="transfer-tab-probes">
+                        <div class="transfer-options">
+                            <div class="transfer-option">
+                                <label>
+                                    <input type="radio" name="transfer-type-probes" value="continuous">
+                                    Continuous Transfer
+                                </label>
+                                <input type="number" id="transfer-rate-probes" min="0.01" max="100" step="0.1" value="10" 
+                                       placeholder="% of probe production">
+                            </div>
+                            <div class="transfer-option">
+                                <label>
+                                    <input type="radio" name="transfer-type-probes" value="one-time" checked>
+                                    One-Time Transfer
+                                </label>
+                                <div class="transfer-slider-container">
+                                    <input type="range" id="transfer-count-slider" min="0" max="100" value="0" step="1">
+                                    <div class="transfer-slider-labels">
+                                        <span>1</span>
+                                        <span id="transfer-count-display">1</span>
+                                        <span>${availableProbes}</span>
+                                    </div>
+                                    <input type="hidden" id="transfer-count" value="1">
                                 </div>
-                                <input type="hidden" id="transfer-count" value="10">
                             </div>
                         </div>
+                    </div>
+                    <!-- Metal Transfer Tab -->
+                    <div class="transfer-tab-content" id="transfer-tab-metal">
+                        ${hasMassDriver ? `
+                        <div class="transfer-options">
+                            <div class="transfer-option">
+                                <label>
+                                    <input type="radio" name="transfer-type-metal" value="continuous" checked>
+                                    Continuous Transfer
+                                </label>
+                                <input type="number" id="transfer-rate-metal" min="0" step="1e9" value="${metalCapacity > 0 ? Math.min(metalCapacity, availableMetal) : 100e12}" 
+                                       placeholder="kg/day">
+                                <span class="transfer-hint">Default: ${this.formatNumber(100e12)} kg/day (100 GT/day)</span>
+                            </div>
+                            <div class="transfer-option">
+                                <label>
+                                    <input type="radio" name="transfer-type-metal" value="one-time">
+                                    One-Time Transfer
+                                </label>
+                                <input type="number" id="transfer-metal-count" min="0" step="1e9" value="0" 
+                                       placeholder="kg">
+                                <span class="transfer-hint">Max: ${this.formatNumber(availableMetal)} kg</span>
+                            </div>
+                        </div>
+                        ` : `
+                        <div class="transfer-error">
+                            <p>Mass driver required for metal transfers.</p>
+                            <p>Build a mass driver in the source zone to enable metal transfers.</p>
+                        </div>
+                        `}
                     </div>
                     <div class="transfer-actions">
                         <button class="transfer-cancel">Cancel</button>
@@ -1087,38 +1353,89 @@ class OrbitalZoneSelector {
         
         document.body.appendChild(dialog);
         
-        // Calculate transfer time
-        const transferTime = this.calculateTransferTime(fromZone, toZone);
-        
-        // Calculate probe propulsion stats
-        const probeStats = this.calculateProbePropulsionStats();
-        
-        // Display specific impulse
-        const ispEl = dialog.querySelector('#transfer-isp');
-        if (ispEl) {
-            ispEl.textContent = `${probeStats.specificImpulse.toFixed(0)} s`;
-        }
-        
-        // Display total thrust
-        const thrustEl = dialog.querySelector('#transfer-thrust');
-        if (thrustEl) {
-            const thrustN = probeStats.totalThrust;
-            let thrustDisplay = '';
-            if (thrustN >= 1e6) {
-                thrustDisplay = `${(thrustN / 1e6).toFixed(2)} MN`;
-            } else if (thrustN >= 1e3) {
-                thrustDisplay = `${(thrustN / 1e3).toFixed(2)} kN`;
-            } else {
-                thrustDisplay = `${thrustN.toFixed(2)} N`;
+        // Calculate transfer time only if destination is set
+        let probeTransferTime = null;
+        if (toZone) {
+            // Calculate base transfer time (without mass driver boost)
+            let baseTransferTime = this.calculateTransferTime(fromZone, toZone);
+            
+            // Calculate transfer time with mass driver boost (for probe transfers)
+            probeTransferTime = baseTransferTime;
+            if (hasMassDriver && window.gameEngine && window.gameEngine.transferSystem) {
+                const speedMultiplier = window.gameEngine.transferSystem.calculateMassDriverSpeedMultiplier(massDriverCount);
+                probeTransferTime = baseTransferTime * speedMultiplier;
             }
-            thrustEl.textContent = thrustDisplay;
         }
         
         // Display transfer time with appropriate formatting
+        // Show probe transfer time (with mass driver boost if available)
         const timeEl = dialog.querySelector('#transfer-time');
-        if (timeEl) {
-            timeEl.textContent = this.formatTransferTime(transferTime);
+        if (timeEl && toZone) {
+            // Update time display when switching tabs
+            const updateTransferTime = () => {
+                const activeTab = dialog.querySelector('.transfer-tab.active');
+                const tabName = activeTab ? activeTab.dataset.tab : 'probes';
+                if (tabName === 'probes' && probeTransferTime !== null) {
+                    timeEl.textContent = this.formatTransferTime(probeTransferTime);
+                    if (hasMassDriver) {
+                        timeEl.textContent += ` (${massDriverCount} mass driver${massDriverCount > 1 ? 's' : ''})`;
+                    }
+                } else if (tabName === 'metal' && probeTransferTime !== null) {
+                    // Metal transfers use same time as probes (with mass driver boost)
+                    timeEl.textContent = this.formatTransferTime(probeTransferTime);
+                }
+            };
+            updateTransferTime();
+            
+            // Update when tabs change
+            const tabs = dialog.querySelectorAll('.transfer-tab');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', updateTransferTime);
+            });
         }
+        
+        // Store dialog reference for updating destination
+        dialog.updateDestination = (newToZoneId) => {
+            const newToZone = this.orbitalZones.find(z => z.id === newToZoneId);
+            if (!newToZone) return;
+            
+            // Update route display
+            const routeEl = dialog.querySelector('.transfer-route');
+            const toZoneSpan = routeEl.querySelector('.transfer-zone:last-child');
+            if (toZoneSpan) {
+                toZoneSpan.textContent = newToZone.name.replace(/\s+Orbit\s*$/i, '');
+            }
+            
+            // Update delta-v (first transfer-info-item contains delta-v)
+            const newDeltaV = this.calculateTransferDeltaV(fromZone, newToZone);
+            const deltaVItem = dialog.querySelector('.transfer-info-item');
+            const deltaVEl = deltaVItem ? deltaVItem.querySelector('.transfer-value') : null;
+            if (deltaVEl) {
+                deltaVEl.textContent = newDeltaV.toFixed(2) + ' km/s';
+            }
+            
+            // Update transfer time
+            let baseTransferTime = this.calculateTransferTime(fromZone, newToZone);
+            let newProbeTransferTime = baseTransferTime;
+            if (hasMassDriver && window.gameEngine && window.gameEngine.transferSystem) {
+                const speedMultiplier = window.gameEngine.transferSystem.calculateMassDriverSpeedMultiplier(massDriverCount);
+                newProbeTransferTime = baseTransferTime * speedMultiplier;
+            }
+            if (timeEl) {
+                const activeTab = dialog.querySelector('.transfer-tab.active');
+                const tabName = activeTab ? activeTab.dataset.tab : 'probes';
+                if (tabName === 'probes') {
+                    timeEl.textContent = this.formatTransferTime(newProbeTransferTime);
+                    if (hasMassDriver) {
+                        timeEl.textContent += ` (${massDriverCount} mass driver${massDriverCount > 1 ? 's' : ''})`;
+                    }
+                } else {
+                    timeEl.textContent = this.formatTransferTime(newProbeTransferTime);
+                }
+            }
+            
+            probeTransferTime = newProbeTransferTime;
+        };
         
         // Transfers don't consume energy - probes use their own propulsion drives
         
@@ -1148,8 +1465,8 @@ class OrbitalZoneSelector {
             return Math.round(((logValue - minLog) / (maxLog - minLog)) * 100);
         };
         
-        // Initialize slider value for default count of 10
-        const defaultCount = Math.min(10, availableProbes);
+        // Initialize slider value for default count of 1
+        const defaultCount = 1;
         const defaultSliderValue = probeCountToSlider(defaultCount);
         if (countSlider) {
             countSlider.value = defaultSliderValue;
@@ -1177,6 +1494,9 @@ class OrbitalZoneSelector {
         // Store dialog reference for closing from outside
         this.currentTransferDialog = dialog;
         
+        // Re-render to show travel times above zones
+        this.render();
+        
         // Event handlers
         const closeDialog = () => {
             if (dialog.parentNode) {
@@ -1193,15 +1513,50 @@ class OrbitalZoneSelector {
         
         dialog.querySelector('.transfer-cancel').addEventListener('click', closeDialog);
         
+        // Tab switching
+        const tabs = dialog.querySelectorAll('.transfer-tab');
+        const tabContents = dialog.querySelectorAll('.transfer-tab-content');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                if (tab.classList.contains('disabled')) return;
+                
+                // Update active tab
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update active content
+                const tabName = tab.dataset.tab;
+                tabContents.forEach(content => {
+                    content.classList.remove('active');
+                    if (content.id === `transfer-tab-${tabName}`) {
+                        content.classList.add('active');
+                    }
+                });
+                
+                // Update info display
+                const probeInfo = dialog.querySelector('#transfer-probe-info');
+                const metalInfo = dialog.querySelector('#transfer-metal-info');
+                const capacityInfo = dialog.querySelector('#transfer-capacity-info');
+                if (tabName === 'probes') {
+                    if (probeInfo) probeInfo.style.display = '';
+                    if (metalInfo) metalInfo.style.display = 'none';
+                    if (capacityInfo) capacityInfo.style.display = 'none';
+                } else {
+                    if (probeInfo) probeInfo.style.display = 'none';
+                    if (metalInfo) metalInfo.style.display = '';
+                    if (capacityInfo) capacityInfo.style.display = '';
+                }
+            });
+        });
+        
+        // Confirm button is now optional - selecting a zone will send the transfer
+        // But keep it for manual confirmation if needed
         dialog.querySelector('.transfer-confirm').addEventListener('click', () => {
-            const transferType = dialog.querySelector('input[name="transfer-type"]:checked').value;
-            if (transferType === 'one-time') {
-                const count = parseInt(dialog.querySelector('#transfer-count').value) || 1;
-                this.createTransfer(fromZoneId, toZoneId, 'one-time', count, 0);
-            } else {
-                const rate = parseFloat(dialog.querySelector('#transfer-rate').value) || 1;
-                this.createTransfer(fromZoneId, toZoneId, 'continuous', 0, rate);
+            if (!toZoneId) {
+                // No destination selected yet
+                return;
             }
+            this.sendTransferFromDialog(toZoneId);
             closeDialog();
         });
         
@@ -1323,44 +1678,91 @@ class OrbitalZoneSelector {
         return FormatUtils.formatTime(days);
     }
     
-    createTransfer(fromZoneId, toZoneId, type, count, rate) {
-        // Create transfer object
-        const transfer = {
-            from: fromZoneId,
-            to: toZoneId,
-            type: type, // 'one-time' or 'continuous'
-            count: count, // For one-time
-            rate: rate, // For continuous (probes per second)
-            progress: 0, // For one-time transfers
-            startTime: Date.now()
-        };
+    sendTransferFromDialog(toZoneId) {
+        // Extract transfer data from the open dialog and send it
+        if (!this.currentTransferDialog || !this.transferSourceZone) {
+            return;
+        }
         
-        this.transferArcs.push(transfer);
+        const dialog = this.currentTransferDialog;
+        const fromZoneId = this.transferSourceZone;
         
-        // Dispatch event for transfer panel
-        const event = new CustomEvent('transferCreated', { detail: transfer });
-        document.dispatchEvent(event);
+        // Get structures to check for mass driver
+        const structuresByZone = this.gameState?.structures_by_zone || {};
+        const zoneStructures = structuresByZone[fromZoneId] || {};
+        const hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
         
-        // Execute transfer via game engine
+        // Determine which tab is active
+        const activeTab = dialog.querySelector('.transfer-tab.active');
+        const tabName = activeTab ? activeTab.dataset.tab : 'probes';
+        
+        if (tabName === 'probes') {
+            // Probe transfer
+            const transferType = dialog.querySelector('input[name="transfer-type-probes"]:checked')?.value;
+            if (transferType === 'one-time') {
+                const count = parseInt(dialog.querySelector('#transfer-count').value) || 1;
+                this.createTransfer(fromZoneId, toZoneId, 'probe', 'one-time', count, 0);
+            } else {
+                const rate = parseFloat(dialog.querySelector('#transfer-rate-probes').value) || 1;
+                this.createTransfer(fromZoneId, toZoneId, 'probe', 'continuous', 0, rate);
+            }
+        } else if (tabName === 'metal' && hasMassDriver) {
+            // Metal transfer
+            const transferType = dialog.querySelector('input[name="transfer-type-metal"]:checked')?.value;
+            if (transferType === 'one-time') {
+                const metalKg = parseFloat(dialog.querySelector('#transfer-metal-count').value) || 0;
+                this.createTransfer(fromZoneId, toZoneId, 'metal', 'one-time', metalKg, 0);
+            } else {
+                const rateKgPerDay = parseFloat(dialog.querySelector('#transfer-rate-metal').value) || 100e12;
+                this.createTransfer(fromZoneId, toZoneId, 'metal', 'continuous', 0, rateKgPerDay);
+            }
+        }
+    }
+    
+    createTransfer(fromZoneId, toZoneId, resourceType, type, count, rate) {
+        // Execute transfer via game engine (arcs will be synced from game state)
         if (window.gameEngine) {
-            window.gameEngine.performAction('create_transfer', {
+            const actionData = {
                 from_zone: fromZoneId,
                 to_zone: toZoneId,
-                transfer_type: type,
-                count: count,
-                rate: rate
+                resource_type: resourceType, // 'probe' or 'metal'
+                transfer_type: type, // 'one-time' or 'continuous'
+            };
+            
+            if (type === 'one-time') {
+                if (resourceType === 'probe') {
+                    actionData.probe_count = count;
+                } else {
+                    actionData.metal_kg = count;
+                }
+            } else {
+                if (resourceType === 'probe') {
+                    actionData.rate = rate; // Percentage for probes
+                } else {
+                    actionData.rate = rate; // kg/day for metal
+                }
+            }
+            
+            window.gameEngine.performAction('create_transfer', actionData).then(result => {
+                if (!result.success && result.error) {
+                    // Show error message to user
+                    alert(`Transfer failed: ${result.error}`);
+                }
             }).catch(error => {
                 console.error('Failed to create transfer:', error);
+                alert(`Transfer failed: ${error.message || error}`);
             });
         }
         
-        this.render(); // Re-render to show transfer arc
+        // Transfer arcs will be updated from game state in updateTransferArcs()
+        // No need to manually add to transferArcs array
     }
 
     update(gameState) {
         if (!gameState) return;
         
-        // Change detection: Only re-render if zone selection or zone data has changed
+        // Change detection: Only re-render if zone selection or STRUCTURE changed
+        // Don't include zone_metal_remaining - it changes every tick and doesn't need full re-render
         // Use efficient hash instead of JSON.stringify to avoid memory issues
         let hash = 0;
         if (this.selectedZone) {
@@ -1375,48 +1777,82 @@ class OrbitalZoneSelector {
         }
         hash = ((hash << 5) - hash) + (this.waitingForTransferDestination ? 1 : 0);
         
-        // Hash metal remaining efficiently
-        const metalRemaining = gameState.zone_metal_remaining || {};
-        for (const [zoneId, value] of Object.entries(metalRemaining)) {
+        // Hash probe counts and structures (these change infrequently)
+        // Read from derived.zones (pre-calculated in worker)
+        const derived = gameState.derived || {};
+        const zones = derived.zones || {};
+        for (const [zoneId, zoneData] of Object.entries(zones)) {
             hash = ((hash << 5) - hash) + zoneId.charCodeAt(0);
-            hash = ((hash << 5) - hash) + (value || 0);
+            hash = ((hash << 5) - hash) + (zoneData.probe_count || 0);
+        }
+        
+        // Hash structures by zone (only structure types, not counts - counts change frequently)
+        const structuresByZone = gameState.structures_by_zone || {};
+        for (const [zoneId, structures] of Object.entries(structuresByZone)) {
+            hash = ((hash << 5) - hash) + zoneId.charCodeAt(0);
+            // Only hash structure types present, not counts (counts change frequently)
+            hash = ((hash << 5) - hash) + Object.keys(structures).length;
         }
         
         const currentHash = hash.toString();
         
-        // Always update gameState, but only render if structure changed
+        // Always update gameState, but only render if structure/selection changed
         const needsRender = currentHash !== this.lastRenderHash || this.lastRenderHash === null;
         if (needsRender) {
             this.render();
             this.lastRenderHash = currentHash;
+        } else {
+            // Incremental update: only update stats that change frequently (metal remaining, probe counts)
+            this.updateZoneStats(gameState);
         }
         
         this.gameState = gameState;
         
-        // Throttle probe visualization updates to every 30 frames (~2/sec)
-        if (!this.probeUpdateFrameCount) {
-            this.probeUpdateFrameCount = 0;
-        }
-        this.probeUpdateFrameCount++;
-        
-        if (this.probeUpdateFrameCount % 30 === 0) {
-            this.updateProbeDots();
-        }
+        // Probe visualization disabled for performance - kept for future use
+        // Uncomment below to enable probe dot visualization:
+        // if (this.probeUpdateFrameCount % 30 === 0) {
+        //     this.updateProbeDots();
+        // }
         
         this.updateTransferArcs();
+    }
+    
+    /**
+     * Incremental update of zone stats without full re-render
+     * Updates dynamic values like probe counts, metal remaining, etc.
+     */
+    updateZoneStats(gameState) {
+        if (!gameState || !this.orbitalZones) return;
+        
+        // Read derived values from game state
+        const derived = gameState.derived || {};
+        const zones = derived.zones || {};
+        
+        // Update each zone's displayed stats
+        for (const zone of this.orbitalZones) {
+            const zoneData = zones[zone.id] || {};
+            const probeCount = zoneData.probe_count || 0;
+            
+            // Update probe count display if element exists
+            const probeCountEl = document.querySelector(`[data-zone-probes="${zone.id}"]`);
+            if (probeCountEl) {
+                probeCountEl.textContent = probeCount.toLocaleString();
+            }
+        }
     }
     
     updateProbeDots() {
         if (!this.gameState || !this.orbitalZones) return;
         
-        // Use shared probe cache - it already calculated everything efficiently
-        const probeCache = window.probeCountCache;
-        if (!probeCache) return;
-        
-        // Update cache (will only recalculate if probe data changed)
-        const cachedData = probeCache.update(this.gameState);
-        const totalProbes = cachedData.totalProbes;
-        const zoneProbeCounts = cachedData.probesByZone;
+        // Read from derived (pre-calculated in worker)
+        const derived = this.gameState.derived || {};
+        const totals = derived.totals || {};
+        const zones = derived.zones || {};
+        const totalProbes = totals.probe_count || 0;
+        const zoneProbeCounts = {};
+        for (const [zoneId, zoneData] of Object.entries(zones)) {
+            zoneProbeCounts[zoneId] = zoneData.probe_count || 0;
+        }
         
         // Change detection: Only update if probe counts have changed
         // Use efficient hash instead of JSON.stringify to avoid memory issues
@@ -1547,57 +1983,238 @@ class OrbitalZoneSelector {
         }
         
         const currentTime = this.gameState.time || 0;
-        // Filter out completed one-time transfers
-        const newTransferArcs = this.gameState.active_transfers.filter(transfer => {
-            // Keep continuous transfers and incomplete one-time transfers
-            if (transfer.type === 'continuous') {
-                return true;
-            }
-            // For one-time transfers, check if they've arrived
-            if (transfer.type === 'one-time') {
-                // If arrivalTime is set and hasn't been reached yet, transfer is still active
-                if (transfer.arrivalTime !== undefined) {
-                    return transfer.arrivalTime > currentTime;
+        // Filter out completed one-time transfers and convert to visualization format
+        const newTransferArcs = this.gameState.active_transfers
+            .filter(transfer => {
+                // Keep continuous transfers and incomplete one-time transfers
+                if (transfer.type === 'continuous') {
+                    // Show if not paused or has probes in transit
+                    return !transfer.paused || (transfer.in_transit && transfer.in_transit.length > 0);
                 }
-                // Fallback: check progress (for backward compatibility)
-                const progress = transfer.progress || 0;
-                const totalCount = transfer.totalCount || transfer.count || 0;
-                return progress < totalCount;
-            }
-            return true;
-        });
+                // For one-time transfers, check if they've arrived
+                if (transfer.type === 'one-time' || !transfer.type) {
+                    // Check status - only show if traveling
+                    if (transfer.status === 'completed' || transfer.status === 'cancelled') {
+                        return false;
+                    }
+                    // Check arrival time - show if it's in the future
+                    if (transfer.arrival_time !== undefined && transfer.arrival_time !== null) {
+                        return transfer.arrival_time > currentTime;
+                    }
+                    // Fallback: if status is traveling and arrival_time is not set, show it (might be just created)
+                    return transfer.status === 'traveling' || transfer.status === 'paused';
+                }
+                return true;
+            })
+            .map(transfer => ({
+                id: transfer.id,
+                from: transfer.from_zone || transfer.from,
+                to: transfer.to_zone || transfer.to,
+                type: transfer.type || 'one-time',
+                count: transfer.probe_count || 0,
+                rate: transfer.rate || 0,
+                ratePercentage: transfer.rate_percentage || 0,
+                transferTime: transfer.transfer_time || (transfer.arrival_time && transfer.departure_time ? transfer.arrival_time - transfer.departure_time : 90.0),
+                startTime: transfer.departure_time || transfer.startTime || currentTime,
+                departureTime: transfer.departure_time,
+                arrivalTime: transfer.arrival_time,
+                inTransit: transfer.in_transit || [],
+                in_transit: transfer.in_transit || [], // Support both formats
+                status: transfer.status,
+                paused: transfer.paused || false
+            }));
         
         // Change detection: Only update if transfers have changed
         // Use efficient hash instead of JSON.stringify to avoid memory issues
         let hash = 0;
         for (const transfer of newTransferArcs) {
             hash = ((hash << 5) - hash) + (transfer.id || 0);
-            const from = transfer.from_zone || transfer.from || '';
-            const to = transfer.to_zone || transfer.to || '';
+            const from = transfer.from || '';
+            const to = transfer.to || '';
             for (let i = 0; i < from.length; i++) {
                 hash = ((hash << 5) - hash) + from.charCodeAt(i);
             }
             for (let i = 0; i < to.length; i++) {
                 hash = ((hash << 5) - hash) + to.charCodeAt(i);
             }
+            // Include in-transit count in hash for continuous transfers
+            if (transfer.type === 'continuous') {
+                const inTransit = transfer.in_transit || transfer.inTransit || [];
+                hash = ((hash << 5) - hash) + inTransit.length;
+            }
         }
         const transfersHash = hash.toString();
-        if (transfersHash === this.lastTransferArcsHash && this.lastTransferArcsHash !== null) {
-            return; // No changes, skip DOM manipulation
-        }
-        this.lastTransferArcsHash = transfersHash;
+        const structureChanged = transfersHash !== this.lastTransferArcsHash;
+        
+        // Update transfer arcs data
         this.transferArcs = newTransferArcs;
         
-        // Clear existing transfer arcs
-        const svgContainer = this.container.querySelector('.transfer-arc-svg-container');
-        if (svgContainer) {
-            svgContainer.innerHTML = '';
+        if (structureChanged) {
+            // Structure changed - update arcs
+            this.lastTransferArcsHash = transfersHash;
+            
+            // Clear existing transfer arcs
+            const svgContainer = this.container.querySelector('.transfer-arc-svg-container');
+            if (svgContainer) {
+                svgContainer.innerHTML = '';
+            }
         }
         
-        // Draw transfer arcs
+        // Always ensure arcs are drawn for all active transfers (even if structure didn't change)
+        // This handles cases where arcs might have been removed or SVG container was cleared
+        const svgContainer = this.container.querySelector('.transfer-arc-svg-container');
+        if (svgContainer) {
+            // Draw/update arcs for all active transfers
+            this.transferArcs.forEach(transfer => {
+                const transferId = `transfer-${transfer.id || `${transfer.from}-${transfer.to}-${transfer.type}`}`;
+                const existingSvg = svgContainer.querySelector(`svg[data-transfer-id="${transferId}"]`);
+                
+                if (!existingSvg) {
+                    // Arc doesn't exist, draw it
+                    this.drawTransferArc(transfer);
+                }
+                // If arc exists, animation will update positions via updateTransferArcAnimations()
+            });
+        }
+        
+        // Always start/ensure animation interval is running
+        this.startTransferArcAnimation();
+    }
+    
+    /**
+     * Start transfer arc animation interval (10 times per second)
+     */
+    startTransferArcAnimation() {
+        // Clear existing interval if any
+        if (this.transferArcAnimationInterval) {
+            clearInterval(this.transferArcAnimationInterval);
+        }
+        
+        // Update animations 10 times per second
+        this.transferArcAnimationInterval = setInterval(() => {
+            if (this.gameState && this.transferArcs && this.transferArcs.length > 0) {
+                this.updateTransferArcAnimations();
+            }
+        }, this.transferArcUpdateRate);
+    }
+    
+    /**
+     * Update transfer arc animations without recreating DOM
+     * Called 10 times per second to update probe dot positions
+     */
+    updateTransferArcAnimations() {
+        if (!this.gameState || !this.transferArcs) return;
+        
+        const currentTime = this.gameState.time || 0;
+        const animationSvgContainer = this.container.querySelector('.transfer-arc-svg-container');
+        if (!animationSvgContainer) return;
+        
+        // Update each transfer arc's animation
         this.transferArcs.forEach(transfer => {
-            this.drawTransferArc(transfer);
+            const transferId = `transfer-${transfer.id || `${transfer.from}-${transfer.to}-${transfer.type}`}`;
+            const svg = animationSvgContainer.querySelector(`svg[data-transfer-id="${transferId}"]`);
+            if (!svg) return;
+            
+            const path = svg.querySelector('path');
+            if (!path) return;
+            const pathLength = path.getTotalLength();
+            
+            // Update probe dot positions for this transfer
+            const probeIcons = svg.querySelectorAll('circle[data-departure-time]');
+            probeIcons.forEach(probeIcon => {
+                const batchDepartureTime = parseFloat(probeIcon.getAttribute('data-departure-time') || 0);
+                const batchArrivalTime = parseFloat(probeIcon.getAttribute('data-arrival-time') || 0);
+                const transferTime = parseFloat(probeIcon.getAttribute('data-transfer-time') || (batchArrivalTime - batchDepartureTime));
+                
+                // Check if transfer is still active
+                const isTransferActive = this.gameState && 
+                    this.gameState.active_transfers && 
+                    this.gameState.active_transfers.some(t => 
+                        t.id === transfer.id || 
+                        (t.from_zone === transfer.from && t.to_zone === transfer.to && t.type === transfer.type)
+                    );
+                
+                if (!isTransferActive) {
+                    // Transfer cancelled or completed - remove dot but keep arc until cleanup
+                    probeIcon.remove();
+                    return;
+                }
+                
+                if (batchArrivalTime <= currentTime) {
+                    // Batch has arrived, remove dot
+                    probeIcon.remove();
+                    return;
+                }
+                
+                if (batchDepartureTime > currentTime) {
+                    // Batch hasn't departed yet, hide dot
+                    probeIcon.style.opacity = '0';
+                    return;
+                }
+                
+                // Calculate progress (0 = at origin, 1 = at destination)
+                const elapsed = currentTime - batchDepartureTime;
+                const progress = Math.max(0, Math.min(1, elapsed / transferTime));
+                
+                // Update dot position along path
+                const point = path.getPointAtLength(pathLength * progress);
+                probeIcon.setAttribute('cx', point.x);
+                probeIcon.setAttribute('cy', point.y);
+                probeIcon.style.opacity = '1';
+            });
+            
+            // For continuous transfers, also add new dots for batches that have departed
+            if (transfer.type === 'continuous') {
+                const inTransit = transfer.in_transit || transfer.inTransit || [];
+                inTransit.forEach(batch => {
+                    const batchDepartureTime = batch.departure_time || batch.departureTime || 0;
+                    const batchArrivalTime = batch.arrival_time || batch.arrivalTime || 0;
+                    
+                    // Only show dots for batches that have departed but not arrived
+                    if (batchDepartureTime <= currentTime && batchArrivalTime > currentTime) {
+                        // Check if dot already exists for this batch (use a more specific selector)
+                        const existingDot = svg.querySelector(`circle[data-departure-time="${batchDepartureTime}"][data-arrival-time="${batchArrivalTime}"]`);
+                        if (!existingDot) {
+                            // Create new dot for this batch
+                            const probeIcon = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                            probeIcon.setAttribute('r', '4');
+                            probeIcon.setAttribute('fill', '#ffffff');
+                            probeIcon.setAttribute('opacity', '0.85');
+                            probeIcon.setAttribute('data-departure-time', batchDepartureTime.toString());
+                            probeIcon.setAttribute('data-arrival-time', batchArrivalTime.toString());
+                            probeIcon.setAttribute('data-transfer-time', (batchArrivalTime - batchDepartureTime).toString());
+                            svg.appendChild(probeIcon);
+                        }
+                    }
+                });
+            }
+            
+            // Don't remove arcs here - let updateTransferArcs() handle removal based on active_transfers
+            // This ensures arcs persist as long as transfers are active
         });
+        
+        // Clean up arcs for transfers that are no longer active
+        if (animationSvgContainer) {
+            const allSvgs = animationSvgContainer.querySelectorAll('svg[data-transfer-id]');
+            allSvgs.forEach(svg => {
+                const transferIdAttr = svg.getAttribute('data-transfer-id');
+                // Extract transfer ID from attribute (format: "transfer-{id}")
+                const transferId = transferIdAttr ? transferIdAttr.replace('transfer-', '') : null;
+                
+                // Check if this transfer is still active
+                const isTransferActive = this.gameState && 
+                    this.gameState.active_transfers && 
+                    this.gameState.active_transfers.some(t => {
+                        const tId = t.id || `${t.from_zone || t.from}-${t.to_zone || t.to}-${t.type || 'one-time'}`;
+                        return tId === transferId || transferIdAttr === `transfer-${tId}`;
+                    });
+                
+                if (!isTransferActive) {
+                    // Transfer is no longer active - remove arc
+                    svg.remove();
+                }
+            });
+        }
     }
     
     drawTransferArc(transfer) {
@@ -1703,10 +2320,12 @@ class OrbitalZoneSelector {
         const pathLength = path.getTotalLength();
         const transferTime = transfer.transferTime || 90.0; // days (default: 3 months = 90 days)
         const gameTime = (this.gameState && this.gameState.time) ? this.gameState.time : 0;
-        const startTime = transfer.startTime || transfer.departureTime || gameTime;
+        // Use departureTime (in days), not startTime (which might be in milliseconds)
+        const departureTime = transfer.departureTime || transfer.departure_time || gameTime;
         
         // Calculate overall progress of the transfer
-        const elapsed = gameTime - startTime;
+        // Both gameTime and departureTime are in days
+        const elapsed = gameTime - departureTime;
         const progress = Math.max(0, Math.min(1, elapsed / transferTime));
         
         // Create probe icon (small circle with a slight glow)
@@ -1749,44 +2368,17 @@ class OrbitalZoneSelector {
         probeIcon.setAttribute('filter', `url(#${filterId})`);
         svg.appendChild(probeIcon);
         
-        // Animate along path - update only once per second for performance
-        let lastUpdateTime = Date.now();
-        const updateInterval = 1000; // Update every second (1000ms)
-        
-        const animate = () => {
-            const now = Date.now();
-            const timeSinceLastUpdate = now - lastUpdateTime;
-            
-            // Only update if at least 1 second has passed
-            if (timeSinceLastUpdate >= updateInterval) {
-                lastUpdateTime = now;
-                
-                const currentGameTime = (this.gameState && this.gameState.time) ? this.gameState.time : gameTime;
-                const currentElapsed = currentGameTime - startTime;
-                const currentProgress = Math.max(0, Math.min(1, currentElapsed / transferTime));
-                
-                if (currentProgress < 1 && this.transferArcs && this.transferArcs.includes(transfer)) {
-                    const point = path.getPointAtLength(pathLength * currentProgress);
-                    probeIcon.setAttribute('cx', point.x);
-                    probeIcon.setAttribute('cy', point.y);
-                    setTimeout(animate, updateInterval);
-                } else {
-                    // Transfer complete or transfer removed
-                    probeIcon.remove();
-                    return;
-                }
-            } else {
-                // Wait until it's time to update
-                setTimeout(animate, updateInterval - timeSinceLastUpdate);
-            }
-        };
+        // Store references for animation updates
+        probeIcon.setAttribute('data-departure-time', departureTime.toString());
+        probeIcon.setAttribute('data-arrival-time', (departureTime + transferTime).toString());
+        probeIcon.setAttribute('data-transfer-time', transferTime.toString());
         
         // Set initial position
         const initialPoint = path.getPointAtLength(pathLength * progress);
         probeIcon.setAttribute('cx', initialPoint.x);
         probeIcon.setAttribute('cy', initialPoint.y);
         
-        animate();
+        // Animation will be handled by updateTransferArcAnimations() interval
     }
     
     animateContinuousTransfer(transfer, fromX, fromY, toX, toY, path, svg) {
@@ -1825,18 +2417,28 @@ class OrbitalZoneSelector {
         // Limit maximum number of dots to show (for performance)
         const maxDotsToShow = 10;
         
-        // Get probes currently in transit
-        if (!transfer.inTransit || transfer.inTransit.length === 0) {
+        // Get probes currently in transit (use in_transit from game state)
+        const inTransit = transfer.inTransit || transfer.in_transit || [];
+        if (inTransit.length === 0) {
             return; // No probes in transit yet
         }
         
         // Process all probes in transit
-        const transitProbes = transfer.inTransit
-            .map(transit => ({
-                arrivalTime: transit.arrivalTime || (gameTime + transferTime),
-                departureTime: transit.departureTime !== undefined ? transit.departureTime : (transit.arrivalTime - transferTime),
-                count: transit.count || 1
-            }))
+        // All times are in days (game time units)
+        const transitProbes = inTransit
+            .map(transit => {
+                const arrivalTime = transit.arrival_time !== undefined ? transit.arrival_time : 
+                                   (transit.arrivalTime !== undefined ? transit.arrivalTime : 
+                                    (gameTime + transferTime));
+                const departureTime = transit.departure_time !== undefined ? transit.departure_time : 
+                                     (transit.departureTime !== undefined ? transit.departureTime : 
+                                      (arrivalTime - transferTime));
+                return {
+                    arrivalTime: arrivalTime,
+                    departureTime: departureTime,
+                    count: transit.count || 1
+                };
+            })
             .filter(transit => transit.arrivalTime > gameTime) // Only show probes that haven't arrived yet
             .sort((a, b) => a.departureTime - b.departureTime); // Sort by departure time
         
@@ -1924,69 +2526,17 @@ class OrbitalZoneSelector {
             
             svg.appendChild(probeIcon);
             
-            // Animation loop: move probe at constant speed - update only once per second
-            let lastUpdateTime = Date.now();
-            const updateInterval = 1000; // Update every second (1000ms)
-            
-            const animate = () => {
-                const now = Date.now();
-                const timeSinceLastUpdate = now - lastUpdateTime;
-                
-                // Only update if at least 1 second has passed
-                if (timeSinceLastUpdate >= updateInterval) {
-                    lastUpdateTime = now;
-                    
-                    const currentGameTime = (this.gameState && this.gameState.time) ? this.gameState.time : gameTime;
-                    
-                    // Calculate elapsed time since departure
-                    const elapsed = currentGameTime - transit.departureTime;
-                    
-                    // Calculate progress (0 to 1) - this gives constant speed automatically
-                    // Speed = pathLength / transferTime, so position = speed * elapsed = pathLength * (elapsed / transferTime)
-                    const progress = Math.max(0, Math.min(1, elapsed / transferTime));
-                    
-                    // Calculate position along path (constant speed movement)
-                    const pathPosition = pathLength * progress;
-                    const currentPoint = path.getPointAtLength(pathPosition);
-                    
-                    // Check if transfer is still active
-                    const isTransferActive = this.gameState && 
-                        this.gameState.active_transfers && 
-                        this.gameState.active_transfers.some(t => 
-                            t.id === transfer.id || 
-                            (t.from === transfer.from && t.to === transfer.to && t.type === transfer.type)
-                        );
-                    
-                    // Check if this specific probe is still in transit
-                    const probeStillInTransit = isTransferActive && 
-                        transfer.inTransit && 
-                        transfer.inTransit.some(t => 
-                            Math.abs(t.departureTime - transit.departureTime) < 0.01 && 
-                            t.arrivalTime > currentGameTime
-                        );
-                    
-                    if (progress < 1 && probeStillInTransit) {
-                        probeIcon.setAttribute('cx', currentPoint.x.toString());
-                        probeIcon.setAttribute('cy', currentPoint.y.toString());
-                        setTimeout(animate, updateInterval);
-                    } else {
-                        // Probe arrived or transfer removed
-                        probeIcon.remove();
-                        return;
-                    }
-                } else {
-                    // Wait until it's time to update
-                    setTimeout(animate, updateInterval - timeSinceLastUpdate);
-                }
-            };
+            // Store references for animation updates
+            probeIcon.setAttribute('data-departure-time', transit.departureTime.toString());
+            probeIcon.setAttribute('data-arrival-time', transit.arrivalTime.toString());
+            probeIcon.setAttribute('data-transfer-time', transferTime.toString());
             
             // Set initial position
             const initialPoint = path.getPointAtLength(transit.pathPosition);
             probeIcon.setAttribute('cx', initialPoint.x.toString());
             probeIcon.setAttribute('cy', initialPoint.y.toString());
             
-            // Start animation
-            animate();
+            // Animation will be handled by updateTransferArcAnimations() interval
         });
     }
     

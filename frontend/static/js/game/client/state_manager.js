@@ -10,18 +10,12 @@ class StateManager {
     }
     
     /**
-     * Update state and emit event
+     * Update state (silent cache - no events)
      * @param {Object} newState - New game state
      */
     updateState(newState) {
         this.currentState = newState;
-        
-        // Emit event for UI components
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('gameStateUpdate', {
-                detail: newState
-            }));
-        }
+        // No event dispatch - UI polls state via getState() at its own interval
     }
     
     /**

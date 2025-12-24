@@ -20,9 +20,10 @@ class ProbeSystem {
      * @param {number} deltaTime - Time delta in days
      * @param {Object} skills - Current skills
      * @param {Object} buildings - Building definitions
+     * @param {number} energyThrottle - Energy throttle factor (0-1)
      * @returns {Object} Updated state
      */
-    processProbeOperations(state, zoneId, deltaTime, skills, buildings) {
+    processProbeOperations(state, zoneId, deltaTime, skills, buildings, energyThrottle = 1.0) {
         const profiler = typeof self !== 'undefined' && self.performanceProfiler 
             ? self.performanceProfiler 
             : (typeof window !== 'undefined' && window.performanceProfiler ? window.performanceProfiler : null);
@@ -49,21 +50,18 @@ class ProbeSystem {
         if (totalProbes === 0) return newState;
         
         const allocations = probeAllocationsByZone[zoneId] || {};
-        const constructAllocation = allocations.construct || 0;
         const replicateAllocation = allocations.replicate || 0;
         
-        // Calculate building rate
-        const buildingProbes = totalProbes * constructAllocation;
-        const buildingRate = this.productionCalculator.calculateBuildingRate(buildingProbes, skills);
-        
-        // Allocate building between structures and probes
-        // For now, assume all building goes to replication (probes)
-        // Structure building is handled separately in StructureSystem
-        
         // Process replication
+        // Replicating probes = total probes * replication allocation
         if (replicateAllocation > 0) {
-            const replicationRate = buildingRate * replicateAllocation;
-            this.processReplication(newState, zoneId, replicationRate, deltaTime);
+            const replicatingProbes = totalProbes * replicateAllocation;
+            // Calculate building rate from probes allocated to replication
+            // Uses pre-calculated upgrade factors from state
+            const replicationRate = this.productionCalculator.calculateBuildingRate(replicatingProbes, newState);
+            // Apply energy throttle to replication rate before metal throttle
+            const throttledReplicationRate = replicationRate * energyThrottle;
+            this.processReplication(newState, zoneId, throttledReplicationRate, deltaTime);
         }
         
         return newState;
@@ -71,31 +69,81 @@ class ProbeSystem {
     
     /**
      * Process probe replication
+     * Uses zone's stored_metal for construction - if no stored_metal, replication halts
      * @param {Object} state - Game state (mutated)
      * @param {string} zoneId - Zone identifier
      * @param {number} replicationRate - Replication rate in kg/day
      * @param {number} deltaTime - Time delta in days
      */
     processReplication(state, zoneId, replicationRate, deltaTime) {
-        const constructionProgress = state.construction_progress || {};
-        const probesByZone = state.probes_by_zone || {};
+        // Ensure state objects exist
+        if (!state.construction_progress) {
+            state.construction_progress = {};
+        }
+        if (!state.probes_by_zone) {
+            state.probes_by_zone = {};
+        }
+        if (!state.zones) {
+            state.zones = {};
+        }
+        
+        const constructionProgress = state.construction_progress;
+        const probesByZone = state.probes_by_zone;
+        const zones = state.zones;
+        
+        // Ensure zone exists
+        if (!zones[zoneId]) {
+            zones[zoneId] = {
+                mass_remaining: 0,
+                stored_metal: 0,
+                probe_mass: 0,
+                structure_mass: 0,
+                slag_mass: 0,
+                depleted: false
+            };
+        }
+        
+        const zone = zones[zoneId];
+        const storedMetal = zone.stored_metal || 0;
         
         // Initialize probe construction progress if needed
         if (!constructionProgress.probes) {
             constructionProgress.probes = {};
         }
         
+        // Initialize zone-specific construction progress
+        if (!constructionProgress.probes_by_zone) {
+            constructionProgress.probes_by_zone = {};
+        }
+        if (!constructionProgress.probes_by_zone[zoneId]) {
+            constructionProgress.probes_by_zone[zoneId] = {};
+        }
+        
         // For now, assume single probe type 'probe'
         const probeType = 'probe';
-        const currentProgress = constructionProgress.probes[probeType] || 0;
+        const currentProgress = constructionProgress.probes_by_zone[zoneId][probeType] || 0;
         
-        // Add progress
+        // Calculate how much metal we need for the work being done
         const progressAdded = replicationRate * deltaTime;
-        const newProgress = currentProgress + progressAdded;
+        
+        // Check if we have enough stored metal for this progress
+        // Metal is consumed as progress is made (proportionally)
+        const metalNeeded = progressAdded;
+        const metalAvailable = storedMetal;
+        
+        // Throttle progress based on available metal
+        const metalThrottle = metalAvailable > 0 ? Math.min(1.0, metalAvailable / metalNeeded) : 0;
+        const actualProgress = progressAdded * metalThrottle;
+        const metalConsumed = actualProgress; // 1:1 ratio - 1 kg metal = 1 kg progress
+        
+        // Consume metal as progress is made
+        zone.stored_metal = Math.max(0, storedMetal - metalConsumed);
+        
+        const newProgress = currentProgress + actualProgress;
         
         // Check if probe completed
         if (newProgress >= this.PROBE_MASS) {
-            // Complete probe
+            // Complete probe(s)
             const probesToAdd = Math.floor(newProgress / this.PROBE_MASS);
             const remainingProgress = newProgress % this.PROBE_MASS;
             
@@ -108,11 +156,15 @@ class ProbeSystem {
             }
             probesByZone[zoneId][probeType] += probesToAdd;
             
-            constructionProgress.probes[probeType] = remainingProgress;
+            // Update zone probe_mass
+            zone.probe_mass = (zone.probe_mass || 0) + (probesToAdd * this.PROBE_MASS);
+            
+            constructionProgress.probes_by_zone[zoneId][probeType] = remainingProgress;
         } else {
-            constructionProgress.probes[probeType] = newProgress;
+            constructionProgress.probes_by_zone[zoneId][probeType] = newProgress;
         }
         
+        state.zones = zones;
         state.construction_progress = constructionProgress;
         state.probes_by_zone = probesByZone;
     }

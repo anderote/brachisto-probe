@@ -5,6 +5,7 @@ class CommandPanel {
         this.gameState = null;
         this.isUserInteracting = false; // Track if user is actively dragging sliders
         this.selectedZone = null; // Currently selected orbital zone
+        this.zonePolicies = {}; // Cache slider values per zone
         this.init();
     }
     
@@ -118,61 +119,31 @@ class CommandPanel {
         
         let html = '';
         
+        // Helper to create a horizontal priority slider with right-justified label above
+        const createPrioritySlider = (id, label) => {
+            return `<div class="command-priority-slider-row">
+                <div class="command-priority-label">${label}</div>
+                <div class="command-priority-track" id="${id}-bar-track">
+                    <div class="command-priority-fill" id="${id}-bar-fill" style="width: 0%;"></div>
+                    <input type="range" id="${id}-slider" class="command-priority-input" min="0" max="100" value="0" step="1">
+                </div>
+            </div>`;
+        };
+        
         if (isDysonZone) {
-            // Dyson zone: Three vertical sliders
-            // First slider: Dyson vs Build (0 = all Build, 100 = all Dyson)
-            html += '<div class="command-slider-group">';
-            html += '<div class="command-slider-label-top">Dyson</div>';
-            html += '<div class="command-slider-track-vertical" id="dyson-build-bar-track">';
-            html += '<div class="command-slider-fill-vertical" id="dyson-build-bar-fill" style="height: 0%;"></div>';
-            html += '<div class="command-slider-line-vertical" id="dyson-build-bar-line" style="bottom: 0%;"></div>';
-            html += '<input type="range" id="dyson-build-slider" class="command-slider-vertical" min="0" max="100" value="0" step="1">';
-            html += '</div>';
-            html += '<div class="command-slider-label-bottom">Build</div>';
-            html += '</div>';
-            
-            // Second slider: Structures vs Replicate
-            html += '<div class="command-slider-group">';
-            html += '<div class="command-slider-label-top">Structures</div>';
-            html += '<div class="command-slider-track-vertical" id="dyson-structures-replicate-bar-track">';
-            html += '<div class="command-slider-fill-vertical" id="dyson-structures-replicate-bar-fill" style="height: 0%;"></div>';
-            html += '<div class="command-slider-line-vertical" id="dyson-structures-replicate-bar-line" style="bottom: 0%;"></div>';
-            html += '<input type="range" id="dyson-structures-replicate-slider" class="command-slider-vertical" min="0" max="100" value="0" step="1">';
-            html += '</div>';
-            html += '<div class="command-slider-label-bottom">Replicate</div>';
-            html += '</div>';
-            
-            // Third slider: Compute Power
-            html += '<div class="command-slider-group">';
-            html += '<div class="command-slider-label-top">Compute</div>';
-            html += '<div class="command-slider-track-vertical" id="compute-power-bar-track">';
-            html += '<div class="command-slider-fill-vertical" id="compute-power-bar-fill" style="height: 50%;"></div>';
-            html += '<div class="command-slider-line-vertical" id="compute-power-bar-line" style="bottom: 50%;"></div>';
-            html += '<input type="range" id="compute-power-slider" class="command-slider-vertical" min="0" max="100" value="50" step="1">';
-            html += '</div>';
-            html += '<div class="command-slider-label-bottom">Economy</div>';
-            html += '</div>';
+            // Dyson zone: 5 independent priority sliders (Dyson replaces Mine)
+            html += createPrioritySlider('dyson', 'Dyson');
+            html += createPrioritySlider('replicate', 'Replicate');
+            html += createPrioritySlider('construct', 'Construct');
+            html += createPrioritySlider('recycle', 'Recycle');
+            html += createPrioritySlider('recycle_probes', 'Recycle Probes');
         } else {
-            // Regular zones: Two vertical sliders
-            html += '<div class="command-slider-group">';
-            html += '<div class="command-slider-label-top">Mine</div>';
-            html += '<div class="command-slider-track-vertical" id="harvest-build-bar-track">';
-            html += '<div class="command-slider-fill-vertical" id="harvest-build-bar-fill" style="height: 50%;"></div>';
-            html += '<div class="command-slider-line-vertical" id="harvest-build-bar-line" style="bottom: 50%;"></div>';
-            html += '<input type="range" id="harvest-build-slider" class="command-slider-vertical" min="0" max="100" value="50" step="1">';
-            html += '</div>';
-            html += '<div class="command-slider-label-bottom">Build</div>';
-            html += '</div>';
-            
-            html += '<div class="command-slider-group">';
-            html += '<div class="command-slider-label-top">Structures</div>';
-            html += '<div class="command-slider-track-vertical" id="structures-replicate-bar-track">';
-            html += '<div class="command-slider-fill-vertical" id="structures-replicate-bar-fill" style="height: 0%;"></div>';
-            html += '<div class="command-slider-line-vertical" id="structures-replicate-bar-line" style="bottom: 0%;"></div>';
-            html += '<input type="range" id="structures-replicate-slider" class="command-slider-vertical" min="0" max="100" value="0" step="1">';
-            html += '</div>';
-            html += '<div class="command-slider-label-bottom">Replicate</div>';
-            html += '</div>';
+            // Regular zones: 5 independent priority sliders
+            html += createPrioritySlider('mine', 'Mine');
+            html += createPrioritySlider('replicate', 'Replicate');
+            html += createPrioritySlider('construct', 'Construct');
+            html += createPrioritySlider('recycle', 'Recycle');
+            html += createPrioritySlider('recycle_probes', 'Recycle Probes');
         }
         
         sliderContainer.innerHTML = html;
@@ -185,83 +156,92 @@ class CommandPanel {
     }
     
     syncSlidersWithPolicy(zoneId, isDysonZone) {
-        // Get current policy values from game state
-        const zonePolicies = this.gameState?.zone_policies || {};
-        const policy = zonePolicies[zoneId] || {};
+        // Check if we have cached policy values first (user has set sliders)
+        // Only read from game state if we don't have cached values
+        let policy = this.zonePolicies[zoneId];
+        
+        if (!policy || Object.keys(policy).length === 0) {
+            // No cached values, read from game state and convert to slider values
+            const probeAllocationsByZone = this.gameState?.probe_allocations_by_zone || {};
+            const allocations = probeAllocationsByZone[zoneId] || {};
+            
+            // The allocations are 0-1 fractions calculated from p = v^2 / sum
+            // To reverse this, we need to find the original slider values
+            // Since p_i = v_i^2 / sum(v_j^2), and we store fractions,
+            // we can approximate by taking sqrt of the allocation values
+            // This isn't exact but gives reasonable visual feedback
+            
+            const harvest = allocations.harvest || 0;
+            const dyson = allocations.dyson || 0;
+            const construct = allocations.construct || 0;
+            const replicate = allocations.replicate || 0;
+            const recycle = allocations.recycle || 0;
+            const recycle_probes = allocations.recycle_probes || 0;
+            
+            // Convert back to slider values (0-100)
+            // Using sqrt to reverse the v^2 in the formula
+            let mineSlider = Math.sqrt(harvest) * 100;
+            let dysonSlider = Math.sqrt(dyson) * 100;
+            let replicateSlider = Math.sqrt(replicate) * 100;
+            let constructSlider = Math.sqrt(construct) * 100;
+            let recycleSlider = Math.sqrt(recycle) * 100;
+            let recycleProbesSlider = Math.sqrt(recycle_probes) * 100;
+            
+            // Store in zonePolicies cache
+            if (!this.zonePolicies[zoneId]) {
+                this.zonePolicies[zoneId] = {};
+            }
+            this.zonePolicies[zoneId].mine_priority = mineSlider;
+            this.zonePolicies[zoneId].dyson_priority = dysonSlider;
+            this.zonePolicies[zoneId].replicate_priority = replicateSlider;
+            this.zonePolicies[zoneId].construct_priority = constructSlider;
+            this.zonePolicies[zoneId].recycle_priority = recycleSlider;
+            this.zonePolicies[zoneId].recycle_probes_priority = recycleProbesSlider;
+            
+            policy = this.zonePolicies[zoneId];
+        }
+        
+        // Helper to sync a slider (horizontal - uses width)
+        const syncSlider = (sliderId, value) => {
+            const slider = document.getElementById(`${sliderId}-slider`);
+            if (slider) {
+                slider.value = value;
+                const fillEl = document.getElementById(`${sliderId}-bar-fill`);
+                if (fillEl) fillEl.style.width = `${value}%`;
+            }
+        };
         
         if (isDysonZone) {
-            // Dyson zone: Sync Dyson/Build slider
-            const dysonBuildSlider = document.getElementById('dyson-build-slider');
-            if (dysonBuildSlider) {
-                // Policy: dyson_allocation_slider (0 = all Build, 100 = all Dyson)
-                // Slider: 0 = top (Dyson label), 100 = bottom (Build label)
-                // So: slider value = 100 - policy value
-                const policyValue = policy.dyson_allocation_slider !== undefined ? policy.dyson_allocation_slider : 100;
-                const sliderValue = 100 - policyValue; // Invert: policy 100 (all Dyson) = slider 0 (top)
-                dysonBuildSlider.value = sliderValue;
-                
-                // Update visual fill/line
-                const fillEl = document.getElementById('dyson-build-bar-fill');
-                const lineEl = document.getElementById('dyson-build-bar-line');
-                if (fillEl) fillEl.style.height = `${sliderValue}%`;
-                if (lineEl) lineEl.style.bottom = `${sliderValue}%`;
-            }
-            
-            // Sync Structures/Replicate slider
-            const structuresReplicateSlider = document.getElementById('dyson-structures-replicate-slider');
-            if (structuresReplicateSlider) {
-                // Policy: replication_slider (0 = all structures, 100 = all replicate)
-                // Slider: 0 = top (Structures label), 100 = bottom (Replicate label)
-                // So: slider value = 100 - policy value
-                const policyValue = policy.replication_slider !== undefined ? policy.replication_slider : 100;
-                const sliderValue = 100 - policyValue; // Invert: policy 100 (all replicate) = slider 0 (top)
-                structuresReplicateSlider.value = sliderValue;
-                
-                // Update visual fill/line
-                const fillEl = document.getElementById('dyson-structures-replicate-bar-fill');
-                const lineEl = document.getElementById('dyson-structures-replicate-bar-line');
-                if (fillEl) fillEl.style.height = `${sliderValue}%`;
-                if (lineEl) lineEl.style.bottom = `${sliderValue}%`;
-            }
+            // Dyson zone: sync all 5 priority sliders
+            syncSlider('dyson', policy.dyson_priority || 0);
+            syncSlider('replicate', policy.replicate_priority || 0);
+            syncSlider('construct', policy.construct_priority || 0);
+            syncSlider('recycle', policy.recycle_priority || 0);
+            syncSlider('recycle_probes', policy.recycle_probes_priority || 0);
         } else {
-            // Regular zones: Sync Mine/Build slider
-            const harvestBuildSlider = document.getElementById('harvest-build-slider');
-            if (harvestBuildSlider) {
-                const policyValue = policy.mining_slider !== undefined ? policy.mining_slider : 50;
-                harvestBuildSlider.value = policyValue;
-                
-                const fillEl = document.getElementById('harvest-build-bar-fill');
-                const lineEl = document.getElementById('harvest-build-bar-line');
-                if (fillEl) fillEl.style.height = `${policyValue}%`;
-                if (lineEl) lineEl.style.bottom = `${policyValue}%`;
-            }
-            
-            // Sync Structures/Replicate slider
-            const structuresReplicateSlider = document.getElementById('structures-replicate-slider');
-            if (structuresReplicateSlider) {
-                const policyValue = policy.replication_slider !== undefined ? policy.replication_slider : 100;
-                const sliderValue = 100 - policyValue; // Invert for regular zones too
-                structuresReplicateSlider.value = sliderValue;
-                
-                const fillEl = document.getElementById('structures-replicate-bar-fill');
-                const lineEl = document.getElementById('structures-replicate-bar-line');
-                if (fillEl) fillEl.style.height = `${sliderValue}%`;
-                if (lineEl) lineEl.style.bottom = `${sliderValue}%`;
-            }
+            // Regular zones: sync all 5 priority sliders
+            syncSlider('mine', policy.mine_priority || 0);
+            syncSlider('replicate', policy.replicate_priority || 0);
+            syncSlider('construct', policy.construct_priority || 0);
+            syncSlider('recycle', policy.recycle_priority || 0);
+            syncSlider('recycle_probes', policy.recycle_probes_priority || 0);
         }
     }
 
-    // Clip slider value to extremes if within 5% of end
-    clipSliderValue(value) {
+    // Apply deadzone: if slider is in bottom 5% (0-5 on 0-100 scale), set to zero
+    applyDeadzone(value) {
         if (value <= 5) {
             return 0;
-        } else if (value >= 95) {
-            return 100;
         }
         return value;
     }
 
     setupSliderListeners(isDysonZone) {
+        // Define the slider IDs based on zone type
+        const sliderIds = isDysonZone 
+            ? ['dyson', 'replicate', 'construct', 'recycle', 'recycle_probes']
+            : ['mine', 'replicate', 'construct', 'recycle', 'recycle_probes'];
+        
         // Remove old event listeners by cloning and replacing elements
         const removeOldListeners = (elementId) => {
             const oldEl = document.getElementById(elementId);
@@ -273,223 +253,47 @@ class CommandPanel {
             return null;
         };
         
-        if (isDysonZone) {
-            // Dyson zone: First slider - Dyson Build vs Other
-            const dysonBuildSlider = removeOldListeners('dyson-build-slider') || 
-                document.getElementById('dyson-build-slider');
-            if (dysonBuildSlider) {
-                dysonBuildSlider.addEventListener('mousedown', () => { 
-                    this.isUserInteracting = true; 
-                });
-                dysonBuildSlider.addEventListener('mouseup', () => { 
-                    this.isUserInteracting = false; 
-                });
-                dysonBuildSlider.addEventListener('change', (e) => {
-                    this.isUserInteracting = false;
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                        const fillEl = document.getElementById('dyson-build-bar-fill');
-                        const lineEl = document.getElementById('dyson-build-bar-line');
-                        if (fillEl) fillEl.style.height = `${value}%`;
-                        if (lineEl) lineEl.style.bottom = `${value}%`;
-                    }
-                    // Slider: Labels "Dyson" at top, "Build" at bottom
-                    // Store as dyson_allocation_slider: 0-100 where 0 = all Build (bottom), 100 = all Dyson (top)
-                    // But slider visual: 0 at top (Dyson label), 100 at bottom (Build label)
-                    // So we invert: slider value 0 (top) = 100 Dyson allocation, slider value 100 (bottom) = 0 Dyson allocation
-                    const dysonAllocationValue = 100 - value; // Invert: top (0) = 100 Dyson, bottom (100) = 0 Dyson
-                    this.updateZonePolicy('dyson_allocation_slider', dysonAllocationValue);
-                });
-                dysonBuildSlider.addEventListener('input', (e) => {
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    // Update slider value if it was clipped
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                    }
-                    // Slider: Labels "Dyson" at top, "Build" at bottom
-                    // Store as dyson_allocation_slider: 0-100 where 0 = all Build (bottom), 100 = all Dyson (top)
-                    // But slider visual: 0 at top (Dyson label), 100 at bottom (Build label)
-                    // So we invert: slider value 0 (top) = 100 Dyson allocation, slider value 100 (bottom) = 0 Dyson allocation
-                    const dysonAllocationValue = 100 - value; // Invert: top (0) = 100 Dyson, bottom (100) = 0 Dyson
-                    const fillEl = document.getElementById('dyson-build-bar-fill');
-                    const lineEl = document.getElementById('dyson-build-bar-line');
-                    if (fillEl) fillEl.style.height = `${value}%`;
-                    if (lineEl) lineEl.style.bottom = `${value}%`;
-                    this.updateZonePolicy('dyson_allocation_slider', dysonAllocationValue);
-                });
-            }
+        // Set up listeners for each priority slider
+        for (const sliderId of sliderIds) {
+            const slider = removeOldListeners(`${sliderId}-slider`) || 
+                document.getElementById(`${sliderId}-slider`);
             
-            // Dyson zone: Second slider - Structures vs Replicate
-            const dysonStructuresReplicateSlider = removeOldListeners('dyson-structures-replicate-slider') || 
-                document.getElementById('dyson-structures-replicate-slider');
-            if (dysonStructuresReplicateSlider) {
-                dysonStructuresReplicateSlider.addEventListener('mousedown', () => { 
+            if (slider) {
+                slider.addEventListener('mousedown', () => { 
                     this.isUserInteracting = true; 
                 });
-                dysonStructuresReplicateSlider.addEventListener('mouseup', () => { 
+                slider.addEventListener('mouseup', () => { 
                     this.isUserInteracting = false; 
                 });
-                dysonStructuresReplicateSlider.addEventListener('change', (e) => {
-                    this.isUserInteracting = false;
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                        const replicationValue = 100 - value;
-                        const fillEl = document.getElementById('dyson-structures-replicate-bar-fill');
-                        const lineEl = document.getElementById('dyson-structures-replicate-bar-line');
-                        if (fillEl) fillEl.style.height = `${value}%`;
-                        if (lineEl) lineEl.style.bottom = `${value}%`;
-                        this.updateZonePolicy('replication_slider', replicationValue);
-                    }
-                });
-                dysonStructuresReplicateSlider.addEventListener('input', (e) => {
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    // Update slider value if it was clipped
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                    }
-                    // Slider: 0 = all replicate, 100 = all structures
-                    // Store as replication_slider: 0 = all structures, 100 = all replicate
-                    const replicationValue = 100 - value;
-                    const fillEl = document.getElementById('dyson-structures-replicate-bar-fill');
-                    const lineEl = document.getElementById('dyson-structures-replicate-bar-line');
-                    if (fillEl) fillEl.style.height = `${value}%`;
-                    if (lineEl) lineEl.style.bottom = `${value}%`;
-                    this.updateZonePolicy('replication_slider', replicationValue);
-                });
-            }
-            
-            // Dyson zone: Third slider - Compute Power
-            const computePowerSlider = removeOldListeners('compute-power-slider') || 
-                document.getElementById('compute-power-slider');
-            if (computePowerSlider) {
-                computePowerSlider.addEventListener('mousedown', () => { 
+                slider.addEventListener('touchstart', () => { 
                     this.isUserInteracting = true; 
                 });
-                computePowerSlider.addEventListener('mouseup', () => { 
+                slider.addEventListener('touchend', () => { 
                     this.isUserInteracting = false; 
                 });
-                computePowerSlider.addEventListener('change', (e) => {
+                
+                const handleSliderUpdate = (e) => {
+                    let value = parseInt(e.target.value);
+                    // Apply deadzone: if in bottom 5%, set to 0
+                    value = this.applyDeadzone(value);
+                    
+                    // Update slider value if deadzone was applied
+                    if (value !== parseInt(e.target.value)) {
+                        e.target.value = value;
+                    }
+                    
+                    // Update visual fill (horizontal - uses width)
+                    const fillEl = document.getElementById(`${sliderId}-bar-fill`);
+                    if (fillEl) fillEl.style.width = `${value}%`;
+                    
+                    // Store in zonePolicies and trigger allocation update
+                    this.updateZonePolicy(`${sliderId}_priority`, value);
+                };
+                
+                slider.addEventListener('input', handleSliderUpdate);
+                slider.addEventListener('change', (e) => {
                     this.isUserInteracting = false;
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                        const fillEl = document.getElementById('compute-power-bar-fill');
-                        const lineEl = document.getElementById('compute-power-bar-line');
-                        if (fillEl) fillEl.style.height = `${value}%`;
-                        if (lineEl) lineEl.style.bottom = `${value}%`;
-                        this.updateDysonPowerAllocation(value);
-                    }
-                });
-                computePowerSlider.addEventListener('input', (e) => {
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    // Update slider value if it was clipped
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                    }
-                    const fillEl = document.getElementById('compute-power-bar-fill');
-                    const lineEl = document.getElementById('compute-power-bar-line');
-                    if (fillEl) fillEl.style.height = `${value}%`;
-                    if (lineEl) lineEl.style.bottom = `${value}%`;
-                    this.updateDysonPowerAllocation(value);
-                });
-            }
-        } else {
-            // Regular zones: Mine vs Build slider
-            const harvestBuildSlider = removeOldListeners('harvest-build-slider') || 
-                document.getElementById('harvest-build-slider');
-            if (harvestBuildSlider) {
-                harvestBuildSlider.addEventListener('mousedown', () => { 
-                    this.isUserInteracting = true; 
-                });
-                harvestBuildSlider.addEventListener('mouseup', () => { 
-                    this.isUserInteracting = false; 
-                });
-                harvestBuildSlider.addEventListener('change', (e) => {
-                    this.isUserInteracting = false;
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                        const fillEl = document.getElementById('harvest-build-bar-fill');
-                        const lineEl = document.getElementById('harvest-build-bar-line');
-                        if (fillEl) fillEl.style.height = `${value}%`;
-                        if (lineEl) lineEl.style.bottom = `${value}%`;
-                        this.updateZonePolicy('mining_slider', value);
-                    }
-                });
-                harvestBuildSlider.addEventListener('input', (e) => {
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    // Update slider value if it was clipped
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                    }
-                    // mining_slider: 0 = all build, 100 = all mine (harvest)
-                    const fillEl = document.getElementById('harvest-build-bar-fill');
-                    const lineEl = document.getElementById('harvest-build-bar-line');
-                    if (fillEl) fillEl.style.height = `${value}%`;
-                    if (lineEl) lineEl.style.bottom = `${value}%`;
-                    this.updateZonePolicy('mining_slider', value);
-                });
-            }
-            
-            // Regular zones: Structures vs Replicate slider
-            const structuresReplicateSlider = removeOldListeners('structures-replicate-slider') || 
-                document.getElementById('structures-replicate-slider');
-            if (structuresReplicateSlider) {
-                structuresReplicateSlider.addEventListener('mousedown', () => { 
-                    this.isUserInteracting = true; 
-                });
-                structuresReplicateSlider.addEventListener('mouseup', () => { 
-                    this.isUserInteracting = false; 
-                });
-                structuresReplicateSlider.addEventListener('change', (e) => {
-                    this.isUserInteracting = false;
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                        const replicationValue = 100 - value;
-                        const fillEl = document.getElementById('structures-replicate-bar-fill');
-                        const lineEl = document.getElementById('structures-replicate-bar-line');
-                        if (fillEl) fillEl.style.height = `${value}%`;
-                        if (lineEl) lineEl.style.bottom = `${value}%`;
-                        this.updateZonePolicy('replication_slider', replicationValue);
-                    }
-                });
-                structuresReplicateSlider.addEventListener('input', (e) => {
-                    let value = parseInt(e.target.value);
-                    // Clip to extremes if within 5% of end
-                    value = this.clipSliderValue(value);
-                    // Update slider value if it was clipped
-                    if (value !== parseInt(e.target.value)) {
-                        e.target.value = value;
-                    }
-                    // Slider: 0 = all structures, 100 = all replicate
-                    // Store as replication_slider: 0 = all construct, 100 = all replicate
-                    const replicationValue = 100 - value;
-                    const fillEl = document.getElementById('structures-replicate-bar-fill');
-                    const lineEl = document.getElementById('structures-replicate-bar-line');
-                    if (fillEl) fillEl.style.height = `${value}%`;
-                    if (lineEl) lineEl.style.bottom = `${value}%`;
-                    this.updateZonePolicy('replication_slider', replicationValue);
+                    handleSliderUpdate(e);
                 });
             }
         }
@@ -502,27 +306,44 @@ class CommandPanel {
         const probeAllocationsByZone = this.gameState.probe_allocations_by_zone || {};
         const zoneAllocations = probeAllocationsByZone[zoneId] || {};
         
+        // Get actual probe count for this zone
+        const probesByZone = this.gameState.probes_by_zone || {};
+        const zoneProbes = probesByZone[zoneId] || {};
+        const totalProbes = zoneProbes['probe'] || 0;
+        
+        // Format function: show float with one decimal, or scientific notation when > 100
+        const formatProbeCount = (count) => {
+            if (count === 0) return '0.0';
+            // Use scientific notation for values > 100
+            if (count > 100) {
+                return count.toExponential(2);
+            }
+            // Show one decimal place for values <= 100
+            return count.toFixed(1);
+        };
+        
         let html = '<div class="probe-summary-label" style="margin-top: 12px; margin-bottom: 8px;">Allocations</div>';
         html += '<div class="probe-summary-breakdown">';
         
-        // Calculate totals for each category
-        let harvestCount = 0;
-        let constructCount = 0;
-        let replicateCount = 0;
-        let dysonCount = 0;
+        // Get allocation percentages (0-1 values) - these are now simple numbers
+        const harvestPercent = typeof zoneAllocations.harvest === 'number' ? zoneAllocations.harvest : 0;
+        const constructPercent = typeof zoneAllocations.construct === 'number' ? zoneAllocations.construct : 0;
+        const replicatePercent = typeof zoneAllocations.replicate === 'number' ? zoneAllocations.replicate : 0;
+        const dysonPercent = typeof zoneAllocations.dyson === 'number' ? zoneAllocations.dyson : 0;
+        const recyclePercent = typeof zoneAllocations.recycle === 'number' ? zoneAllocations.recycle : 0;
+        const recycleProbesPercent = typeof zoneAllocations.recycle_probes === 'number' ? zoneAllocations.recycle_probes : 0;
         
-        if (zoneAllocations.harvest) {
-            harvestCount = Object.values(zoneAllocations.harvest).reduce((a, b) => a + b, 0);
-        }
-        if (zoneAllocations.construct) {
-            constructCount = Object.values(zoneAllocations.construct).reduce((a, b) => a + b, 0);
-        }
-        if (zoneAllocations.replicate) {
-            replicateCount = Object.values(zoneAllocations.replicate).reduce((a, b) => a + b, 0);
-        }
-        if (zoneAllocations.dyson) {
-            dysonCount = Object.values(zoneAllocations.dyson).reduce((a, b) => a + b, 0);
-        }
+        // Calculate actual probe counts (probe count * allocation percentage)
+        const harvestCount = totalProbes * harvestPercent;
+        const constructCount = totalProbes * constructPercent;
+        const replicateCount = totalProbes * replicatePercent;
+        const dysonCount = totalProbes * dysonPercent;
+        const recycleCount = totalProbes * recyclePercent;
+        const recycleProbesCount = totalProbes * recycleProbesPercent;
+        
+        // Calculate idle probes (unassigned to any activity)
+        const assignedCount = harvestCount + constructCount + replicateCount + dysonCount + recycleCount + recycleProbesCount;
+        const idleCount = Math.max(0, totalProbes - assignedCount);
         
         // Show allocations based on zone type
         const zones = window.orbitalZoneSelector?.orbitalZones || [];
@@ -531,25 +352,45 @@ class CommandPanel {
         
         if (isDysonZone) {
             if (dysonCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Dyson:</span><span class="probe-summary-breakdown-value">${Math.floor(dysonCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Dyson:</span><span class="probe-summary-breakdown-value">${formatProbeCount(dysonCount)}</span></div>`;
+            }
+            if (constructCount > 0) {
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Construct:</span><span class="probe-summary-breakdown-value">${formatProbeCount(constructCount)}</span></div>`;
             }
             if (replicateCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Replicate:</span><span class="probe-summary-breakdown-value">${Math.floor(replicateCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Replicate:</span><span class="probe-summary-breakdown-value">${formatProbeCount(replicateCount)}</span></div>`;
+            }
+            if (recycleCount > 0) {
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleCount)}</span></div>`;
+            }
+            if (recycleProbesCount > 0) {
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle Probes:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleProbesCount)}</span></div>`;
             }
         } else {
             if (harvestCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Harvest:</span><span class="probe-summary-breakdown-value">${Math.floor(harvestCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Mine:</span><span class="probe-summary-breakdown-value">${formatProbeCount(harvestCount)}</span></div>`;
             }
             if (constructCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Construct:</span><span class="probe-summary-breakdown-value">${Math.floor(constructCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Construct:</span><span class="probe-summary-breakdown-value">${formatProbeCount(constructCount)}</span></div>`;
             }
             if (replicateCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Replicate:</span><span class="probe-summary-breakdown-value">${Math.floor(replicateCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Replicate:</span><span class="probe-summary-breakdown-value">${formatProbeCount(replicateCount)}</span></div>`;
+            }
+            if (recycleCount > 0) {
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleCount)}</span></div>`;
+            }
+            if (recycleProbesCount > 0) {
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle Probes:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleProbesCount)}</span></div>`;
             }
         }
         
-        if (harvestCount === 0 && constructCount === 0 && replicateCount === 0 && dysonCount === 0) {
-            html += '<div class="probe-summary-breakdown-item">None</div>';
+        // Show idle probes if any
+        if (idleCount > 0.001) {
+            html += `<div class="probe-summary-breakdown-item" style="color: rgba(255,255,255,0.5);"><span class="probe-summary-breakdown-label">Idle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(idleCount)}</span></div>`;
+        }
+        
+        if (totalProbes === 0) {
+            html += '<div class="probe-summary-breakdown-item">No probes in zone</div>';
         }
         
         html += '</div>';
@@ -746,25 +587,137 @@ class CommandPanel {
     async updateZonePolicy(policyKey, value) {
         if (!this.selectedZone) return;
         try {
-            if (typeof window.gameEngine !== 'undefined' && window.gameEngine) {
-                const gameEngine = window.gameEngine;
-                // Try engine.setZonePolicy first (GameEngine instance)
-                if (gameEngine.engine && typeof gameEngine.engine.setZonePolicy === 'function') {
-                    await gameEngine.engine.setZonePolicy(this.selectedZone, policyKey, value);
-                } else if (typeof gameEngine.setZonePolicy === 'function') {
-                    await gameEngine.setZonePolicy(this.selectedZone, policyKey, value);
-                } else {
-                    // Fallback: update directly in game state
-                    if (!gameEngine.engine) gameEngine.engine = {};
-                    if (!gameEngine.engine.zonePolicies) gameEngine.engine.zonePolicies = {};
-                    if (!gameEngine.engine.zonePolicies[this.selectedZone]) {
-                        gameEngine.engine.zonePolicies[this.selectedZone] = {};
-                    }
-                    gameEngine.engine.zonePolicies[this.selectedZone][policyKey] = value;
-                }
+            // Store policy value locally for slider sync
+            if (!this.zonePolicies) {
+                this.zonePolicies = {};
             }
+            if (!this.zonePolicies[this.selectedZone]) {
+                this.zonePolicies[this.selectedZone] = {};
+            }
+            this.zonePolicies[this.selectedZone][policyKey] = value;
+            
+            // Convert slider values to probe allocations and send to worker
+            await this.updateProbeAllocationsFromSliders();
         } catch (error) {
             console.error('Failed to update zone policy:', error);
+        }
+    }
+    
+    /**
+     * Convert slider priority values to probe allocations using formula:
+     * p = v^2 / (v1^2 + v2^2 + v3^2 + v4^2)
+     * where v1, v2, v3, v4 are the slider values (0-1)
+     */
+    async updateProbeAllocationsFromSliders() {
+        if (!this.selectedZone || typeof window.gameEngine === 'undefined' || !window.gameEngine) {
+            return;
+        }
+        
+        try {
+            // Get zone info
+            const zones = window.orbitalZoneSelector?.orbitalZones || [];
+            const zone = zones.find(z => z.id === this.selectedZone);
+            const isDysonZone = zone && zone.is_dyson_zone;
+            
+            // Read current slider values directly from DOM (most up-to-date)
+            // Slider values are 0-100, convert to 0-1 for calculation
+            let v1, v2, v3, v4, v5;
+            
+            if (isDysonZone) {
+                // Dyson zone: v1 = dyson priority (replaces mine)
+                const dysonSlider = document.getElementById('dyson-slider');
+                const replicateSlider = document.getElementById('replicate-slider');
+                const constructSlider = document.getElementById('construct-slider');
+                const recycleSlider = document.getElementById('recycle-slider');
+                const recycleProbesSlider = document.getElementById('recycle_probes-slider');
+                
+                v1 = (parseInt(dysonSlider?.value) || 0) / 100;
+                v2 = (parseInt(replicateSlider?.value) || 0) / 100;
+                v3 = (parseInt(constructSlider?.value) || 0) / 100;
+                v4 = (parseInt(recycleSlider?.value) || 0) / 100;
+                v5 = (parseInt(recycleProbesSlider?.value) || 0) / 100;
+            } else {
+                // Regular zone: v1 = mine priority
+                const mineSlider = document.getElementById('mine-slider');
+                const replicateSlider = document.getElementById('replicate-slider');
+                const constructSlider = document.getElementById('construct-slider');
+                const recycleSlider = document.getElementById('recycle-slider');
+                const recycleProbesSlider = document.getElementById('recycle_probes-slider');
+                
+                v1 = (parseInt(mineSlider?.value) || 0) / 100;
+                v2 = (parseInt(replicateSlider?.value) || 0) / 100;
+                v3 = (parseInt(constructSlider?.value) || 0) / 100;
+                v4 = (parseInt(recycleSlider?.value) || 0) / 100;
+                v5 = (parseInt(recycleProbesSlider?.value) || 0) / 100;
+            }
+            
+            // Apply deadzone: values <= 0.05 become 0
+            if (v1 <= 0.05) v1 = 0;
+            if (v2 <= 0.05) v2 = 0;
+            if (v3 <= 0.05) v3 = 0;
+            if (v4 <= 0.05) v4 = 0;
+            if (v5 <= 0.05) v5 = 0;
+            
+            // Update zonePolicies cache
+            if (!this.zonePolicies[this.selectedZone]) {
+                this.zonePolicies[this.selectedZone] = {};
+            }
+            if (isDysonZone) {
+                this.zonePolicies[this.selectedZone].dyson_priority = v1 * 100;
+            } else {
+                this.zonePolicies[this.selectedZone].mine_priority = v1 * 100;
+            }
+            this.zonePolicies[this.selectedZone].replicate_priority = v2 * 100;
+            this.zonePolicies[this.selectedZone].construct_priority = v3 * 100;
+            this.zonePolicies[this.selectedZone].recycle_priority = v4 * 100;
+            this.zonePolicies[this.selectedZone].recycle_probes_priority = v5 * 100;
+            
+            // Calculate allocations using formula: p = v^2 / (v1 + v2 + v3 + v4 + v5)
+            const v1Sq = v1 * v1;
+            const v2Sq = v2 * v2;
+            const v3Sq = v3 * v3;
+            const v4Sq = v4 * v4;
+            const v5Sq = v5 * v5;
+            const sum = v1 + v2 + v3 + v4 + v5;
+            
+            let allocations = {};
+            
+            if (sum > 0) {
+                if (isDysonZone) {
+                    allocations = {
+                        dyson: v1Sq / sum,
+                        replicate: v2Sq / sum,
+                        construct: v3Sq / sum,
+                        recycle: v4Sq / sum,
+                        recycle_probes: v5Sq / sum,
+                        harvest: 0
+                    };
+                } else {
+                    allocations = {
+                        harvest: v1Sq / sum,
+                        replicate: v2Sq / sum,
+                        construct: v3Sq / sum,
+                        recycle: v4Sq / sum,
+                        recycle_probes: v5Sq / sum,
+                        dyson: 0
+                    };
+                }
+            } else {
+                // All sliders at 0, set default allocation
+                if (isDysonZone) {
+                    allocations = { dyson: 1, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, harvest: 0 };
+                } else {
+                    allocations = { harvest: 1, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, dyson: 0 };
+                }
+            }
+            
+            // Send to worker via performAction
+            await window.gameEngine.performAction('allocate_probes', {
+                zone_id: this.selectedZone,
+                allocations: allocations
+            });
+        } catch (error) {
+            console.error('Failed to update probe allocations:', error);
         }
     }
 
@@ -795,18 +748,16 @@ class CommandPanel {
             }
         }
         
-        // Hash allocations efficiently (sum values instead of stringifying)
+        // Hash allocations efficiently - single probe type: direct access
         const allocationsByZone = gameState.probe_allocations_by_zone || {};
         for (const [zoneId, allocations] of Object.entries(allocationsByZone)) {
             hash = ((hash << 5) - hash) + zoneId.charCodeAt(0);
             if (allocations && typeof allocations === 'object') {
-                for (const value of Object.values(allocations)) {
-                    if (typeof value === 'object' && value !== null) {
-                        for (const count of Object.values(value)) {
-                            hash = ((hash << 5) - hash) + (count || 0);
-                        }
-                    }
-                }
+                // Single probe type: directly access 'probe' key instead of iterating
+                hash = ((hash << 5) - hash) + (allocations.dyson?.probe || 0);
+                hash = ((hash << 5) - hash) + (allocations.replicate?.probe || 0);
+                hash = ((hash << 5) - hash) + (allocations.harvest?.probe || 0);
+                hash = ((hash << 5) - hash) + (allocations.construct?.probe || 0);
             }
         }
         
@@ -876,21 +827,31 @@ class CommandPanel {
                 this.lastRenderedZone = this.selectedZone;
             } else {
                 // Zone hasn't changed, just update slider values and allocations
-                // Try multiple ways to get zones
-                let zones = [];
-                if (window.orbitalZoneSelector && window.orbitalZoneSelector.orbitalZones) {
-                    zones = window.orbitalZoneSelector.orbitalZones;
-                } else if (window.app && window.app.orbitalZoneSelector && window.app.orbitalZoneSelector.orbitalZones) {
-                    zones = window.app.orbitalZoneSelector.orbitalZones;
+                // Don't sync sliders if user is actively interacting with them
+                // This prevents overwriting user's slider settings
+                if (!this.isUserInteracting) {
+                    // Try multiple ways to get zones
+                    let zones = [];
+                    if (window.orbitalZoneSelector && window.orbitalZoneSelector.orbitalZones) {
+                        zones = window.orbitalZoneSelector.orbitalZones;
+                    } else if (window.app && window.app.orbitalZoneSelector && window.app.orbitalZoneSelector.orbitalZones) {
+                        zones = window.app.orbitalZoneSelector.orbitalZones;
+                    }
+                    
+                    const zone = zones.find(z => z.id === this.selectedZone);
+                    if (zone) {
+                        const isDysonZone = zone.is_dyson_zone;
+                        // Only sync if we don't have cached values (preserve user settings)
+                        const hasCachedValues = this.zonePolicies[this.selectedZone] && 
+                            Object.keys(this.zonePolicies[this.selectedZone]).length > 0;
+                        if (!hasCachedValues) {
+                            this.syncSlidersWithPolicy(this.selectedZone, isDysonZone);
+                        }
+                    }
                 }
-                
-                const zone = zones.find(z => z.id === this.selectedZone);
-                if (zone) {
-                    const isDysonZone = zone.is_dyson_zone;
-                    this.syncSlidersWithPolicy(this.selectedZone, isDysonZone);
-                    this.renderAllocations(this.selectedZone);
-                    this.renderBuildings(this.selectedZone);
-                }
+                // Always update allocations and buildings (these reflect game state)
+                this.renderAllocations(this.selectedZone);
+                this.renderBuildings(this.selectedZone);
             }
         } else {
             if (this.lastRenderedZone !== null) {
@@ -923,93 +884,10 @@ class CommandPanel {
         
         if (!this.selectedZone) return;
         
-        const zones = window.orbitalZoneSelector?.orbitalZones || [];
-        const zone = zones.find(z => z.id === this.selectedZone);
-        const isDysonZone = zone && zone.is_dyson_zone;
-        const zonePolicies = gameState.zone_policies || {};
-        const zonePolicy = zonePolicies[this.selectedZone] || {};
+        // Slider updates are now handled via syncSlidersWithPolicy which is called above
+        // The new priority-based sliders sync from probe_allocations_by_zone
         
-        if (isDysonZone) {
-            // Dyson zone: Update dyson allocation slider
-            // dyson_build_slider: 0 = all Build, 100 = all Dyson
-            // Slider visual: 0 at top (Dyson label), 100 at bottom (Build label)
-            // But stored value: 0 = all Build, 100 = all Dyson (so slider 100 = stored 100 = all Dyson)
-            const dysonBuildSlider = document.getElementById('dyson-build-slider');
-            const dysonBuildValue = zonePolicy.dyson_build_slider !== undefined ? zonePolicy.dyson_build_slider : 90;
-            // Slider value matches stored value directly (no inversion needed)
-            const sliderVisualValue = dysonBuildValue;
-            if (dysonBuildSlider) {
-                const currentValue = parseInt(dysonBuildSlider.value);
-                if (currentValue != sliderVisualValue) {
-                    dysonBuildSlider.value = sliderVisualValue;
-                    const fillEl = document.getElementById('dyson-build-bar-fill');
-                    const lineEl = document.getElementById('dyson-build-bar-line');
-                    if (fillEl) fillEl.style.height = `${sliderVisualValue}%`;
-                    if (lineEl) lineEl.style.bottom = `${sliderVisualValue}%`;
-                }
-            }
-            
-            // Dyson zone: Update structures vs replicate slider
-            const dysonStructuresReplicateSlider = document.getElementById('dyson-structures-replicate-slider');
-            const replicationValue = zonePolicy.replication_slider !== undefined ? zonePolicy.replication_slider : 100;
-            const structuresValue = 100 - replicationValue; // Display structures %
-            if (dysonStructuresReplicateSlider) {
-                const currentValue = parseInt(dysonStructuresReplicateSlider.value);
-                if (currentValue != structuresValue) {
-                    dysonStructuresReplicateSlider.value = structuresValue;
-                    const fillEl = document.getElementById('dyson-structures-replicate-bar-fill');
-                    const lineEl = document.getElementById('dyson-structures-replicate-bar-line');
-                    if (fillEl) fillEl.style.height = `${structuresValue}%`;
-                    if (lineEl) lineEl.style.bottom = `${structuresValue}%`;
-                }
-            }
-            
-            // Dyson zone: Update compute power slider
-            const computePowerSlider = document.getElementById('compute-power-slider');
-            const computeValue = gameState.dyson_power_allocation !== undefined ? gameState.dyson_power_allocation : 50;
-            if (computePowerSlider) {
-                const currentValue = parseInt(computePowerSlider.value);
-                if (currentValue != computeValue) {
-                    computePowerSlider.value = computeValue;
-                    const fillEl = document.getElementById('compute-power-bar-fill');
-                    const lineEl = document.getElementById('compute-power-bar-line');
-                    if (fillEl) fillEl.style.height = `${computeValue}%`;
-                    if (lineEl) lineEl.style.bottom = `${computeValue}%`;
-                }
-            }
-        } else {
-            // Regular zones: Update mine vs build slider
-            const harvestBuildSlider = document.getElementById('harvest-build-slider');
-            // mining_slider: 0 = all build (top), 100 = all mine (bottom)
-            const miningValue = zonePolicy.mining_slider !== undefined ? zonePolicy.mining_slider : 50;
-            if (harvestBuildSlider) {
-                const currentValue = parseInt(harvestBuildSlider.value);
-                if (currentValue != miningValue) {
-                    harvestBuildSlider.value = miningValue;
-                    const fillEl = document.getElementById('harvest-build-bar-fill');
-                    const lineEl = document.getElementById('harvest-build-bar-line');
-                    if (fillEl) fillEl.style.height = `${miningValue}%`;
-                    if (lineEl) lineEl.style.bottom = `${miningValue}%`;
-                }
-            }
-            
-            // Regular zones: Update structures vs replicate slider
-            const structuresReplicateSlider = document.getElementById('structures-replicate-slider');
-            const replicationValue = zonePolicy.replication_slider !== undefined ? zonePolicy.replication_slider : 100;
-            const structuresValue = 100 - replicationValue; // Display structures %
-            if (structuresReplicateSlider) {
-                const currentValue = parseInt(structuresReplicateSlider.value);
-                if (currentValue != structuresValue) {
-                    structuresReplicateSlider.value = structuresValue;
-                    const fillEl = document.getElementById('structures-replicate-bar-fill');
-                    const lineEl = document.getElementById('structures-replicate-bar-line');
-                    if (fillEl) fillEl.style.height = `${structuresValue}%`;
-                    if (lineEl) lineEl.style.bottom = `${structuresValue}%`;
-                }
-            }
-        }
-        
-        // Update allocations
+        // Update allocations display
         if (this.selectedZone) {
             this.renderAllocations(this.selectedZone);
         }

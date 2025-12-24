@@ -117,7 +117,7 @@ class CompositeSkillsCalculator {
     }
     
     /**
-     * Calculate probe recycle speed (kg/day per probe)
+     * Calculate probe recycle speed (kg/day per probe) - for recycling slag
      * @param {Object} skills - Current skills
      * @returns {number} kg/day recycling rate per probe
      */
@@ -125,6 +125,21 @@ class CompositeSkillsCalculator {
         const baseRecycleRate = 50; // kg/day per probe
         
         return baseRecycleRate * 
+               skills.manipulation * 
+               skills.materials * 
+               skills.recycling;
+    }
+    
+    /**
+     * Calculate probe self-recycle speed (kg/day per probe) - for recycling probes
+     * Probes allocated to self-recycling dismantle probes at this rate
+     * @param {Object} skills - Current skills
+     * @returns {number} kg/day self-recycling rate per probe
+     */
+    calculateProbeSelfRecycleSpeed(skills) {
+        const baseSelfRecycleRate = 5; // 5 kg/day per probe (base rate)
+        
+        return baseSelfRecycleRate * 
                skills.manipulation * 
                skills.materials * 
                skills.recycling;

@@ -37,6 +37,9 @@ class DysonSystem {
         
         if (totalProbes === 0) {
             // Update rates to 0
+            if (!newState.rates) {
+                newState.rates = {};
+            }
             newState.rates.dyson_construction = 0;
             return newState;
         }
@@ -45,19 +48,38 @@ class DysonSystem {
         const dysonAllocation = allocations.dyson || 0;
         
         // Calculate building rate
+        // Uses pre-calculated upgrade factors from state
         const dysonProbes = totalProbes * dysonAllocation;
-        const buildingRate = this.productionCalculator.calculateBuildingRate(dysonProbes, skills);
+        const buildingRate = this.productionCalculator.calculateBuildingRate(dysonProbes, newState);
         
-        // Apply Dyson construction skill
-        const effectiveBuildingRate = buildingRate * skills.dyson_construction;
+        // Apply Dyson construction upgrade factor (uses ALPHA_DYSON_FACTOR)
+        const dysonUpgradeFactor = newState.upgrade_factors?.dyson?.construction?.performance || 1.0;
+        const effectiveBuildingRate = buildingRate * dysonUpgradeFactor;
         
         // Apply energy throttle
         const throttledRate = effectiveBuildingRate * energyThrottle;
         
+        // Get metal from Dyson zone's stored_metal (must be transferred there via mass drivers)
+        const zones = newState.zones || {};
+        if (!zones[dysonZoneId]) {
+            zones[dysonZoneId] = { 
+                stored_metal: 0, 
+                mass_remaining: 0, 
+                probe_mass: 0, 
+                structure_mass: 0, 
+                slag_mass: 0 
+            };
+        }
+        const dysonZone = zones[dysonZoneId];
+        const metalAvailable = dysonZone.stored_metal || 0;
+        
         // Consume metal (2:1 ratio)
         const metalNeeded = throttledRate * this.METAL_TO_DYSON_RATIO * deltaTime;
-        const metalAvailable = newState.metal || 0;
         const actualMetalConsumed = Math.min(metalNeeded, metalAvailable);
+        
+        // Consume metal from Dyson zone
+        dysonZone.stored_metal = Math.max(0, metalAvailable - actualMetalConsumed);
+        newState.zones = zones;
         
         // Convert metal to Dyson mass
         const dysonMassAdded = actualMetalConsumed / this.METAL_TO_DYSON_RATIO;
@@ -70,10 +92,10 @@ class DysonSystem {
         dysonSphere.mass = newMass;
         dysonSphere.progress = Math.min(1.0, newMass / targetMass);
         
-        // Update metal
-        newState.metal = metalAvailable - actualMetalConsumed;
-        
         // Update rates
+        if (!newState.rates) {
+            newState.rates = {};
+        }
         newState.rates.dyson_construction = throttledRate;
         
         newState.dyson_sphere = dysonSphere;
@@ -91,8 +113,12 @@ class DysonSystem {
         const dysonSphere = state.dyson_sphere || {};
         const mass = dysonSphere.mass || 0;
         
+        // Get Dyson energy upgrade factor (uses ALPHA_DYSON_FACTOR)
+        const dysonEnergyFactor = state.upgrade_factors?.dyson?.energy?.performance || 
+                                  (skills.energy_collection || skills.solar_pv || 1.0);
+        
         // Total power from Dyson sphere
-        const totalPower = mass * this.DYSON_POWER_PER_KG * skills.energy_collection;
+        const totalPower = mass * this.DYSON_POWER_PER_KG * dysonEnergyFactor;
         
         // Split between economy (energy) and compute (intelligence)
         const economyPower = totalPower * (1 - powerAllocation);

@@ -60,51 +60,23 @@ class TransferPanel {
     render() {
         if (!this.container) return;
 
+        // Filter to only show active transfers (active or in-progress)
+        const activeTransfers = this.transferHistory.filter(t => 
+            t.status === 'active' || t.status === 'in-progress' || t.status === 'paused'
+        );
+
         let html = '<div class="transfer-panel-content">';
-        html += '<div class="transfer-panel-header">';
-        html += '<h3>Transfer History</h3>';
+        html += '<div class="transfer-panel-header" style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">';
+        html += '<div style="font-size: 11px; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Active Transfers</div>';
         html += '</div>';
 
-        if (this.transferHistory.length === 0) {
-            html += '<div class="transfer-panel-empty">No transfers yet. Create transfers by selecting two zones.</div>';
+        if (activeTransfers.length === 0) {
+            html += '<div class="transfer-panel-empty" style="font-size: 10px; color: rgba(255, 255, 255, 0.5); padding: 20px; text-align: center;">No active transfers. Create transfers by selecting two zones.</div>';
         } else {
             html += '<div class="transfer-list">';
-            
-            // Show active continuous transfers first
-            const activeTransfers = this.transferHistory.filter(t => t.status === 'active');
-            const completedTransfers = this.transferHistory.filter(t => t.status === 'completed');
-            const inProgressTransfers = this.transferHistory.filter(t => t.status === 'in-progress');
-            
-            // Active continuous transfers
-            if (activeTransfers.length > 0) {
-                html += '<div class="transfer-section">';
-                html += '<div class="transfer-section-title">Active Transfers</div>';
-                activeTransfers.forEach(transfer => {
-                    html += this.renderTransferItem(transfer);
-                });
-                html += '</div>';
-            }
-            
-            // In-progress one-time transfers
-            if (inProgressTransfers.length > 0) {
-                html += '<div class="transfer-section">';
-                html += '<div class="transfer-section-title">In Progress</div>';
-                inProgressTransfers.forEach(transfer => {
-                    html += this.renderTransferItem(transfer);
-                });
-                html += '</div>';
-            }
-            
-            // Completed transfers (show last 10)
-            if (completedTransfers.length > 0) {
-                html += '<div class="transfer-section">';
-                html += '<div class="transfer-section-title">Completed</div>';
-                completedTransfers.slice(-10).reverse().forEach(transfer => {
-                    html += this.renderTransferItem(transfer);
-                });
-                html += '</div>';
-            }
-            
+            activeTransfers.forEach(transfer => {
+                html += this.renderTransferItem(transfer);
+            });
             html += '</div>';
         }
 
@@ -131,9 +103,15 @@ class TransferPanel {
         html += `<div class="transfer-status-badge ${statusClass}">${transfer.status}</div>`;
         html += `</div>`;
         
+        const resourceType = transfer.resource_type || 'probe';
+        
         if (transfer.type === 'one-time') {
             html += `<div class="transfer-item-details">`;
-            html += `<div class="transfer-detail">Count: ${this.formatNumber(transfer.count)} probes</div>`;
+            if (resourceType === 'metal') {
+                html += `<div class="transfer-detail">Mass: ${this.formatNumber(transfer.metal_kg || 0)} kg metal</div>`;
+            } else {
+                html += `<div class="transfer-detail">Count: ${this.formatNumber(transfer.count || 0)} probes</div>`;
+            }
             if (transfer.status === 'in-progress') {
                 html += `<div class="transfer-detail">Status: Transferring...</div>`;
             } else if (transfer.status === 'completed') {
@@ -144,10 +122,15 @@ class TransferPanel {
             html += `</div>`;
         } else {
             // Continuous transfer
-            const ratePerDay = transfer.rate || 0;
-            const ratePct = transfer.ratePercentage !== undefined ? transfer.ratePercentage : (transfer.rate || 0);
             html += `<div class="transfer-item-details">`;
-            html += `<div class="transfer-detail">Rate: ${ratePerDay.toFixed(2)} probes/day (${ratePct.toFixed(1)}% of current probes/day)</div>`;
+            if (resourceType === 'metal') {
+                const rateKgPerDay = transfer.metal_rate_kg_per_day || transfer.rate || 0;
+                html += `<div class="transfer-detail">Rate: ${this.formatNumber(rateKgPerDay)} kg/day</div>`;
+            } else {
+                const ratePerDay = transfer.rate || 0;
+                const ratePct = transfer.ratePercentage !== undefined ? transfer.ratePercentage : (transfer.rate || 0);
+                html += `<div class="transfer-detail">Rate: ${ratePerDay.toFixed(2)} probes/day (${ratePct.toFixed(1)}% of production)</div>`;
+            }
             html += `</div>`;
             
             if (transfer.status === 'active') {
@@ -296,11 +279,19 @@ class TransferPanel {
         const activeTransfers = gameState.active_transfers || [];
         let hash = 0;
         for (const transfer of activeTransfers) {
-            hash = ((hash << 5) - hash) + (transfer.id || 0);
-            hash = ((hash << 5) - hash) + (transfer.count || 0);
-            hash = ((hash << 5) - hash) + (transfer.rate || 0);
+            // Properly hash string IDs by converting to numeric hash
+            const idHash = typeof transfer.id === 'string' ? 
+                transfer.id.split('').reduce((h, c) => ((h << 5) - h) + c.charCodeAt(0), 0) :
+                (transfer.id || 0);
+            hash = ((hash << 5) - hash) + idHash;
+            hash = ((hash << 5) - hash) + (transfer.probe_count || 0);
+            hash = ((hash << 5) - hash) + (transfer.rate_percentage || 0);
+            hash = ((hash << 5) - hash) + (transfer.metal_rate_kg_per_day || 0);
+            hash = ((hash << 5) - hash) + (transfer.status === 'completed' ? 1 : 0);
+            hash = ((hash << 5) - hash) + (transfer.paused ? 1 : 0);
+            hash = ((hash << 5) - hash) + (transfer.resource_type === 'metal' ? 2 : 1);
         }
-        const transfersHash = hash.toString();
+        const transfersHash = hash.toString() + '_' + activeTransfers.length;
         
         if (transfersHash === this.lastTransfersHash && this.lastTransfersHash !== null) {
             return; // No changes, skip update
@@ -308,48 +299,69 @@ class TransferPanel {
         this.lastTransfersHash = transfersHash;
         this.gameState = gameState;
         
-        // Sync with game engine transfer history
-        const engineHistory = gameState.transfer_history || [];
+        // Sync transfer history from active_transfers
+        const activeTransferIds = activeTransfers.map(t => t.id);
         
-        // If we don't have history yet, load it from game state
-        if (this.transferHistory.length === 0 && engineHistory.length > 0) {
-            this.transferHistory = engineHistory.map(t => ({...t}));
-        } else {
-            // Update existing transfers and add new ones
-            engineHistory.forEach(engineTransfer => {
-                const existing = this.transferHistory.find(t => t.id == engineTransfer.id);
-                if (existing) {
-                    // Update existing
-                    Object.assign(existing, engineTransfer);
+        // Update or add transfers from active_transfers
+        activeTransfers.forEach(activeTransfer => {
+            const existing = this.transferHistory.find(t => t.id == activeTransfer.id);
+            if (existing) {
+                // Update existing transfer
+                existing.from = activeTransfer.from_zone || activeTransfer.from || existing.from;
+                existing.to = activeTransfer.to_zone || activeTransfer.to || existing.to;
+                existing.type = activeTransfer.type || existing.type || 'one-time';
+                existing.resource_type = activeTransfer.resource_type || existing.resource_type || 'probe';
+                existing.count = activeTransfer.probe_count !== undefined ? activeTransfer.probe_count : existing.count;
+                existing.metal_kg = activeTransfer.metal_kg !== undefined ? activeTransfer.metal_kg : existing.metal_kg;
+                existing.rate = activeTransfer.rate_percentage || activeTransfer.metal_rate_kg_per_day || existing.rate || 0;
+                existing.ratePercentage = activeTransfer.rate_percentage !== undefined ? activeTransfer.rate_percentage : existing.ratePercentage;
+                existing.metal_rate_kg_per_day = activeTransfer.metal_rate_kg_per_day !== undefined ? activeTransfer.metal_rate_kg_per_day : existing.metal_rate_kg_per_day;
+                if (activeTransfer.type === 'one-time') {
+                    existing.status = activeTransfer.status === 'completed' ? 'completed' : 
+                                     activeTransfer.status === 'paused' ? 'paused' : 'in-progress';
                 } else {
-                    // Add new
-                    this.transferHistory.push({...engineTransfer});
+                    existing.status = activeTransfer.paused ? 'paused' : 'active';
                 }
-            });
-        }
-        
-        // Mark one-time transfers as completed if they're not in active transfers
-        const activeTransferIds = (gameState.active_transfers || []).map(t => t.id);
-        this.transferHistory.forEach(transfer => {
-            if (transfer.type === 'one-time' && transfer.status === 'in-progress') {
-                // Check if this transfer is still active (simplified: assume completes after 3 seconds)
-                const elapsed = Date.now() - transfer.startTime;
-                if (elapsed > 3000 || !activeTransferIds.includes(transfer.id)) {
-                    transfer.status = 'completed';
-                    transfer.completedTime = Date.now();
-                }
-            } else if (transfer.type === 'continuous') {
-                // Update status based on active transfers
-                if (activeTransferIds.includes(transfer.id)) {
-                    const activeTransfer = gameState.active_transfers.find(t => t.id == transfer.id);
-                    if (activeTransfer) {
-                        transfer.status = activeTransfer.paused ? 'paused' : 'active';
-                        transfer.rate = activeTransfer.rate;
-                    }
-                } else {
-                    transfer.status = 'completed';
-                }
+            } else {
+                // Add new transfer
+                const historyItem = {
+                    id: activeTransfer.id,
+                    from: activeTransfer.from_zone || activeTransfer.from,
+                    to: activeTransfer.to_zone || activeTransfer.to,
+                    type: activeTransfer.type || 'one-time',
+                    resource_type: activeTransfer.resource_type || 'probe',
+                    count: activeTransfer.probe_count || 0,
+                    metal_kg: activeTransfer.metal_kg || 0,
+                    rate: activeTransfer.rate_percentage || activeTransfer.metal_rate_kg_per_day || 0,
+                    ratePercentage: activeTransfer.rate_percentage,
+                    metal_rate_kg_per_day: activeTransfer.metal_rate_kg_per_day,
+                    status: activeTransfer.type === 'one-time' ? 
+                           (activeTransfer.status === 'completed' ? 'completed' : 
+                            activeTransfer.status === 'paused' ? 'paused' : 'in-progress') :
+                           (activeTransfer.paused ? 'paused' : 'active'),
+                    startTime: activeTransfer.departure_time ? activeTransfer.departure_time * 86400000 : Date.now(),
+                    completedTime: activeTransfer.status === 'completed' && activeTransfer.arrival_time ? 
+                                  activeTransfer.arrival_time * 86400000 : null
+                };
+                this.transferHistory.push(historyItem);
             }
+        });
+        
+        // Remove transfers that are no longer in active_transfers (unless they're still active)
+        // Use strict comparison to ensure IDs match correctly
+        this.transferHistory = this.transferHistory.filter(transfer => {
+            // Keep if transfer ID is in active transfers list
+            if (activeTransferIds.includes(transfer.id)) {
+                return true;
+            }
+            // Remove completed one-time transfers that aren't in active list
+            if (transfer.type === 'one-time' && transfer.status === 'completed') {
+                return false;
+            }
+            // Keep active/paused/in-progress transfers (they might be transitioning)
+            return transfer.status === 'active' || 
+                   transfer.status === 'in-progress' || 
+                   transfer.status === 'paused';
         });
         
         this.render();

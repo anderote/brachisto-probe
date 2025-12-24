@@ -12,6 +12,7 @@ class GameEngineClient {
         this.isRunning = false;
         this.pendingActions = new Map();
         this.actionIdCounter = 0;
+        this.timeSpeed = 1.0; // Default time speed
     }
     
     /**
@@ -19,7 +20,7 @@ class GameEngineClient {
      */
     async init() {
         try {
-            this.worker = new Worker('/static/js/game/engine_v2/engine.worker.js');
+            this.worker = new Worker('/static/js/game/engine/engine.worker.js');
             
             this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
             this.worker.onerror = (error) => {
@@ -109,6 +110,10 @@ class GameEngineClient {
                 
             case 'error':
                 console.error('Worker error:', data.error);
+                if (data.stack) {
+                    console.error('Stack trace:', data.stack);
+                }
+                // Don't stop the engine on error - let it try to continue
                 break;
         }
     }
@@ -154,6 +159,20 @@ class GameEngineClient {
     }
     
     /**
+     * Load game from saved state
+     */
+    async loadFromState(sessionId, config = {}, initialState) {
+        // Stop any existing game first
+        if (this.isRunning) {
+            this.stop();
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // Start with the provided initial state
+        return this.start(sessionId, config, initialState);
+    }
+    
+    /**
      * Stop game engine
      */
     stop() {
@@ -191,10 +210,11 @@ class GameEngineClient {
      * Set time speed
      */
     setTimeSpeed(speed) {
+        this.timeSpeed = Math.max(0.1, Math.min(1000, speed || 1.0));
         if (this.worker) {
             this.worker.postMessage({
                 type: 'setTimeSpeed',
-                data: { speed: speed }
+                data: { speed: this.timeSpeed }
             });
         }
     }
@@ -212,6 +232,13 @@ class GameEngineClient {
     generateActionId() {
         return 'action_' + Date.now() + '_' + (++this.actionIdCounter);
     }
+}
+
+// Expose globally for access from other scripts (main thread only)
+if (typeof window !== 'undefined') {
+    window.gameEngine = new GameEngineClient();
+} else if (typeof self !== 'undefined' && typeof self.document !== 'undefined') {
+    self.gameEngine = new GameEngineClient();
 }
 
 // Export for use in modules

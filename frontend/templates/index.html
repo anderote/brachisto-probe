@@ -32,50 +32,45 @@
             <div id="metrics-panel" class="metrics-panel-container"></div>
             <!-- Left Side Probe Summary Panel -->
             <div id="probe-summary-panel" class="probe-summary-panel-container"></div>
+            <!-- Left Side Zone Info Panel -->
+            <div id="zone-info-panel" class="zone-info-panel-container"></div>
+            <!-- Zone Hover Tooltip (separate from selected zone panel) -->
+            <div id="zone-hover-tooltip" class="zone-hover-tooltip" style="display: none;"></div>
             <!-- Command Panel - Center Left (separate window) -->
             <div id="command-panel-column" class="command-panel-column">
                 <div id="command-panel-content"></div>
             </div>
         </div>
         
-        <!-- Right Sidebar with Tabs -->
-        <div id="game-sidebar" class="game-sidebar">
-            <div class="sidebar-header">
-                <button id="main-menu-btn" class="main-menu-btn" title="Main Menu" style="margin-right: 10px; padding: 5px 10px; background: rgba(74, 158, 255, 0.2); color: #4a9eff; border: 1px solid #4a9eff; border-radius: 3px; cursor: pointer; font-size: 12px;">
-                    Menu
-                </button>
-                <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
-                    <span id="sidebar-toggle-icon">◀</span>
-                </button>
-            </div>
-            <div class="sidebar-content">
-                <div class="sidebar-tabs">
-                    <button class="tab-btn active" data-tab="build">Build</button>
-                    <button class="tab-btn" data-tab="research">Research</button>
-                    <button class="tab-btn" data-tab="probe">Probe</button>
-                    <button class="tab-btn" data-tab="manage">Manage</button>
-                    <button class="tab-btn" data-tab="transfers">Transfers</button>
+        <!-- Right Side Floating Panel -->
+        <button id="right-panel-toggle" class="right-panel-toggle" title="Show/Hide Panel">
+            <span id="right-panel-toggle-icon">◀</span>
+        </button>
+        <div id="right-panel" class="right-panel-container">
+            <div class="right-panel">
+                <div class="right-panel-header">
+                    <div class="right-panel-tabs">
+                        <button class="right-tab-btn active" data-tab="structures">Structures</button>
+                        <button class="right-tab-btn" data-tab="research">Research</button>
+                        <button class="right-tab-btn" data-tab="transfers">Transfers</button>
+                    </div>
                 </div>
-                <div class="tab-content active" id="tab-build">
-                    <div id="build-tab-content-wrapper" class="build-tab-content-wrapper">
+                <div class="right-panel-content">
+                    <div class="right-tab-content active" id="right-tab-structures">
                         <div id="purchase-panel-content"></div>
                     </div>
-                    <button id="build-tab-toggle" class="build-tab-toggle" title="Show/Hide Build Panel">
-                        <span id="build-tab-toggle-icon">◀</span>
-                    </button>
+                    <div class="right-tab-content" id="right-tab-research">
+                        <div id="research-panel-content"></div>
+                    </div>
+                    <div class="right-tab-content" id="right-tab-transfers">
+                        <div id="transfer-panel-content"></div>
+                    </div>
                 </div>
-                <div class="tab-content" id="tab-research"></div>
-                <div class="tab-content" id="tab-probe"></div>
-                <div class="tab-content" id="tab-manage"></div>
-                <div class="tab-content" id="tab-transfers"></div>
             </div>
         </div>
         
         <!-- Bottom: Orbital Zone Selector (floating) -->
         <div id="orbital-zone-selector" class="orbital-zone-selector"></div>
-        
-        <!-- Zone Info Panel (shown when zone is selected) -->
-        <div id="zone-info-panel" class="zone-info-panel" style="display: none;"></div>
         
         <!-- Bottom Left: Time Display and Speed Controls -->
         <div id="time-controls" class="time-controls"></div>
@@ -161,21 +156,26 @@
     <script src="/static/js/api.js"></script>
     <script src="/static/js/utils/performance_profiler.js"></script>
     <script src="/static/js/utils/performance_tests.js"></script>
-    <script src="/static/js/utils/probe_count_cache.js"></script>
     <script src="/static/js/utils/calculation_cache.js"></script>
     <script src="/static/js/utils/format_utils.js"></script>
     <script src="/static/js/game/config.js"></script>
     <script src="/static/js/game/data_loader.js"></script>
+    <script src="/static/js/game/skill_definitions.js"></script>
     <script src="/static/js/game/storage.js"></script>
-    <script src="/static/js/game/engine.js"></script>
+    <!-- Worker-based engine architecture -->
+    <script src="/static/js/game/client/state_manager.js"></script>
+    <script src="/static/js/game/client/engine_client.js"></script>
+    <!-- Legacy files (may still be needed by some UI components) -->
     <script src="/static/js/game/resources.js"></script>
     <script src="/static/js/game/upgrades.js"></script>
     <script src="/static/js/visualization/scene.js"></script>
     <script src="/static/js/visualization/starfield.js"></script>
     <script src="/static/js/visualization/solar_system.js"></script>
+    <script src="/static/js/visualization/zone_clouds.js"></script>
     <script src="/static/js/visualization/structures.js"></script>
     <script src="/static/js/visualization/probes.js"></script>
     <script src="/static/js/visualization/dyson_sphere.js"></script>
+    <script src="/static/js/visualization/transfers.js"></script>
     <script src="/static/js/ui/sidebar.js"></script>
     <script src="/static/js/ui/purchase_panel.js"></script>
     <script src="/static/js/ui/research_panel.js"></script>
@@ -184,8 +184,9 @@
     <script src="/static/js/ui/probe_panel.js"></script>
     <script src="/static/js/ui/manage_panel.js"></script>
     <script src="/static/js/ui/metrics_panel.js"></script>
-    <script src="/static/js/ui/probe_summary_panel.js"></script>
-    <script src="/static/js/ui/transfer_panel.js"></script>
+        <script src="/static/js/ui/probe_summary_panel.js"></script>
+        <script src="/static/js/ui/zone_info_panel.js"></script>
+        <script src="/static/js/ui/transfer_panel.js"></script>
     <script src="/static/js/ui/resource_display.js"></script>
     <script src="/static/js/ui/probe_allocation.js"></script>
     <script src="/static/js/ui/orbital_zone_selector.js"></script>

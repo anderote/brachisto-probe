@@ -64,7 +64,8 @@ class GameEngine:
             
             # Initialize zone allocations
             if zone.get('is_dyson_zone', False):
-                # Dyson zone: no probes at start
+                # Dyson zone: start with 0 probes (player must build them)
+                self.probes_by_zone[zone_id] = {'probe': 0}
                 # Dyson zone: dyson, construct, replicate
                 self.probe_allocations_by_zone[zone_id] = {
                     'dyson': {'probe': 0},      # Building Dyson

@@ -1,9 +1,9 @@
 /** Game configuration constants */
 class Config {
     // Game configuration
-    static DYSON_SPHERE_TARGET_MASS = 5e24;  // kg, base value (can be reduced by research)
+    static DYSON_SPHERE_TARGET_MASS = 20e22;  // kg, base value (can be reduced by research)
     static INITIAL_PROBES = 1;
-    static INITIAL_METAL = 1000;  // kg
+    static INITIAL_METAL = 0;  // kg (start with 0 metal)
     static INITIAL_ENERGY = 0;  // watts - energy cannot be stored, use constant supply
     static CONSTANT_ENERGY_SUPPLY = 100000;  // watts (100kW) - constant power supply
     static TICKS_PER_SECOND = 60;
@@ -19,14 +19,23 @@ class Config {
     
     // Dyson sphere energy production constants
     static DYSON_POWER_PER_SQ_M = 5000;  // watts per square meter (5 kW/m²)
-    static DYSON_MASS_PER_SQ_M = 1.0;  // kg per square meter
-    static DYSON_POWER_PER_KG = 5000;  // watts per kg (5 kW/kg = 5 kW/m² / 1 kg/m²)
+    static DYSON_MASS_PER_SQ_M = 2.0;  // kg per square meter
+    static DYSON_POWER_PER_KG = 2500;  // watts per kg (5 kW/kg = 5 kW/m² / 1 kg/m²)
     
     // All rates are per-day (fundamental time unit)
     static PROBE_MASS = 100;  // kg per probe
     static PROBE_HARVEST_RATE = 100.0;  // kg/day per probe (base mining rate - mines 100kg mass per day)
-    static PROBE_BUILD_RATE = 10.0;  // kg/day per probe (base build power - 1 probe takes 10 days to build a 100kg probe)
-    static PROBE_ENERGY_CONSUMPTION = 100000;  // watts (100kW) per probe
+    static PROBE_BUILD_RATE = 20.0;  // kg/day per probe (base build power)
+    static PROBE_ENERGY_CONSUMPTION = 250000;  // watts (250kW) - base rate for buildings (constructing rate)
+    
+    // Alpha factors for tech tree scaling (performance benefits)
+    // Higher alpha = more benefit from research
+    static ALPHA_STRUCTURE_FACTOR = 0.8;   // Structures benefit most
+    static ALPHA_PROBE_FACTOR = 0.75;      // Probes benefit slightly less
+    static ALPHA_DYSON_FACTOR = 0.55;      // Dyson benefits least per skill
+    
+    // Base cost factor (costs grow slower than benefits)
+    static ALPHA_COST_FACTOR = 0.25;
 }
 
 // Export for use in other modules
