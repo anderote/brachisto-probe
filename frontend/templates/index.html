@@ -78,6 +78,9 @@
         <!-- Performance Panel (toggleable with F key) -->
         <div id="performance-panel" class="performance-panel-container"></div>
         
+        <!-- Visual Effects Debug Panel (toggleable with G key) -->
+        <div id="visual-effects-panel" class="visual-effects-panel-container"></div>
+        
         <!-- Bottom: Scripting Window (collapsible, collapsed by default) - Hidden for now -->
         <div id="scripting-window" class="scripting-window collapsed" style="display: none;">
             <div class="scripting-header">
@@ -152,6 +155,15 @@
     <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
+    <!-- Post-processing (EffectComposer, Bloom, God Rays) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/objects/Lensflare.js"></script>
+    
     <!-- Game Scripts -->
     <script src="/static/js/api.js"></script>
     <script src="/static/js/utils/performance_profiler.js"></script>
@@ -195,6 +207,7 @@
     <script src="/static/js/ui/leaderboard.js"></script>
     <script src="/static/js/ui/time_controls.js"></script>
     <script src="/static/js/ui/performance_panel.js"></script>
+    <script src="/static/js/ui/visual_effects_panel.js"></script>
     <script src="/static/js/main.js"></script>
 </body>
 </html>

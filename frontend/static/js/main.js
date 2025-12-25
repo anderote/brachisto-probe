@@ -77,6 +77,8 @@ class App {
 
                     if (typeof SolarSystem !== 'undefined') {
                         this.solarSystem = new SolarSystem(this.sceneManager.getScene());
+                        // Set solar system reference in scene manager for comet tracking
+                        this.sceneManager.setSolarSystem(this.solarSystem);
                     }
                     if (typeof StructuresVisualization !== 'undefined') {
                         this.structuresViz = new StructuresVisualization(this.sceneManager.getScene(), this.solarSystem);
@@ -178,6 +180,14 @@ class App {
                     new PerformancePanel('performance-panel') : null;
             } catch (e) {
                 console.error('Failed to initialize PerformancePanel:', e);
+            }
+            
+            // Initialize visual effects debug panel
+            try {
+                this.visualEffectsPanel = typeof VisualEffectsPanel !== 'undefined' ? 
+                    new VisualEffectsPanel('visual-effects-panel') : null;
+            } catch (e) {
+                console.error('Failed to initialize VisualEffectsPanel:', e);
             }
 
             try {

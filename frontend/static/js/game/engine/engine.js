@@ -829,9 +829,11 @@ class GameEngine {
             
             if (totalProbes > 0 && replicateAllocation > 0) {
                 // Uses pre-calculated upgrade factors from state
+                // Applies zone crowding penalty
                 const buildingRate = this.productionCalculator.calculateBuildingRate(
                     totalProbes * replicateAllocation, 
-                    this.state
+                    this.state,
+                    zoneId
                 );
                 rates.probe_production += buildingRate / 100;  // Convert kg/day to probes/day (100kg per probe)
             }
@@ -1005,9 +1007,11 @@ class GameEngine {
             let zoneProbeProductionRate = 0;
             if (probesReplicating > 0) {
                 // Uses pre-calculated upgrade factors from state
+                // Applies zone crowding penalty
                 const buildingRate = this.productionCalculator.calculateBuildingRate(
                     probesReplicating, 
-                    this.state
+                    this.state,
+                    zoneId
                 );
                 zoneProbeProductionRate = buildingRate / 100;  // Convert kg/day to probes/day (100kg per probe)
             }
@@ -1018,6 +1022,16 @@ class GameEngine {
                 zoneId,
                 this.buildings
             );
+            
+            // Calculate zone crowding efficiency (diminishing returns based on probe mass)
+            const zoneCrowdingEfficiency = this.productionCalculator.calculateZoneCrowdingPenalty(
+                zoneId,
+                this.state
+            );
+            
+            // Calculate probe mass ratio for display
+            const originalZoneMass = zoneData?.total_mass_kg || 0;
+            const probeMassRatio = originalZoneMass > 0 ? probeMass / originalZoneMass : 0;
             
             // Store per-zone data
             const zoneDataEntry = {
@@ -1046,6 +1060,9 @@ class GameEngine {
                 probe_production_rate: zoneProbeProductionRate, // probes/day for this zone
                 energy_throttle: energyThrottle,           // Global energy throttle
                 metal_throttle: zoneMetalThrottle,         // Zone-specific metal throttle
+                crowding_efficiency: zoneCrowdingEfficiency, // Crowding penalty (1.0 = no penalty)
+                probe_mass_ratio: probeMassRatio,          // Probe mass / original zone mass
+                original_zone_mass: originalZoneMass,      // Original zone mass (for display)
                 effective_throttle: Math.min(energyThrottle, zoneMetalThrottle)
             };
             

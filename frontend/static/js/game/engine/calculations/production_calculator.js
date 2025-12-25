@@ -15,6 +15,58 @@ class ProductionCalculator {
         // Base rates (per probe, per day)
         this.BASE_MINING_RATE = 100.0;      // kg/day per probe
         this.BASE_BUILDING_RATE = 20.0;    // kg/day per probe
+        
+        // Crowding penalty constants
+        // At 1% probe mass relative to original zone mass: 100% efficiency (no penalty)
+        // At 90% probe mass relative to original zone mass: 2% efficiency (98% reduction)
+        // Formula: efficiency = exp(-k * (ratio - threshold)) for ratio > threshold
+        // Solving: 0.02 = exp(-k * (0.90 - 0.01)) -> k = -ln(0.02) / 0.89 ≈ 4.395
+        this.CROWDING_THRESHOLD = 0.01;     // 1% - penalty starts after this ratio
+        this.CROWDING_DECAY_RATE = 4.395;   // Exponential decay constant
+    }
+    
+    /**
+     * Calculate zone crowding efficiency penalty
+     * When probe mass exceeds 1% of original planetary mass, efficiency decreases exponentially.
+     * At 1% probe mass: 100% efficiency (no penalty)
+     * At 90% probe mass: 2% efficiency (98% reduction)
+     * 
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} state - Game state containing zones data
+     * @returns {number} Efficiency factor (0-1), where 1 = no penalty
+     */
+    calculateZoneCrowdingPenalty(zoneId, state) {
+        // Dyson zone is exempt from crowding penalty
+        if (this.orbitalMechanics.isDysonZone(zoneId)) {
+            return 1.0;
+        }
+        
+        // Get zone data from orbital mechanics (for original mass)
+        const zoneData = this.orbitalMechanics.getZone(zoneId);
+        if (!zoneData || !zoneData.total_mass_kg || zoneData.total_mass_kg <= 0) {
+            return 1.0; // No penalty if zone has no mass data
+        }
+        
+        const originalMass = zoneData.total_mass_kg;
+        
+        // Get current probe mass in this zone
+        const zoneState = state.zones?.[zoneId];
+        const probeMass = zoneState?.probe_mass || 0;
+        
+        // Calculate probe mass ratio
+        const probeRatio = probeMass / originalMass;
+        
+        // No penalty if below threshold
+        if (probeRatio <= this.CROWDING_THRESHOLD) {
+            return 1.0;
+        }
+        
+        // Exponential decay: efficiency = exp(-k * (ratio - threshold))
+        const excessRatio = probeRatio - this.CROWDING_THRESHOLD;
+        const efficiency = Math.exp(-this.CROWDING_DECAY_RATE * excessRatio);
+        
+        // Clamp to reasonable minimum (0.1% efficiency minimum)
+        return Math.max(0.001, efficiency);
     }
     
     /**
@@ -125,6 +177,7 @@ class ProductionCalculator {
     /**
      * Calculate mining rate for a zone (returns MASS mining rate, not metal)
      * Uses pre-calculated upgrade factor from state
+     * Applies zone crowding penalty based on probe mass vs original planetary mass
      * @param {number} probeCount - Number of probes allocated to mining
      * @param {string} zoneId - Zone identifier
      * @param {Object} state - Game state (to get pre-calculated upgrade factors)
@@ -146,8 +199,11 @@ class ProductionCalculator {
         // Apply zone multiplier
         const zoneMultiplier = this.orbitalMechanics.getZoneMiningMultiplier(zoneId);
         
-        // Total rate = probes * rate_per_probe * zone_multiplier
-        return probeCount * ratePerProbe * zoneMultiplier;
+        // Apply crowding penalty (diminishing returns based on probe mass vs planetary mass)
+        const crowdingEfficiency = this.calculateZoneCrowdingPenalty(zoneId, state);
+        
+        // Total rate = probes * rate_per_probe * zone_multiplier * crowding_efficiency
+        return probeCount * ratePerProbe * zoneMultiplier * crowdingEfficiency;
     }
     
     /**
@@ -219,11 +275,13 @@ class ProductionCalculator {
     /**
      * Calculate building rate (for structures and probes)
      * Uses pre-calculated upgrade factor from state
+     * Applies zone crowding penalty based on probe mass vs original planetary mass
      * @param {number} probeCount - Number of probes allocated to building
      * @param {Object} state - Game state (to get pre-calculated upgrade factors)
+     * @param {string} zoneId - Zone identifier (optional, for crowding penalty)
      * @returns {number} Building rate in kg/day
      */
-    calculateBuildingRate(probeCount, state) {
+    calculateBuildingRate(probeCount, state, zoneId = null) {
         if (probeCount <= 0) return 0;
         
         // Base rate per probe
@@ -233,8 +291,14 @@ class ProductionCalculator {
         const upgradeFactor = state.upgrade_factors?.probe?.building?.performance || 
                              state.tech_upgrade_factors?.probe_build || 1.0;
         
-        // Total rate = probes * base_rate * upgrade_factor
-        return probeCount * baseRatePerProbe * upgradeFactor;
+        // Apply crowding penalty if zone is specified
+        let crowdingEfficiency = 1.0;
+        if (zoneId) {
+            crowdingEfficiency = this.calculateZoneCrowdingPenalty(zoneId, state);
+        }
+        
+        // Total rate = probes * base_rate * upgrade_factor * crowding_efficiency
+        return probeCount * baseRatePerProbe * upgradeFactor * crowdingEfficiency;
     }
     
     /**
@@ -271,6 +335,7 @@ class ProductionCalculator {
     /**
      * Calculate structure mining rate (from mining structures)
      * Uses new multiplier-based system with structure upgrade factors
+     * Applies zone crowding penalty based on probe mass vs original planetary mass
      * @param {Object} structuresByZone - Structures by zone
      * @param {string} zoneId - Zone identifier
      * @param {Object} buildings - Building definitions
@@ -317,12 +382,16 @@ class ProductionCalculator {
             }
         }
         
-        return totalRate;
+        // Apply crowding penalty (diminishing returns based on probe mass vs planetary mass)
+        const crowdingEfficiency = this.calculateZoneCrowdingPenalty(zoneId, state);
+        
+        return totalRate * crowdingEfficiency;
     }
     
     /**
      * Calculate structure building rate (from factory structures)
      * Uses new multiplier-based system with structure upgrade factors
+     * Applies zone crowding penalty based on probe mass vs original planetary mass
      * @param {Object} structuresByZone - Structures by zone
      * @param {string} zoneId - Zone identifier
      * @param {Object} buildings - Building definitions
@@ -370,7 +439,10 @@ class ProductionCalculator {
             }
         }
         
-        return totalRate;
+        // Apply crowding penalty (diminishing returns based on probe mass vs planetary mass)
+        const crowdingEfficiency = this.calculateZoneCrowdingPenalty(zoneId, state);
+        
+        return totalRate * crowdingEfficiency;
     }
     
     /**
@@ -432,7 +504,7 @@ class ProductionCalculator {
         const buildingProbes = totalProbes * constructAllocation;
         
         const probeMiningRate = this.calculateMiningRate(miningProbes, zoneId, state);
-        const probeBuildingRate = this.calculateBuildingRate(buildingProbes, state);
+        const probeBuildingRate = this.calculateBuildingRate(buildingProbes, state, zoneId);
         
         // Structure-based rates (use state for upgrade factors)
         const structureMiningRate = this.calculateStructureMiningRate(structuresByZone, zoneId, buildings, state);

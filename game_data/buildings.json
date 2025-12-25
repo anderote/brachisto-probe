@@ -1,46 +1,6 @@
 {
   "description": "Simplified structure system - all structures defined as multipliers of probe base values",
   "buildings": {
-    "refinery": {
-      "id": "refinery",
-      "name": "Refinery",
-      "description": "Specialized mining and refining facility. Mines 120x probe rate, consumes 80x probe energy.",
-      "mass_multiplier": 100,
-      "mining_rate_multiplier": 120,
-      "energy_cost_multiplier": 80,
-      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-      "orbital_efficiency": {
-        "mercury": 1.0,
-        "venus": 1.0,
-        "earth": 1.0,
-        "mars": 1.0,
-        "asteroid_belt": 1.0
-      },
-      "research_skills": {
-        "mining_rate": ["robotics", "locomotion", "strength", "materials"],
-        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
-      }
-    },
-    "factory": {
-      "id": "factory",
-      "name": "Factory",
-      "description": "Specialized manufacturing facility. Replicates at 150x probe rate, consumes 100x probe energy.",
-      "mass_multiplier": 100,
-      "build_rate_multiplier": 150,
-      "energy_cost_multiplier": 100,
-      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-      "orbital_efficiency": {
-        "mercury": 1.2,
-        "venus": 1.1,
-        "earth": 1.0,
-        "mars": 0.95,
-        "asteroid_belt": 0.9
-      },
-      "research_skills": {
-        "build_rate": ["robotics", "production", "materials"],
-        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
-      }
-    },
     "power_station": {
       "id": "power_station",
       "name": "Power Station",
@@ -78,29 +38,6 @@
       "research_skills": {
         "compute": ["cpu", "gpu", "interconnect", "io_bandwidth"],
         "energy_cost": ["energy_converter", "radiator", "heat_pump"]
-      }
-    },
-    "omni_fab": {
-      "id": "omni_fab",
-      "name": "Omni-Fab",
-      "description": "General purpose fabrication facility. Produces some energy, mining, probes, and compute at 50% efficiency compared to specialized structures. Costs 2x specialist structures.",
-      "mass_multiplier": 200,
-      "efficiency": 0.5,
-      "mining_rate_multiplier": 60,
-      "build_rate_multiplier": 75,
-      "power_output_mw": 50,
-      "compute_eflops": 5,
-      "energy_cost_multiplier": 160,
-      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-      "orbital_efficiency": {
-        "mercury": 1.0,
-        "venus": 1.0,
-        "earth": 1.0,
-        "mars": 1.0,
-        "asteroid_belt": 1.0
-      },
-      "research_skills": {
-        "all": ["robotics", "locomotion", "strength", "materials", "production", "solar_pv", "energy_converter", "cpu", "gpu", "interconnect", "io_bandwidth"]
       }
     },
     "mass_driver": {

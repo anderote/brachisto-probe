@@ -1094,7 +1094,7 @@ class OrbitalZoneSelector {
             // This is the destination zone - send the transfer
             const destinationZoneId = zoneId;
             this.selectedZone = destinationZoneId;
-            this.startCameraTracking(destinationZoneId); // Track the destination zone
+            // Don't auto-focus camera on transfer destination - user can double-click if they want to focus
             this.sendTransferFromDialog(destinationZoneId);
             this.closeTransferDialog();
             this.render(); // Re-render to show destination highlight
@@ -1106,19 +1106,16 @@ class OrbitalZoneSelector {
             this.closeTransferDialog();
         }
         
-        // If clicking the same zone, deselect it (toggle behavior)
+        // If clicking the same zone twice in a row, focus camera on it
         if (this.selectedZone === zoneId) {
-            this.deselectZone();
+            this.startCameraTracking(zoneId);
             return;
         }
         
-        // Select the new zone (normal selection)
+        // Select the new zone (normal selection) - don't change camera focus
         this.selectedZone = zoneId;
         // Don't automatically set as transfer source - wait for spacebar
         this.render(); // Re-render to show selection
-        
-        // Start camera tracking for the selected zone
-        this.startCameraTracking(zoneId);
         
         // Notify panels of selection change
         if (window.purchasePanel) {
@@ -1147,6 +1144,8 @@ class OrbitalZoneSelector {
             const solarSystem = window.app.solarSystem;
             // Create a function that returns the current position of the zone's planet
             const getPositionFn = () => solarSystem.getZonePosition(zoneId);
+            // Reset comet tracking mode when focusing on a zone
+            window.app.sceneManager.currentCometIndex = -1;
             window.app.sceneManager.startTracking(getPositionFn);
         }
     }

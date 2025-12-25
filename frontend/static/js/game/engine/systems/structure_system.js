@@ -248,7 +248,8 @@ class StructureSystem {
             
             // Calculate build rate for this zone (kg/day)
             // Uses pre-calculated upgrade factors from state
-            const totalBuildRate = this.productionCalculator.calculateBuildingRate(structureBuildingProbes, newState);
+            // Applies zone crowding penalty
+            const totalBuildRate = this.productionCalculator.calculateBuildingRate(structureBuildingProbes, newState, zoneId);
             const effectiveBuildRate = totalBuildRate * energyThrottle; // Apply energy throttle
             
             // Get enabled buildings for this zone

@@ -141,36 +141,132 @@ class SolarSystem {
         const sunRadius = this.logScaleSunRadius(this.planetData.sun.radius_km);
         this.sunRadius = sunRadius; // Store for orbit calculations
         
-        // Core sun sphere
+        // Core sun sphere - brighter and more saturated
         const sunGeometry = new THREE.SphereGeometry(sunRadius, 64, 64);
         const sunMaterial = new THREE.MeshBasicMaterial({
             color: 0xffff00,
-            emissive: 0xffffaa,
-            emissiveIntensity: 2.0
+            emissive: 0xffffff,  // Changed to white for maximum brightness
+            emissiveIntensity: 12.0
         });
         this.sun = new THREE.Mesh(sunGeometry, sunMaterial);
         this.scene.add(this.sun);
 
-        // Sun light source (enhanced)
-        this.sunLight = new THREE.PointLight(0xffffaa, 3, 1000);
+        // Multiple glow layers for dramatic visual brightness
+        const glowLayers = [
+            { radius: 1.08, opacity: 0.6, color: 0xffffaa },
+            { radius: 1.15, opacity: 0.4, color: 0xffff88 },
+            { radius: 1.25, opacity: 0.25, color: 0xffaa44 },
+            { radius: 1.4, opacity: 0.15, color: 0xff8844 }
+        ];
+        
+        glowLayers.forEach(layer => {
+            const glowGeometry = new THREE.SphereGeometry(sunRadius * layer.radius, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: layer.color,
+                transparent: true,
+                opacity: layer.opacity,
+                blending: THREE.AdditiveBlending,
+                side: THREE.BackSide,
+                depthWrite: false
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            this.scene.add(glow);
+        });
+
+        // Sun light source (enhanced) - significantly increased intensity
+        this.sunLight = new THREE.PointLight(0xffffaa, 12, 2000);  // Increased intensity from 3 to 8, range from 1000 to 2000
         this.sunLight.position.set(0, 0, 0);
         
-        // Configure sun light for shadows
+        // Configure sun light for shadows - enhanced for dramatic effect
         this.sunLight.castShadow = true;
-        this.sunLight.shadow.mapSize.width = 2048;
-        this.sunLight.shadow.mapSize.height = 2048;
+        // Increased shadow map resolution for better quality
+        this.sunLight.shadow.mapSize.width = 4096;
+        this.sunLight.shadow.mapSize.height = 4096;
+        // Expanded shadow camera bounds to cover entire solar system
         this.sunLight.shadow.camera.near = 0.1;
-        this.sunLight.shadow.camera.far = 1000;
-        this.sunLight.shadow.camera.left = -50;
-        this.sunLight.shadow.camera.right = 50;
-        this.sunLight.shadow.camera.top = 50;
-        this.sunLight.shadow.camera.bottom = -50;
+        this.sunLight.shadow.camera.far = 2000;
+        this.sunLight.shadow.camera.left = -200;
+        this.sunLight.shadow.camera.right = 200;
+        this.sunLight.shadow.camera.top = 200;
+        this.sunLight.shadow.camera.bottom = -200;
+        // Reduced bias to minimize shadow acne
         this.sunLight.shadow.bias = -0.0001;
+        // Increased shadow radius for softer, more visible shadows
+        this.sunLight.shadow.radius = 8;
         
         this.scene.add(this.sunLight);
 
+        // Add lensflare to sun
+        if (typeof THREE.Lensflare !== 'undefined') {
+            this.createLensflare();
+        }
+
         // Create sun rays using point sprites
         this.createSunRays(sunRadius);
+    }
+
+    createLensflare() {
+        const lensflare = new THREE.Lensflare();
+        
+        // Generate procedural flare textures
+        const flareTexture = this.generateFlareTexture(256, 0xffffcc, 1.0);
+        const hexTexture = this.generateFlareTexture(64, 0xffaa44, 0.5);
+        const ringTexture = this.generateRingTexture(128, 0xffffff);
+        
+        // Main sun flare
+        lensflare.addElement(new THREE.LensflareElement(flareTexture, 700, 0, new THREE.Color(0xffffee)));
+        
+        // Secondary flares at various distances
+        lensflare.addElement(new THREE.LensflareElement(hexTexture, 60, 0.6, new THREE.Color(0xffaa44)));
+        lensflare.addElement(new THREE.LensflareElement(hexTexture, 70, 0.7, new THREE.Color(0x88ccff)));
+        lensflare.addElement(new THREE.LensflareElement(ringTexture, 120, 0.9, new THREE.Color(0xffffff)));
+        lensflare.addElement(new THREE.LensflareElement(hexTexture, 70, 1.0, new THREE.Color(0xffddaa)));
+        
+        this.sunLight.add(lensflare);
+        this.lensflare = lensflare;
+    }
+
+    generateFlareTexture(size, color, intensity) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        const gradient = ctx.createRadialGradient(
+            size / 2, size / 2, 0,
+            size / 2, size / 2, size / 2
+        );
+        
+        const col = new THREE.Color(color);
+        gradient.addColorStop(0, `rgba(${Math.floor(col.r*255)}, ${Math.floor(col.g*255)}, ${Math.floor(col.b*255)}, ${intensity})`);
+        gradient.addColorStop(0.2, `rgba(${Math.floor(col.r*255)}, ${Math.floor(col.g*255)}, ${Math.floor(col.b*255)}, ${intensity * 0.5})`);
+        gradient.addColorStop(0.4, `rgba(${Math.floor(col.r*255)}, ${Math.floor(col.g*255)}, ${Math.floor(col.b*255)}, ${intensity * 0.1})`);
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        return texture;
+    }
+
+    generateRingTexture(size, color) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        const col = new THREE.Color(color);
+        ctx.strokeStyle = `rgba(${Math.floor(col.r*255)}, ${Math.floor(col.g*255)}, ${Math.floor(col.b*255)}, 0.4)`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        return texture;
     }
 
     createSunRays(sunRadius = 1.0) {
@@ -315,8 +411,9 @@ class SolarSystem {
             } else if (zone.id === 'oort_cloud') {
                 this.createOortCloud(zone);
             } else if (zone.id === 'dyson_sphere') {
-                // Dyson sphere zone - no physical body, only zone clouds visualization
-                // Skip planet/orbit creation
+                // Dyson sphere zone - create orbital ring for transfer trajectories
+                // No physical planet body, but we need the orbit for visualization
+                this.createDysonOrbit(zone);
             } else {
                 this.createPlanet(zone);
                 this.createOrbit(zone);
@@ -373,23 +470,28 @@ class SolarSystem {
             // Eccentricity: 0.7 to 0.95 (highly elliptical)
             const eccentricity = 0.7 + Math.random() * 0.25;
             
+            // Target orbital period: 10-30 years for visible movement
+            const targetPeriodYears = 10 + Math.random() * 20; // 10 to 30 years
+            
+            // Calculate required semi-major axis from period using Kepler's law: T^2 ∝ a^3
+            // T (years) = sqrt(a^3), so a = (T^2)^(1/3) in AU
+            // Then convert to km
+            const targetSemiMajorAxisAU = Math.pow(targetPeriodYears * targetPeriodYears, 1/3);
+            const targetSemiMajorAxisKm = targetSemiMajorAxisAU * this.AU_KM;
+            
             // Perihelion: close to inner planets (Mercury to Mars range)
-            const perihelionKm = this.planetData.mercury.orbit_km + Math.random() * (this.planetData.mars.orbit_km - this.planetData.mercury.orbit_km);
+            const desiredPerihelionKm = this.planetData.mercury.orbit_km + Math.random() * (this.planetData.mars.orbit_km - this.planetData.mercury.orbit_km);
             
-            // Aphelion: extend deep into Kuiper and Oort belts
-            // Randomly choose between Kuiper belt (30-55 AU) and Oort cloud (100-140 AU) ranges
-            const aphelionChoice = Math.random();
-            let aphelionKm;
-            if (aphelionChoice < 0.5) {
-                // Kuiper belt range: 30-55 AU (scaled 3x: 90-165 AU)
-                aphelionKm = (90 + Math.random() * 75) * this.AU_KM;
-            } else {
-                // Oort cloud range: 100-140 AU (scaled 3x: 300-420 AU)
-                aphelionKm = (300 + Math.random() * 120) * this.AU_KM;
-            }
+            // Calculate semi-major axis needed for this perihelion: perihelion = a * (1 - e)
+            const perihelionBasedSemiMajorAxisKm = desiredPerihelionKm / (1 - eccentricity);
             
-            // Calculate semi-major axis from perihelion and aphelion
-            const semiMajorAxisKm = (perihelionKm + aphelionKm) / 2;
+            // Use the larger of the two to ensure we get the desired period while keeping perihelion close
+            // This ensures comets have visible movement (10-30 year periods) while still passing close to sun
+            const finalSemiMajorAxisKm = Math.max(targetSemiMajorAxisKm, perihelionBasedSemiMajorAxisKm);
+            
+            // Calculate actual perihelion and aphelion from final semi-major axis
+            const perihelionKm = finalSemiMajorAxisKm * (1 - eccentricity);
+            const aphelionKm = finalSemiMajorAxisKm * (1 + eccentricity);
             
             // Inclination: vary widely including polar orbits (0 to 180 degrees, but avoid retrograde)
             // Use 0 to 90 degrees for prograde, with emphasis on high inclinations for polar orbits
@@ -437,10 +539,14 @@ class SolarSystem {
             );
             comet.position.copy(initialPosition);
             
-            // Calculate orbital period using Kepler's law: T^2 ∝ a^3
+            // Calculate actual orbital period using Kepler's law: T^2 ∝ a^3
             // T (days) = sqrt((a/AU)^3) * 365.25
-            const semiMajorAxisAU = semiMajorAxisKm / this.AU_KM;
-            const orbitalPeriodDays = Math.sqrt(Math.pow(semiMajorAxisAU, 3)) * 365.25;
+            const finalSemiMajorAxisAU = finalSemiMajorAxisKm / this.AU_KM;
+            const orbitalPeriodDays = Math.sqrt(Math.pow(finalSemiMajorAxisAU, 3)) * 365.25;
+            
+            // Calculate orbital speed similar to planets (radians per second)
+            // Use Kepler's law approximation: speed ∝ 1/sqrt(period)
+            const orbitalSpeed = 0.01 / Math.sqrt(orbitalPeriodDays / 365.25);
             
             // Store orbital data
             comet.userData = {
@@ -452,7 +558,9 @@ class SolarSystem {
                 meanAnomaly: meanAnomaly,
                 perihelion: perihelionVisual,
                 aphelion: aphelionVisual,
-                orbitalPeriod: orbitalPeriodDays
+                orbitalPeriod: orbitalPeriodDays,
+                orbitalSpeed: orbitalSpeed, // Radians per second for animation
+                targetPeriodYears: targetPeriodYears // Store target period for reference (10-30 years)
             };
             
             this.comets.push(comet);
@@ -577,17 +685,24 @@ class SolarSystem {
             orbitRadius = zone.radius_au * 2.0; // Fallback scaling
         }
         
-        // Ensure minimum visible size
-        planetRadius = Math.max(0.05, planetRadius);
+        // Ensure minimum visible size - rocky planets get larger minimum to be visually distinct
+        // Mercury was appearing as just a dot due to log scaling compressing its size too much
+        if (this.rockyPlanets && this.rockyPlanets.includes(zone.id)) {
+            // Rocky planets get a larger minimum size (0.12) to appear as proper planets
+            planetRadius = Math.max(0.12, planetRadius * 1.5);
+        } else {
+            planetRadius = Math.max(0.08, planetRadius);
+        }
         
         // Create 3D planet sphere with proper lighting
         const planetGeometry = new THREE.SphereGeometry(planetRadius, 32, 32);
         
         // Use MeshStandardMaterial for realistic lighting with proper color
+        // Reduced metalness and increased roughness for better shadow visibility
         const planetMaterial = new THREE.MeshStandardMaterial({
             color: new THREE.Color(color),
-            metalness: 0.2,
-            roughness: 0.8,
+            metalness: 0.1,
+            roughness: 0.9,
             emissive: 0x000000,
             transparent: true,
             opacity: 1.0
@@ -617,51 +732,497 @@ class SolarSystem {
 
         this.planets[zone.id] = planet;
         this.scene.add(planet);
+        
+        // Add Fresnel atmosphere for Earth-like planets
+        const atmospherePlanets = ['earth', 'venus', 'jupiter', 'saturn', 'uranus', 'neptune'];
+        if (atmospherePlanets.includes(zone.id)) {
+            this.createPlanetAtmosphere(zone, planet, planetRadius);
+        }
+        
+        // Create rings for Jupiter, Saturn and Uranus
+        if (zone.id === 'jupiter' || zone.id === 'saturn' || zone.id === 'uranus') {
+            this.createPlanetRings(zone, planet, planetRadius, orbitRadius);
+        }
+    }
+
+    createPlanetAtmosphere(zone, planet, planetRadius) {
+        // Atmosphere colors based on planet type
+        const atmosphereColors = {
+            earth: new THREE.Color(0.3, 0.6, 1.0),    // Blue
+            venus: new THREE.Color(1.0, 0.8, 0.5),     // Yellow-orange haze
+            jupiter: new THREE.Color(0.8, 0.6, 0.4),   // Brown-orange bands
+            saturn: new THREE.Color(0.9, 0.8, 0.6),    // Pale yellow
+            uranus: new THREE.Color(0.4, 0.8, 0.9),    // Cyan
+            neptune: new THREE.Color(0.2, 0.4, 1.0)    // Deep blue
+        };
+        
+        const atmosphereColor = atmosphereColors[zone.id] || new THREE.Color(0.5, 0.7, 1.0);
+        const atmosphereScale = zone.id === 'venus' ? 1.15 : 1.08; // Venus has thicker atmosphere
+        
+        const atmosphereGeometry = new THREE.SphereGeometry(planetRadius * atmosphereScale, 32, 32);
+        const atmosphereMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                atmosphereColor: { value: atmosphereColor },
+                sunPosition: { value: new THREE.Vector3(0, 0, 0) },
+                intensity: { value: zone.id === 'venus' ? 0.8 : 0.6 }
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying vec3 vWorldPosition;
+                
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vPosition = position;
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 atmosphereColor;
+                uniform vec3 sunPosition;
+                uniform float intensity;
+                
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying vec3 vWorldPosition;
+                
+                void main() {
+                    // Calculate view direction
+                    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+                    
+                    // Fresnel effect - edges glow more than center
+                    float fresnel = pow(1.0 - abs(dot(viewDirection, vNormal)), 3.0);
+                    
+                    // Sun-facing side is brighter
+                    vec3 sunDirection = normalize(sunPosition - vWorldPosition);
+                    float sunFacing = max(0.0, dot(vNormal, sunDirection)) * 0.3 + 0.7;
+                    
+                    // Combine effects
+                    float alpha = fresnel * intensity * sunFacing;
+                    
+                    // Add subtle color variation based on view angle
+                    vec3 finalColor = atmosphereColor * (1.0 + fresnel * 0.3);
+                    
+                    gl_FragColor = vec4(finalColor, alpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
+            depthWrite: false
+        });
+        
+        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+        planet.add(atmosphere);
+        
+        // Store reference for updates
+        planet.userData.atmosphere = atmosphere;
+    }
+
+    createPlanetRings(zone, planet, planetRadius, orbitRadius) {
+        // Ring configurations for each planet
+        const ringConfigs = {
+            jupiter: {
+                // Jupiter's ring system - very faint, mostly dust
+                // Main ring: 122,500 - 129,000 km (1.72x - 1.81x Jupiter radius)
+                // Halo ring: 92,000 - 122,500 km (1.29x - 1.72x)
+                // Gossamer rings extend to ~3.2x Jupiter radius
+                innerRadius: planetRadius * 1.29,
+                outerRadius: planetRadius * 2.5,
+                tilt: 3.13 * Math.PI / 180, // Jupiter's small axial tilt
+                rings: [
+                    // Halo ring (inner torus, very faint)
+                    { start: 0.0, end: 0.25, opacity: 0.08, color: [0.45, 0.35, 0.28] },
+                    // Main ring (brightest part, but still faint)
+                    { start: 0.25, end: 0.35, opacity: 0.18, color: [0.5, 0.4, 0.32] },
+                    // Amalthea gossamer ring
+                    { start: 0.35, end: 0.55, opacity: 0.06, color: [0.42, 0.33, 0.26] },
+                    // Thebe gossamer ring (outermost, extremely faint)
+                    { start: 0.55, end: 1.0, opacity: 0.03, color: [0.38, 0.30, 0.24] }
+                ],
+                particleCount: 15000,
+                brightness: 0.4  // Very dim compared to Saturn
+            },
+            saturn: {
+                // Saturn's rings extend from ~1.2x to ~2.3x the planet radius
+                innerRadius: planetRadius * 1.2,
+                outerRadius: planetRadius * 2.3,
+                tilt: 26.73 * Math.PI / 180, // Saturn's axial tilt
+                rings: [
+                    // D Ring (innermost, very faint)
+                    { start: 0.0, end: 0.06, opacity: 0.15, color: [0.82, 0.75, 0.65] },
+                    // C Ring (crepe ring, dim)
+                    { start: 0.06, end: 0.22, opacity: 0.35, color: [0.75, 0.68, 0.55] },
+                    // B Ring (brightest, densest)
+                    { start: 0.22, end: 0.50, opacity: 0.85, color: [0.95, 0.88, 0.75] },
+                    // Cassini Division (gap)
+                    { start: 0.50, end: 0.54, opacity: 0.08, color: [0.3, 0.25, 0.2] },
+                    // A Ring (outer bright ring)
+                    { start: 0.54, end: 0.78, opacity: 0.7, color: [0.88, 0.82, 0.68] },
+                    // Encke Gap (thin gap in A ring)
+                    { start: 0.70, end: 0.72, opacity: 0.1, color: [0.3, 0.25, 0.2] },
+                    // F Ring (narrow outer ring)
+                    { start: 0.82, end: 0.86, opacity: 0.5, color: [0.85, 0.78, 0.65] },
+                    // G Ring (faint)
+                    { start: 0.88, end: 0.93, opacity: 0.2, color: [0.7, 0.65, 0.55] },
+                    // E Ring (outermost, very faint)
+                    { start: 0.95, end: 1.0, opacity: 0.1, color: [0.65, 0.62, 0.55] }
+                ],
+                particleCount: 50000,
+                brightness: 1.2
+            },
+            uranus: {
+                // Uranus rings are narrower and fainter
+                innerRadius: planetRadius * 1.5,
+                outerRadius: planetRadius * 2.0,
+                tilt: 97.77 * Math.PI / 180, // Uranus is tilted on its side!
+                rings: [
+                    // Zeta Ring (innermost)
+                    { start: 0.0, end: 0.08, opacity: 0.15, color: [0.35, 0.4, 0.45] },
+                    // 6, 5, 4 Rings
+                    { start: 0.10, end: 0.14, opacity: 0.3, color: [0.3, 0.35, 0.42] },
+                    { start: 0.16, end: 0.19, opacity: 0.25, color: [0.32, 0.37, 0.43] },
+                    { start: 0.21, end: 0.24, opacity: 0.28, color: [0.3, 0.36, 0.42] },
+                    // Alpha Ring
+                    { start: 0.28, end: 0.34, opacity: 0.35, color: [0.33, 0.38, 0.45] },
+                    // Beta Ring
+                    { start: 0.38, end: 0.44, opacity: 0.38, color: [0.35, 0.4, 0.47] },
+                    // Eta Ring
+                    { start: 0.48, end: 0.52, opacity: 0.3, color: [0.32, 0.38, 0.44] },
+                    // Gamma Ring
+                    { start: 0.56, end: 0.60, opacity: 0.32, color: [0.34, 0.39, 0.46] },
+                    // Delta Ring
+                    { start: 0.64, end: 0.70, opacity: 0.35, color: [0.36, 0.41, 0.48] },
+                    // Lambda Ring
+                    { start: 0.74, end: 0.77, opacity: 0.22, color: [0.3, 0.35, 0.42] },
+                    // Epsilon Ring (brightest of Uranus' rings)
+                    { start: 0.82, end: 0.92, opacity: 0.55, color: [0.4, 0.45, 0.52] },
+                    // Nu and Mu Rings (outer, very faint)
+                    { start: 0.95, end: 1.0, opacity: 0.12, color: [0.28, 0.33, 0.4] }
+                ],
+                particleCount: 25000,
+                brightness: 0.7
+            }
+        };
+        
+        const config = ringConfigs[zone.id];
+        if (!config) return;
+        
+        // Create ring using custom shader for realistic appearance
+        const ringGroup = new THREE.Group();
+        
+        // Create ring geometry with radial segments for structure
+        const ringGeometry = new THREE.RingGeometry(
+            config.innerRadius,
+            config.outerRadius,
+            256,  // theta segments (around the ring)
+            64    // phi segments (radial)
+        );
+        
+        // Create shader material for detailed ring structure
+        const ringMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                innerRadius: { value: config.innerRadius },
+                outerRadius: { value: config.outerRadius },
+                ringData: { value: this.createRingDataTexture(config.rings) },
+                brightness: { value: config.brightness },
+                time: { value: 0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistFromCenter;
+                
+                void main() {
+                    vUv = uv;
+                    vPosition = position;
+                    vDistFromCenter = length(position.xy);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float innerRadius;
+                uniform float outerRadius;
+                uniform sampler2D ringData;
+                uniform float brightness;
+                uniform float time;
+                
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistFromCenter;
+                
+                // Noise function for ring texture variation
+                float noise(vec2 p) {
+                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                }
+                
+                void main() {
+                    // Calculate radial position (0 = inner edge, 1 = outer edge)
+                    float radialPos = (vDistFromCenter - innerRadius) / (outerRadius - innerRadius);
+                    radialPos = clamp(radialPos, 0.0, 1.0);
+                    
+                    // Sample ring data texture for color and opacity
+                    vec4 ringInfo = texture2D(ringData, vec2(radialPos, 0.5));
+                    
+                    // Add subtle noise for particle-like texture
+                    float angle = atan(vPosition.y, vPosition.x);
+                    float noiseVal = noise(vec2(angle * 100.0, radialPos * 50.0 + time * 0.01));
+                    float noiseVal2 = noise(vec2(angle * 200.0 + 1.0, radialPos * 100.0));
+                    
+                    // Create fine structure with multiple noise scales
+                    float fineStructure = 0.85 + 0.15 * noiseVal;
+                    float microStructure = 0.9 + 0.1 * noiseVal2;
+                    
+                    // Apply radial streaking effect
+                    float streak = 0.95 + 0.05 * sin(angle * 500.0);
+                    
+                    // Combine for final color with brightness adjustment
+                    vec3 color = ringInfo.rgb * brightness * fineStructure * microStructure * streak;
+                    
+                    // Calculate final opacity with structure
+                    float alpha = ringInfo.a * fineStructure * microStructure;
+                    
+                    // Edge softening
+                    float edgeFade = smoothstep(0.0, 0.02, radialPos) * smoothstep(1.0, 0.98, radialPos);
+                    alpha *= edgeFade;
+                    
+                    // Discard very transparent pixels
+                    if (alpha < 0.01) discard;
+                    
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.NormalBlending
+        });
+        
+        const ringMesh = new THREE.Mesh(ringGeometry, ringMaterial);
+        
+        // Rotate ring to planet's equatorial plane
+        ringMesh.rotation.x = Math.PI / 2; // Lay flat first
+        
+        ringGroup.add(ringMesh);
+        
+        // Apply planet's axial tilt to the ring group
+        ringGroup.rotation.x = config.tilt;
+        
+        // Random rotation around Y for visual variety
+        ringGroup.rotation.y = Math.random() * Math.PI * 2;
+        
+        // Store ring reference for updates
+        if (!this.planetRings) this.planetRings = {};
+        this.planetRings[zone.id] = {
+            group: ringGroup,
+            mesh: ringMesh,
+            config: config
+        };
+        
+        // Add ring group to planet so it moves with the planet
+        planet.add(ringGroup);
+        
+        // Add particle-based ring for extra detail (Saturn only, for performance)
+        if (zone.id === 'saturn') {
+            this.createRingParticles(zone, planet, config);
+        }
+    }
+    
+    createRingDataTexture(rings) {
+        // Create a 1D texture (256 pixels wide) encoding ring color and opacity
+        const width = 256;
+        const data = new Uint8Array(width * 4);
+        
+        for (let i = 0; i < width; i++) {
+            const radialPos = i / width;
+            
+            // Find which ring section this pixel belongs to
+            let color = [0, 0, 0];
+            let opacity = 0;
+            
+            for (const ring of rings) {
+                if (radialPos >= ring.start && radialPos <= ring.end) {
+                    color = ring.color;
+                    
+                    // Add smooth transitions at ring edges
+                    const ringWidth = ring.end - ring.start;
+                    const posInRing = (radialPos - ring.start) / ringWidth;
+                    const edgeFade = smoothstep(0, 0.1, posInRing) * smoothstep(1, 0.9, posInRing);
+                    
+                    opacity = ring.opacity * edgeFade;
+                    break;
+                }
+            }
+            
+            data[i * 4] = Math.floor(color[0] * 255);
+            data[i * 4 + 1] = Math.floor(color[1] * 255);
+            data[i * 4 + 2] = Math.floor(color[2] * 255);
+            data[i * 4 + 3] = Math.floor(opacity * 255);
+        }
+        
+        const texture = new THREE.DataTexture(data, width, 1, THREE.RGBAFormat);
+        texture.needsUpdate = true;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        
+        return texture;
+        
+        // Helper function for smooth interpolation
+        function smoothstep(edge0, edge1, x) {
+            const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+            return t * t * (3 - 2 * t);
+        }
+    }
+    
+    createRingParticles(zone, planet, config) {
+        // Create particle system for extra ring detail
+        const particleCount = config.particleCount;
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const sizes = new Float32Array(particleCount);
+        
+        for (let i = 0; i < particleCount; i++) {
+            // Random angle
+            const angle = Math.random() * Math.PI * 2;
+            
+            // Random radius within ring bounds, weighted by ring density
+            let radius, ringOpacity;
+            let attempts = 0;
+            do {
+                radius = config.innerRadius + Math.random() * (config.outerRadius - config.innerRadius);
+                const radialPos = (radius - config.innerRadius) / (config.outerRadius - config.innerRadius);
+                
+                // Find ring opacity at this position
+                ringOpacity = 0;
+                for (const ring of config.rings) {
+                    if (radialPos >= ring.start && radialPos <= ring.end) {
+                        ringOpacity = ring.opacity;
+                        break;
+                    }
+                }
+                attempts++;
+            } while (Math.random() > ringOpacity && attempts < 10);
+            
+            positions[i * 3] = Math.cos(angle) * radius;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 0.02 * config.innerRadius; // Thin ring
+            positions[i * 3 + 2] = Math.sin(angle) * radius;
+            
+            // Color matches ring
+            const radialPos = (radius - config.innerRadius) / (config.outerRadius - config.innerRadius);
+            let particleColor = [0.85, 0.78, 0.65]; // Default Saturn gold
+            for (const ring of config.rings) {
+                if (radialPos >= ring.start && radialPos <= ring.end) {
+                    particleColor = ring.color;
+                    break;
+                }
+            }
+            
+            colors[i * 3] = particleColor[0] * (0.9 + Math.random() * 0.2);
+            colors[i * 3 + 1] = particleColor[1] * (0.9 + Math.random() * 0.2);
+            colors[i * 3 + 2] = particleColor[2] * (0.9 + Math.random() * 0.2);
+            
+            sizes[i] = 0.002 + Math.random() * 0.004;
+        }
+        
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        
+        const material = new THREE.PointsMaterial({
+            size: 0.003,
+            sizeAttenuation: true,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        
+        const particles = new THREE.Points(geometry, material);
+        
+        // Apply same rotation as ring mesh
+        particles.rotation.x = config.tilt;
+        particles.rotation.y = this.planetRings[zone.id].group.rotation.y;
+        
+        planet.add(particles);
+        this.planetRings[zone.id].particles = particles;
     }
 
     createMoons(zone) {
         // Moon data for planets that have significant moons
-        // distance: multiplier of planet visual radius for moon orbit distance
-        // radius_km: actual moon radius in km (for log-proportional scaling)
+        // Real orbital data used where available:
+        // - orbit_km: actual orbital semi-major axis in km
+        // - radius_km: actual moon radius in km
+        // - period_days: orbital period in days (for speed calculation)
+        // - inclination: orbital inclination in degrees (relative to planet's equator)
         const moonData = {
             earth: [
-                { name: 'Moon', distance: 3.0, radius_km: 1737, color: '#C0C0C0', speed: 13 }
+                // Earth's Moon - the only natural satellite
+                // Earth radius = 6,371 km, Moon orbits at ~60 Earth radii
+                // The Moon has a subtle brownish-grey color from iron and titanium oxides
+                { name: 'Moon', orbit_km: 384400, radius_km: 1737, color: '#A8A8A0', period_days: 27.32, inclination: 5.14 }
             ],
             mars: [
-                { name: 'Phobos', distance: 2.5, radius_km: 11, color: '#8B7355', speed: 100 },
-                { name: 'Deimos', distance: 4.0, radius_km: 6, color: '#8B7355', speed: 50 }
+                // Mars's two small, captured asteroid moons
+                // Mars radius = 3,390 km
+                // Both moons are very dark (albedo ~0.07), irregular shaped, and heavily cratered
+                // Phobos: Larger, closer, orbits faster than Mars rotates (will crash in ~50 million years)
+                { name: 'Phobos', orbit_km: 9376, radius_km: 11.3, color: '#4A4A48', period_days: 0.319, inclination: 1.08 },
+                // Deimos: Smaller, farther, smoother surface covered in regolith
+                { name: 'Deimos', orbit_km: 23460, radius_km: 6.2, color: '#525250', period_days: 1.263, inclination: 1.79 }
             ],
             jupiter: [
-                // Galilean moons
-                { name: 'Io', distance: 2.0, radius_km: 1822, color: '#FFD700', speed: 20 },
-                { name: 'Europa', distance: 2.5, radius_km: 1561, color: '#87CEEB', speed: 15 },
-                { name: 'Ganymede', distance: 3.2, radius_km: 2634, color: '#708090', speed: 10 },
-                { name: 'Callisto', distance: 4.0, radius_km: 2410, color: '#2F4F4F', speed: 7 },
-                // Additional moons
-                { name: 'Amalthea', distance: 1.6, radius_km: 84, color: '#CD5C5C', speed: 40 },
-                { name: 'Himalia', distance: 5.5, radius_km: 85, color: '#A0A0A0', speed: 4 },
-                { name: 'Thebe', distance: 1.8, radius_km: 50, color: '#B0B0B0', speed: 35 }
+                // Jupiter's moons - ordered by orbital distance
+                // Jupiter radius = 69,911 km
+                // Inner moons (ring shepherds)
+                { name: 'Metis', orbit_km: 128000, radius_km: 22, color: '#8B8B83', period_days: 0.29, inclination: 0.02 },
+                { name: 'Adrastea', orbit_km: 129000, radius_km: 8, color: '#8B8378', period_days: 0.30, inclination: 0.03 },
+                { name: 'Amalthea', orbit_km: 181366, radius_km: 84, color: '#CD5C5C', period_days: 0.50, inclination: 0.37 },
+                { name: 'Thebe', orbit_km: 221889, radius_km: 50, color: '#B0B0B0', period_days: 0.67, inclination: 1.08 },
+                // Galilean moons (the big four, in order from Jupiter)
+                { name: 'Io', orbit_km: 421700, radius_km: 1822, color: '#FFCC00', period_days: 1.77, inclination: 0.04 },
+                { name: 'Europa', orbit_km: 671034, radius_km: 1561, color: '#B8D4E8', period_days: 3.55, inclination: 0.47 },
+                { name: 'Ganymede', orbit_km: 1070412, radius_km: 2634, color: '#8B8878', period_days: 7.15, inclination: 0.18 },
+                { name: 'Callisto', orbit_km: 1882709, radius_km: 2410, color: '#5D5D5D', period_days: 16.69, inclination: 0.19 }
             ],
             saturn: [
-                { name: 'Titan', distance: 3.5, radius_km: 2575, color: '#FFA500', speed: 8 },
-                { name: 'Rhea', distance: 2.8, radius_km: 764, color: '#D3D3D3', speed: 12 },
-                { name: 'Iapetus', distance: 4.5, radius_km: 735, color: '#8B4513', speed: 5 },
-                { name: 'Dione', distance: 2.4, radius_km: 561, color: '#E8E8E8', speed: 15 },
-                { name: 'Tethys', distance: 2.2, radius_km: 531, color: '#F5F5F5', speed: 18 },
-                { name: 'Enceladus', distance: 2.0, radius_km: 252, color: '#F0F8FF', speed: 25 },
-                { name: 'Mimas', distance: 1.8, radius_km: 198, color: '#C0C0C0', speed: 30 }
+                // Saturn's major moons - ordered by orbital distance
+                // Real orbital distances from Saturn (Saturn radius = 58,232 km)
+                // All major moons orbit in Saturn's equatorial plane (same as rings)
+                { name: 'Mimas', orbit_km: 185520, radius_km: 198, color: '#C0C0C0', period_days: 0.94, inclination: 1.5 },
+                { name: 'Enceladus', orbit_km: 237948, radius_km: 252, color: '#F0F8FF', period_days: 1.37, inclination: 0.02 },
+                { name: 'Tethys', orbit_km: 294619, radius_km: 531, color: '#F5F5F5', period_days: 1.89, inclination: 1.1 },
+                { name: 'Dione', orbit_km: 377396, radius_km: 561, color: '#E8E8E8', period_days: 2.74, inclination: 0.02 },
+                { name: 'Rhea', orbit_km: 527108, radius_km: 764, color: '#D3D3D3', period_days: 4.52, inclination: 0.35 },
+                { name: 'Titan', orbit_km: 1221870, radius_km: 2575, color: '#FFA500', period_days: 15.95, inclination: 0.33 },
+                { name: 'Hyperion', orbit_km: 1481010, radius_km: 135, color: '#A89078', period_days: 21.28, inclination: 0.43 },
+                { name: 'Iapetus', orbit_km: 3560820, radius_km: 735, color: '#8B4513', period_days: 79.32, inclination: 15.47 }
             ],
             uranus: [
-                { name: 'Titania', distance: 3.0, radius_km: 789, color: '#B0C4DE', speed: 10 },
-                { name: 'Oberon', distance: 4.0, radius_km: 761, color: '#778899', speed: 8 },
-                { name: 'Umbriel', distance: 2.5, radius_km: 585, color: '#696969', speed: 12 },
-                { name: 'Ariel', distance: 2.2, radius_km: 579, color: '#D3D3D3', speed: 14 },
-                { name: 'Miranda', distance: 1.8, radius_km: 236, color: '#A9A9A9', speed: 20 }
+                // Uranus moons - orbit in Uranus's equatorial plane (tilted ~98°)
+                { name: 'Miranda', orbit_km: 129390, radius_km: 236, color: '#A9A9A9', period_days: 1.41, inclination: 4.2 },
+                { name: 'Ariel', orbit_km: 190900, radius_km: 579, color: '#D3D3D3', period_days: 2.52, inclination: 0.04 },
+                { name: 'Umbriel', orbit_km: 266000, radius_km: 585, color: '#696969', period_days: 4.14, inclination: 0.13 },
+                { name: 'Titania', orbit_km: 435910, radius_km: 789, color: '#B0C4DE', period_days: 8.71, inclination: 0.08 },
+                { name: 'Oberon', orbit_km: 583520, radius_km: 761, color: '#778899', period_days: 13.46, inclination: 0.07 }
             ],
             neptune: [
-                { name: 'Triton', distance: 3.0, radius_km: 1353, color: '#E0E0E0', speed: 12 },
-                { name: 'Proteus', distance: 2.2, radius_km: 210, color: '#808080', speed: 20 }
+                { name: 'Triton', orbit_km: 354760, radius_km: 1353, color: '#E0E0E0', period_days: 5.88, inclination: 156.9 }, // Retrograde!
+                { name: 'Proteus', orbit_km: 117647, radius_km: 210, color: '#808080', period_days: 1.12, inclination: 0.08 }
             ]
+        };
+        
+        // Planet axial tilts for moon orbital planes
+        const planetTilts = {
+            earth: 23.44 * Math.PI / 180,
+            mars: 25.19 * Math.PI / 180,
+            jupiter: 3.13 * Math.PI / 180,
+            saturn: 26.73 * Math.PI / 180,  // Same as ring tilt
+            uranus: 97.77 * Math.PI / 180,  // Same as ring tilt
+            neptune: 28.32 * Math.PI / 180
         };
 
         const planet = this.planets[zone.id];
@@ -671,15 +1232,44 @@ class SolarSystem {
         if (!planetInfo) return;
 
         const planetRadius = this.logScaleRadius(planetInfo.radius_km);
+        const planetRadiusKm = planetInfo.radius_km;
+        
+        // Get planet's axial tilt
+        const planetTilt = planetTilts[zone.id] || 0;
         
         this.moons[zone.id] = [];
+        
+        const moons = moonData[zone.id];
+        const moonCount = moons.length;
 
-        moonData[zone.id].forEach(moon => {
-            // Moon orbit distance is relative to planet's visual radius
-            const moonOrbitDistance = planetRadius * moon.distance;
+        moons.forEach((moon, index) => {
+            // Calculate orbit distance using log scaling of actual orbital distance
+            // Scale relative to planet's visual radius
+            const orbitRatioReal = moon.orbit_km / planetRadiusKm;
+            
+            // Use a compressed log scale for moon orbits to keep them visible
+            // but maintain relative ordering and spacing
+            const minOrbitMultiplier = 1.8;  // Minimum visual distance from planet
+            const maxOrbitMultiplier = 8.0;  // Maximum visual distance
+            
+            // Find min/max orbit ratios for this planet's moons
+            const orbitRatios = moons.map(m => m.orbit_km / planetRadiusKm);
+            const minRatio = Math.min(...orbitRatios);
+            const maxRatio = Math.max(...orbitRatios);
+            
+            // Log-scale the orbit ratio to compress large distances
+            const logMin = Math.log10(minRatio);
+            const logMax = Math.log10(maxRatio);
+            const logCurrent = Math.log10(orbitRatioReal);
+            
+            // Normalize to 0-1 range
+            const normalized = logMax > logMin ? (logCurrent - logMin) / (logMax - logMin) : 0.5;
+            
+            // Map to visual multiplier range
+            const orbitMultiplier = minOrbitMultiplier + normalized * (maxOrbitMultiplier - minOrbitMultiplier);
+            const moonOrbitDistance = planetRadius * orbitMultiplier;
             
             // Log-proportional moon radius based on actual moon size
-            // Use the same log scale as planets but with a smaller multiplier
             const moonRadius = Math.max(0.015, this.logScaleRadius(moon.radius_km) * 0.8);
             
             const moonGeometry = new THREE.SphereGeometry(moonRadius, 16, 16);
@@ -697,22 +1287,40 @@ class SolarSystem {
             moonMesh.castShadow = true;
             moonMesh.receiveShadow = true;
             
-            // Initial position (will be updated in animation loop)
-            const initialAngle = Math.random() * Math.PI * 2;
-            moonMesh.position.set(
-                planet.position.x + Math.cos(initialAngle) * moonOrbitDistance,
-                0,
-                planet.position.z + Math.sin(initialAngle) * moonOrbitDistance
-            );
+            // Space out initial positions evenly around the orbit
+            // Use golden angle for optimal visual distribution
+            const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // ~137.5 degrees
+            const initialAngle = index * goldenAngle + (zone.id === 'saturn' ? Math.PI / 4 : 0);
             
-            // Moon orbital speed relative to planet's orbital speed
-            const moonOrbitalSpeed = planet.userData.orbitalSpeed * moon.speed;
+            // Moon orbital inclination (combine planet tilt with moon's own inclination)
+            const moonInclination = moon.inclination * Math.PI / 180;
+            
+            // Calculate position in tilted orbital plane
+            // First calculate position in the moon's orbital plane
+            const x = Math.cos(initialAngle) * moonOrbitDistance;
+            const z = Math.sin(initialAngle) * moonOrbitDistance;
+            
+            // Apply moon's own inclination (small perturbation)
+            const y = Math.sin(initialAngle) * moonOrbitDistance * Math.sin(moonInclination);
+            
+            // For Saturn and Uranus, moons orbit in the equatorial plane (same as rings)
+            // We'll handle the transformation in the update loop
+            moonMesh.position.set(x, y, z);
+            
+            // Calculate orbital speed based on period
+            // Shorter period = faster orbit
+            const baseSpeed = 0.1; // Base speed factor
+            const orbitalSpeed = baseSpeed / moon.period_days;
             
             moonMesh.userData = {
                 planetZoneId: zone.id,
+                moonName: moon.name,
                 moonOrbitDistance: moonOrbitDistance,
                 orbitalAngle: initialAngle,
-                orbitalSpeed: moonOrbitalSpeed
+                orbitalSpeed: orbitalSpeed,
+                planetTilt: planetTilt,
+                moonInclination: moonInclination,
+                orbitInEquatorialPlane: ['earth', 'mars', 'jupiter', 'saturn', 'uranus'].includes(zone.id)
             };
             
             this.moons[zone.id].push(moonMesh);
@@ -776,6 +1384,51 @@ class SolarSystem {
         });
         
         const orbit = new THREE.Line(geometry, material);
+        this.orbits[zone.id] = orbit;
+        this.scene.add(orbit);
+    }
+
+    createDysonOrbit(zone) {
+        // Dyson sphere orbit - golden color, positioned just inside Mercury
+        const color = zone.color || '#FFD700';
+        
+        // Dyson orbit is 0.1 AU inside Mercury's real orbit
+        // Mercury real: 0.39 AU, Dyson: 0.29 AU (real) = 0.87 AU (game scaled 3x)
+        // Position it just inside Mercury's visual orbit
+        const mercuryOrbitKm = this.planetData.mercury?.orbit_km || 173700000;
+        const mercuryOrbitRadius = this.scaleRockyPlanetOrbit(mercuryOrbitKm);
+        
+        // Dyson orbit is 75% of Mercury's orbit radius (places it visually inside Mercury)
+        const dysonOrbitRadius = mercuryOrbitRadius * 0.75;
+        
+        // Store dyson orbit radius for other systems to use
+        this.dysonOrbitRadius = dysonOrbitRadius;
+        
+        // Create orbit ring manually (circle) - use dashed line for distinctive look
+        const points = [];
+        const segments = 128;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            points.push(new THREE.Vector3(
+                Math.cos(angle) * dysonOrbitRadius,
+                0,
+                Math.sin(angle) * dysonOrbitRadius
+            ));
+        }
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        
+        // Use dashed material for Dyson orbit to distinguish from planet orbits
+        const material = new THREE.LineDashedMaterial({
+            color: color,
+            opacity: 0.6,
+            transparent: true,
+            dashSize: 0.3,
+            gapSize: 0.15
+        });
+        
+        const orbit = new THREE.Line(geometry, material);
+        orbit.computeLineDistances(); // Required for dashed material
         this.orbits[zone.id] = orbit;
         this.scene.add(orbit);
     }
@@ -856,6 +1509,114 @@ class SolarSystem {
             totalParticles: particleCount
         };
         this.scene.add(this.asteroidBelt);
+        
+        // Create the largest asteroids as distinct 3D objects
+        this.createMajorAsteroids(innerRadius, outerRadius, baseOrbitalSpeed);
+    }
+    
+    createMajorAsteroids(innerRadius, outerRadius, baseOrbitalSpeed) {
+        // Major asteroids data - real orbital and physical data
+        // Semi-major axis in AU, diameter in km
+        // Asteroid belt spans roughly 2.0 AU to 3.3 AU (scaled 3x: 6.0 to 9.9 AU)
+        const majorAsteroids = [
+            // Dwarf planet Ceres - largest object in asteroid belt
+            { name: 'Ceres', semiMajorAxisAU: 2.77, diameter_km: 939, color: '#8B8B7A', period_days: 1682, inclination: 10.6 },
+            // Large asteroids (the "big four" after Ceres)
+            { name: 'Vesta', semiMajorAxisAU: 2.36, diameter_km: 525, color: '#C0C0B0', period_days: 1325, inclination: 7.1 },
+            { name: 'Pallas', semiMajorAxisAU: 2.77, diameter_km: 512, color: '#606058', period_days: 1686, inclination: 34.8 },
+            { name: 'Hygiea', semiMajorAxisAU: 3.14, diameter_km: 434, color: '#4A4A42', period_days: 2030, inclination: 3.8 },
+            // Other notable asteroids
+            { name: 'Interamnia', semiMajorAxisAU: 3.06, diameter_km: 326, color: '#5A5A52', period_days: 1950, inclination: 17.3 },
+            { name: 'Davida', semiMajorAxisAU: 3.17, diameter_km: 289, color: '#484840', period_days: 2060, inclination: 15.9 },
+            { name: 'Eunomia', semiMajorAxisAU: 2.64, diameter_km: 268, color: '#787870', period_days: 1570, inclination: 11.8 },
+            { name: 'Juno', semiMajorAxisAU: 2.67, diameter_km: 234, color: '#6E6E66', period_days: 1594, inclination: 13.0 },
+            { name: 'Psyche', semiMajorAxisAU: 2.92, diameter_km: 226, color: '#A0A098', period_days: 1823, inclination: 3.1 },
+            { name: 'Europa', semiMajorAxisAU: 3.10, diameter_km: 315, color: '#525248', period_days: 1993, inclination: 7.5 }
+        ];
+        
+        // Store major asteroids for animation and focusing
+        this.majorAsteroids = {};
+        
+        // Calculate belt midpoint for scaling reference
+        const beltMidpoint = (innerRadius + outerRadius) / 2;
+        const beltWidth = outerRadius - innerRadius;
+        
+        majorAsteroids.forEach((asteroid, index) => {
+            // Scale orbital distance - map AU to visual belt position
+            // Belt spans 2.0-3.3 AU, center at ~2.7 AU
+            const minAU = 2.0;
+            const maxAU = 3.3;
+            const normalizedAU = (asteroid.semiMajorAxisAU - minAU) / (maxAU - minAU);
+            const orbitDistance = innerRadius + normalizedAU * beltWidth;
+            
+            // Scale asteroid size - smaller log scale for better proportions
+            // Ceres (939 km) should be visible but not dominant
+            const logDiameter = Math.log10(asteroid.diameter_km);
+            const logMin = Math.log10(200); // Minimum reference
+            const logMax = Math.log10(1000); // Maximum reference (Ceres)
+            const normalizedSize = Math.max(0, Math.min(1, (logDiameter - logMin) / (logMax - logMin)));
+            const asteroidRadius = 0.015 + normalizedSize * 0.035; // 0.015 to 0.05 visual units (much smaller)
+            
+            // Create asteroid mesh
+            const geometry = new THREE.SphereGeometry(asteroidRadius, 12, 12);
+            const material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color(asteroid.color),
+                metalness: 0.2,
+                roughness: 0.85,
+                emissive: new THREE.Color(asteroid.color).multiplyScalar(0.05)
+            });
+            
+            const asteroidMesh = new THREE.Mesh(geometry, material);
+            asteroidMesh.castShadow = true;
+            asteroidMesh.receiveShadow = true;
+            
+            // Distribute initial positions using golden angle
+            const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+            const initialAngle = index * goldenAngle * 3; // Multiply for wider spread
+            
+            // Calculate initial position with inclination
+            const inclRad = asteroid.inclination * Math.PI / 180;
+            const x = Math.cos(initialAngle) * orbitDistance;
+            const z = Math.sin(initialAngle) * orbitDistance;
+            const y = Math.sin(initialAngle) * orbitDistance * Math.sin(inclRad) * 0.3; // Reduced Y for visibility
+            
+            asteroidMesh.position.set(x, y, z);
+            
+            // Calculate orbital speed using same formula as planets (Kepler's law approximation)
+            const orbitalSpeed = 0.01 / Math.sqrt(asteroid.period_days / 365.25);
+            
+            // Random rotation axis and speed for tumbling effect
+            // Real asteroids have varied rotation periods from hours to days
+            const rotationSpeed = 0.5 + Math.random() * 2.0; // Varied rotation speeds
+            const rotationAxis = new THREE.Vector3(
+                Math.random() - 0.5,
+                Math.random() - 0.5,
+                Math.random() - 0.5
+            ).normalize();
+            
+            // Give each asteroid a random initial rotation
+            asteroidMesh.rotation.x = Math.random() * Math.PI * 2;
+            asteroidMesh.rotation.y = Math.random() * Math.PI * 2;
+            asteroidMesh.rotation.z = Math.random() * Math.PI * 2;
+            
+            asteroidMesh.userData = {
+                name: asteroid.name,
+                orbitDistance: orbitDistance,
+                orbitalAngle: initialAngle,
+                orbitalSpeed: orbitalSpeed,
+                inclination: inclRad,
+                diameter_km: asteroid.diameter_km,
+                isCeres: asteroid.name === 'Ceres',
+                rotationSpeed: rotationSpeed,
+                rotationAxis: rotationAxis
+            };
+            
+            this.majorAsteroids[asteroid.name.toLowerCase()] = asteroidMesh;
+            this.scene.add(asteroidMesh);
+        });
+        
+        // Store reference to Ceres specifically for zone focusing
+        this.ceres = this.majorAsteroids['ceres'];
     }
 
     createKuiperBelt(zone) {
@@ -995,9 +1756,9 @@ class SolarSystem {
             this.sunRays.material.uniforms.time.value = this.time;
         }
 
-        // Update sun light intensity (subtle pulsing)
+        // Update sun light intensity (subtle pulsing) - maintain high base intensity
         if (this.sunLight) {
-            this.sunLight.intensity = 3 + Math.sin(this.time * 0.5) * 0.2;
+            this.sunLight.intensity = 8 + Math.sin(this.time * 0.5) * 0.5;  // Increased base from 3 to 8, pulse from 0.2 to 0.5
         }
 
         // Update planet positions (simple orbital animation)
@@ -1007,6 +1768,14 @@ class SolarSystem {
                 const radius = planet.userData.radius;
                 planet.position.x = Math.cos(planet.userData.orbitalAngle) * radius;
                 planet.position.z = Math.sin(planet.userData.orbitalAngle) * radius;
+            }
+            
+            // Update atmosphere shaders with sun position
+            if (planet.userData && planet.userData.atmosphere) {
+                const atmo = planet.userData.atmosphere;
+                if (atmo.material.uniforms && atmo.material.uniforms.sunPosition) {
+                    atmo.material.uniforms.sunPosition.value.set(0, 0, 0);
+                }
             }
         });
 
@@ -1020,11 +1789,35 @@ class SolarSystem {
                     // Update moon's orbital angle
                     moon.userData.orbitalAngle += moon.userData.orbitalSpeed * deltaTime;
                     
-                    // Position moon relative to planet's current position
                     const orbitDist = moon.userData.moonOrbitDistance;
-                    moon.position.x = planet.position.x + Math.cos(moon.userData.orbitalAngle) * orbitDist;
-                    moon.position.z = planet.position.z + Math.sin(moon.userData.orbitalAngle) * orbitDist;
-                    moon.position.y = planet.position.y;
+                    const angle = moon.userData.orbitalAngle;
+                    const planetTilt = moon.userData.planetTilt || 0;
+                    const moonInclination = moon.userData.moonInclination || 0;
+                    
+                    // Calculate position in the moon's orbital plane (before tilt)
+                    // x-z plane is the orbital plane
+                    let localX = Math.cos(angle) * orbitDist;
+                    let localY = Math.sin(angle) * orbitDist * Math.sin(moonInclination);
+                    let localZ = Math.sin(angle) * orbitDist * Math.cos(moonInclination);
+                    
+                    // For planets with tilted equatorial planes (Saturn, Uranus),
+                    // rotate the moon's orbit to match the planet's equatorial tilt
+                    if (moon.userData.orbitInEquatorialPlane && planetTilt !== 0) {
+                        // Rotate around X axis by planet's axial tilt
+                        const cosTilt = Math.cos(planetTilt);
+                        const sinTilt = Math.sin(planetTilt);
+                        
+                        const rotatedY = localY * cosTilt - localZ * sinTilt;
+                        const rotatedZ = localY * sinTilt + localZ * cosTilt;
+                        
+                        localY = rotatedY;
+                        localZ = rotatedZ;
+                    }
+                    
+                    // Position moon relative to planet's current position
+                    moon.position.x = planet.position.x + localX;
+                    moon.position.y = planet.position.y + localY;
+                    moon.position.z = planet.position.z + localZ;
                 }
             });
         });
@@ -1050,6 +1843,34 @@ class SolarSystem {
             geometry.attributes.position.needsUpdate = true;
         }
         
+        // Update major asteroids (Ceres, Vesta, etc.)
+        if (this.majorAsteroids) {
+            Object.values(this.majorAsteroids).forEach(asteroid => {
+                if (asteroid.userData) {
+                    // Update orbital angle
+                    asteroid.userData.orbitalAngle += asteroid.userData.orbitalSpeed * deltaTime;
+                    
+                    const angle = asteroid.userData.orbitalAngle;
+                    const orbitDist = asteroid.userData.orbitDistance;
+                    const inclination = asteroid.userData.inclination || 0;
+                    
+                    // Calculate position with inclination
+                    asteroid.position.x = Math.cos(angle) * orbitDist;
+                    asteroid.position.z = Math.sin(angle) * orbitDist;
+                    asteroid.position.y = Math.sin(angle) * orbitDist * Math.sin(inclination) * 0.3;
+                    
+                    // Rotate asteroid on its axis (tumbling effect)
+                    if (asteroid.userData.rotationSpeed && asteroid.userData.rotationAxis) {
+                        const rotSpeed = asteroid.userData.rotationSpeed * deltaTime;
+                        const axis = asteroid.userData.rotationAxis;
+                        
+                        // Apply rotation around the random axis
+                        asteroid.rotateOnAxis(axis, rotSpeed);
+                    }
+                }
+            });
+        }
+
         // Update Kuiper belt orbital motion
         if (this.kuiperBelt && this.kuiperBelt.userData && this.kuiperBelt.userData.kuiperData) {
             const kuiperData = this.kuiperBelt.userData.kuiperData;
@@ -1076,17 +1897,23 @@ class SolarSystem {
             this.zoneClouds.update(deltaTime);
         }
         
+        // Update planet ring shaders
+        if (this.planetRings) {
+            Object.values(this.planetRings).forEach(ringData => {
+                if (ringData.mesh && ringData.mesh.material && ringData.mesh.material.uniforms) {
+                    ringData.mesh.material.uniforms.time.value = this.time;
+                }
+            });
+        }
+        
         // Update comet positions
         this.comets.forEach(comet => {
             if (comet.userData) {
                 const orbitalData = comet.userData;
                 
-                // Update mean anomaly based on orbital period
-                // Mean motion: n = 2π / T (radians per day)
-                // Convert deltaTime (seconds) to days: deltaTime / 86400
-                const meanMotion = (2 * Math.PI) / orbitalData.orbitalPeriod;
-                const deltaDays = deltaTime / 86400;
-                orbitalData.meanAnomaly += meanMotion * deltaDays;
+                // Update mean anomaly using orbital speed (radians per second)
+                // Similar to how planets are animated
+                orbitalData.meanAnomaly += orbitalData.orbitalSpeed * deltaTime;
                 
                 // Normalize mean anomaly to [0, 2π]
                 while (orbitalData.meanAnomaly > Math.PI * 2) {
@@ -1122,6 +1949,11 @@ class SolarSystem {
             return new THREE.Vector3(0, 0, 0);
         }
         
+        // Asteroid belt focuses on Ceres as the de facto center
+        if (zoneId === 'asteroid_belt' && this.ceres) {
+            return this.ceres.position.clone();
+        }
+        
         const planet = this.planets[zoneId];
         if (planet) {
             return planet.position.clone();
@@ -1135,6 +1967,11 @@ class SolarSystem {
      * @returns {number} The orbit radius or 0 if not found
      */
     getZoneOrbitRadius(zoneId) {
+        // Special handling for Dyson zone
+        if (zoneId === 'dyson_sphere' || zoneId === 'dyson') {
+            return this.dysonOrbitRadius || 0;
+        }
+        
         const planet = this.planets[zoneId];
         if (planet && planet.userData) {
             return planet.userData.radius;

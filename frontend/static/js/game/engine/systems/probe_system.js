@@ -58,7 +58,8 @@ class ProbeSystem {
             const replicatingProbes = totalProbes * replicateAllocation;
             // Calculate building rate from probes allocated to replication
             // Uses pre-calculated upgrade factors from state
-            const replicationRate = this.productionCalculator.calculateBuildingRate(replicatingProbes, newState);
+            // Applies zone crowding penalty
+            const replicationRate = this.productionCalculator.calculateBuildingRate(replicatingProbes, newState, zoneId);
             // Apply energy throttle to replication rate before metal throttle
             const throttledReplicationRate = replicationRate * energyThrottle;
             this.processReplication(newState, zoneId, throttledReplicationRate, deltaTime);

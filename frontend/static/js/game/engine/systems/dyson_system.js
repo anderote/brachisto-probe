@@ -11,7 +11,13 @@ class DysonSystem {
         this.orbitalMechanics = orbitalMechanics;
         
         // Dyson construction constants
-        this.DYSON_POWER_PER_KG = 5000;  // watts per kg
+        this.DYSON_POWER_PER_KG_BASE = 5000;  // Base watts per kg at 1 AU
+        // Dyson sphere at 0.29 AU (real) = 0.87 AU (game's 3x scaled system)
+        // This is 0.1 AU inside Mercury's real orbit (0.39 AU)
+        this.DYSON_RADIUS_AU_REAL = 0.29;  // Real astronomical distance
+        // Inverse square law: solar intensity at 0.29 AU is (1/0.29)² ≈ 11.9x higher than at 1 AU
+        this.SOLAR_INTENSITY_MULTIPLIER = 1 / (this.DYSON_RADIUS_AU_REAL * this.DYSON_RADIUS_AU_REAL);
+        this.DYSON_POWER_PER_KG = this.DYSON_POWER_PER_KG_BASE * this.SOLAR_INTENSITY_MULTIPLIER;  // ~59,500 W/kg at 0.29 AU
         this.METAL_TO_DYSON_RATIO = 2.0;  // 2 kg metal → 1 kg Dyson mass
     }
     
@@ -50,7 +56,8 @@ class DysonSystem {
         // Calculate building rate
         // Uses pre-calculated upgrade factors from state
         const dysonProbes = totalProbes * dysonAllocation;
-        const buildingRate = this.productionCalculator.calculateBuildingRate(dysonProbes, newState);
+        // Dyson zone is exempt from crowding penalty, but we pass zoneId for consistency
+        const buildingRate = this.productionCalculator.calculateBuildingRate(dysonProbes, newState, 'dyson_sphere');
         
         // Apply Dyson construction upgrade factor (uses ALPHA_DYSON_FACTOR)
         const dysonUpgradeFactor = newState.upgrade_factors?.dyson?.construction?.performance || 1.0;

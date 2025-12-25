@@ -197,15 +197,23 @@ class DysonSphereVisualization {
         document.getElementById('app').appendChild(this.completionSign);
     }
     
-    // Get Dyson orbit radius at 4x Mercury's orbital radius
+    // Get Dyson orbit radius - just inside Mercury's orbit
     getDysonOrbitRadius() {
-        if (!this.solarSystem || !this.solarSystem.logScaleOrbit || !this.solarSystem.planetData) {
+        if (!this.solarSystem) {
             return 2.0; // Fallback
         }
         try {
-            const mercuryOrbitKm = this.solarSystem.planetData.mercury?.orbit_km || 173700000;
-            const mercuryOrbit = this.solarSystem.logScaleOrbit(mercuryOrbitKm);
-            return mercuryOrbit * 2.5; // 2.5 times Mercury's orbit
+            // Use the stored dyson orbit radius from solar system (set in createDysonOrbit)
+            if (this.solarSystem.dysonOrbitRadius) {
+                return this.solarSystem.dysonOrbitRadius;
+            }
+            // Fallback: calculate from Mercury's orbit (75% of Mercury's visual orbit)
+            if (this.solarSystem.scaleRockyPlanetOrbit && this.solarSystem.planetData?.mercury) {
+                const mercuryOrbitKm = this.solarSystem.planetData.mercury.orbit_km || 173700000;
+                const mercuryOrbit = this.solarSystem.scaleRockyPlanetOrbit(mercuryOrbitKm);
+                return mercuryOrbit * 0.75;
+            }
+            return 2.0;
         } catch (e) {
             return 2.0;
         }

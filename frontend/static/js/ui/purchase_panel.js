@@ -41,8 +41,8 @@ class PurchasePanel {
                 // Check if it's the new format (has building IDs as keys)
                 const buildingKeys = Object.keys(rawBuildings);
                 if (buildingKeys.length > 0 && rawBuildings[buildingKeys[0]] && rawBuildings[buildingKeys[0]].id) {
-                    // Define the order: omni_fab, power_station, data_center, refinery, factory, mass_driver
-                    const order = ['omni_fab', 'power_station', 'data_center', 'refinery', 'factory', 'mass_driver'];
+                    // Define the order: power_station, data_center, mass_driver
+                    const order = ['power_station', 'data_center', 'mass_driver'];
                     
                     // Store buildings in a flat array with the specified order
                     this.buildings = [];

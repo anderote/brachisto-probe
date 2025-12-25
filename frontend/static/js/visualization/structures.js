@@ -32,28 +32,23 @@ class StructuresVisualization {
     }
 
     /**
-     * Calculate log-proportional visible count for ODCs
-     * 1 ODC = 1 dot, 1000 ODCs = 10 dots
+     * Calculate visible count: 100 real structures = 1 visual structure
+     * 100 → 1, 200 → 2, 300 → 3, etc.
      */
-    calculateODCVisibleCount(count) {
+    calculateVisibleCount(count) {
         if (count <= 0) return 0;
-        if (count === 1) return 1;
-        // log10(1) = 0, log10(1000) = 3
-        // We want: count=1 → visible=1, count=1000 → visible=10
-        // Formula: visible = Math.max(1, Math.ceil(Math.log10(count) * 10/3))
-        // For 1: log10(1) = 0, max(1, 0) = 1 ✓
-        // For 1000: log10(1000) = 3, ceil(3 * 10/3) = ceil(10) = 10 ✓
-        return Math.max(1, Math.ceil(Math.log10(count) * 10 / 3));
+        // Each visual structure represents 100 real structures
+        return Math.floor(count / 100);
     }
 
     /**
-     * Create ODC mesh - satellite with flat panels
+     * Create ODC mesh - small satellite with small radiator fins, pointing towards sun
      */
     createODCMesh() {
         const group = new THREE.Group();
         
-        // Central body - small box
-        const bodyGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+        // Central body - smaller box
+        const bodyGeometry = new THREE.BoxGeometry(0.02, 0.02, 0.02);
         const bodyMaterial = new THREE.MeshStandardMaterial({
             color: 0xCCCCCC,
             metalness: 0.7,
@@ -62,8 +57,8 @@ class StructuresVisualization {
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
         group.add(body);
 
-        // Create 4 flat panels extending outward
-        const panelGeometry = new THREE.PlaneGeometry(0.1, 0.2);
+        // Create 4 smaller flat panels (radiator fins) extending outward
+        const panelGeometry = new THREE.PlaneGeometry(0.04, 0.08); // Smaller: 0.04 x 0.08 (was 0.1 x 0.2)
         const panelMaterial = new THREE.MeshStandardMaterial({
             color: 0xDDDDDD,
             metalness: 0.5,
@@ -71,12 +66,12 @@ class StructuresVisualization {
             side: THREE.DoubleSide
         });
 
-        // Panel positions: front, back, left, right
+        // Panel positions: front, back, left, right (smaller distances)
         const panelPositions = [
-            { x: 0, y: 0, z: 0.15, rotY: 0 },      // Front
-            { x: 0, y: 0, z: -0.15, rotY: Math.PI }, // Back
-            { x: 0.15, y: 0, z: 0, rotY: Math.PI / 2 }, // Right
-            { x: -0.15, y: 0, z: 0, rotY: -Math.PI / 2 } // Left
+            { x: 0, y: 0, z: 0.06, rotY: 0 },      // Front
+            { x: 0, y: 0, z: -0.06, rotY: Math.PI }, // Back
+            { x: 0.06, y: 0, z: 0, rotY: Math.PI / 2 }, // Right
+            { x: -0.06, y: 0, z: 0, rotY: -Math.PI / 2 } // Left
         ];
 
         panelPositions.forEach(pos => {
@@ -85,6 +80,8 @@ class StructuresVisualization {
             panel.rotation.y = pos.rotY;
             group.add(panel);
         });
+
+        // Orientation will be set in updateStructurePosition to point 90 degrees from sun direction
 
         return group;
     }
@@ -107,43 +104,43 @@ class StructuresVisualization {
         return mesh;
     }
 
-    /**
-     * Create factory mesh - large cyan square
-     */
-    createFactoryMesh() {
-        const geometry = new THREE.PlaneGeometry(0.15, 0.15);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x00FFFF,
-            metalness: 0.3,
-            roughness: 0.7,
-            side: THREE.DoubleSide
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
-    }
+    // /**
+    //  * Create factory mesh - large cyan square
+    //  */
+    // createFactoryMesh() {
+    //     const geometry = new THREE.PlaneGeometry(0.15, 0.15);
+    //     const material = new THREE.MeshStandardMaterial({
+    //         color: 0x00FFFF,
+    //         metalness: 0.3,
+    //         roughness: 0.7,
+    //         side: THREE.DoubleSide
+    //     });
+    //     const mesh = new THREE.Mesh(geometry, material);
+    //     mesh.rotation.x = -Math.PI / 2;
+    //     return mesh;
+    // }
+
+    // /**
+    //  * Create refinery mesh - large brown square
+    //  */
+    // createRefineryMesh() {
+    //     const geometry = new THREE.PlaneGeometry(0.15, 0.15);
+    //     const material = new THREE.MeshStandardMaterial({
+    //         color: 0x8B4513,
+    //         metalness: 0.3,
+    //         roughness: 0.7,
+    //         side: THREE.DoubleSide
+    //     });
+    //     const mesh = new THREE.Mesh(geometry, material);
+    //     mesh.rotation.x = -Math.PI / 2;
+    //     return mesh;
+    // }
 
     /**
-     * Create refinery mesh - large brown square
-     */
-    createRefineryMesh() {
-        const geometry = new THREE.PlaneGeometry(0.15, 0.15);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x8B4513,
-            metalness: 0.3,
-            roughness: 0.7,
-            side: THREE.DoubleSide
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.rotation.x = -Math.PI / 2;
-        return mesh;
-    }
-
-    /**
-     * Create mass driver mesh - long thin cylinder
+     * Create mass driver mesh - long thin cylinder (tangent to orbital circle)
      */
     createMassDriverMesh() {
-        const geometry = new THREE.CylinderGeometry(0.02, 0.02, 0.4, 16);
+        const geometry = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 16); // Longer: 0.8 units
         const material = new THREE.MeshStandardMaterial({
             color: 0x888888,
             metalness: 0.8,
@@ -164,10 +161,12 @@ class StructuresVisualization {
                 return this.createODCMesh();
             case 'power_station':
                 return this.createPowerStationMesh();
-            case 'factory':
-                return this.createFactoryMesh();
-            case 'refinery':
-                return this.createRefineryMesh();
+            // case 'factory':
+            //     return this.createFactoryMesh();
+            // case 'refinery':
+            //     return this.createRefineryMesh();
+            // case 'omni_fab':
+            //     return this.createFactoryMesh(); // Use factory mesh for omni_fab
             case 'mass_driver':
                 return this.createMassDriverMesh();
             default:
@@ -266,12 +265,9 @@ class StructuresVisualization {
                 }
 
                 // Calculate required mesh count
-                let requiredCount;
-                if (buildingId === 'data_center') {
-                    requiredCount = this.calculateODCVisibleCount(count);
-                } else {
-                    requiredCount = Math.floor(count);
-                }
+                // Each visual structure represents 100 real structures
+                // 100 → 1, 200 → 2, 300 → 3, etc.
+                const requiredCount = this.calculateVisibleCount(count);
 
                 // Get or create mesh array for this building type
                 if (!zoneGroup[buildingId]) {
@@ -295,41 +291,36 @@ class StructuresVisualization {
                         
                         // Set up positioning based on structure type
                         if (buildingId === 'mass_driver') {
-                            // Mass driver: position near planet, not orbiting
-                            // Still needs to be at least 3 planetary radii away to avoid interference
-                            const planetRadius = planetData.planetRadius;
-                            const minDistance = planetRadius * 3; // Minimum 3 planetary radii
-                            const distanceFromPlanet = minDistance + Math.random() * 0.5; // 3-3.5 planetary radii
-                            const angle = Math.random() * Math.PI * 2;
-                            const elevation = (Math.random() - 0.5) * 0.3; // Slight vertical variation
+                            // Mass driver: positioned tangent to orbital circle with slight deviations
+                            const planet = planetData.planet;
+                            const orbitalRadius = planet.userData?.radius || 2.0;
+                            
+                            // Distance along tangent from planet (small fraction of orbital radius)
+                            const distanceFromPlanet = orbitalRadius * 0.1; // 10% of orbital radius
+                            
+                            // Deviation angle from perfect tangent (slight variations)
+                            const deviationAngle = (Math.random() - 0.5) * 0.2; // ±0.1 radians deviation
+                            
+                            // Slight elevation variation
+                            const elevation = (Math.random() - 0.5) * 0.2;
                             
                             mesh.userData = {
                                 zoneId: zoneId,
                                 buildingId: buildingId,
                                 isMassDriver: true,
                                 distanceFromPlanet: distanceFromPlanet,
-                                angle: angle,
+                                deviationAngle: deviationAngle,
                                 elevation: elevation
                             };
                             
-                            // Position relative to planet (will be updated in update())
-                            mesh.position.copy(planetData.planetPosition);
-                            const offset = new THREE.Vector3(
-                                Math.cos(angle) * distanceFromPlanet,
-                                elevation,
-                                Math.sin(angle) * distanceFromPlanet
-                            );
-                            mesh.position.add(offset);
-                            
-                            // Orient toward planet
-                            const direction = new THREE.Vector3().subVectors(planetData.planetPosition, mesh.position).normalize();
-                            mesh.lookAt(planetData.planetPosition);
-                            mesh.rotateX(Math.PI / 2); // Adjust for cylinder orientation
+                            // Initial position (will be updated in update())
+                            this.updateStructurePosition(mesh, planetData);
                         } else if (buildingId === 'power_station') {
                             // Power stations: positioned along planet's orbital path, facing sun
-                            // Alternating on either side of the planet, moving outward
+                            // When orbital ring fills up, start new ring at slight inclination
                             const planet = planetData.planet;
                             const orbitalRadius = planet.userData?.radius || 2.0; // Same orbit as planet
+                            const planetRadius = planetData.planetRadius; // Visual size of the planet
                             const panelWidth = 0.15; // Width of each panel
                             const spacing = 3 * panelWidth; // Spacing is 3X the width (0.45 units)
                             
@@ -337,9 +328,27 @@ class StructuresVisualization {
                             // angle spacing = spacing / orbitalRadius (in radians)
                             const anglePerPanel = spacing / orbitalRadius;
                             
+                            // Offset starting position from planet to avoid overlap
+                            // Start building structures 4 planetary radii ahead of the planet
+                            // Convert distance to angle: angle = distance / orbitalRadius
+                            const startOffsetAngle = (4 * planetRadius) / orbitalRadius;
+                            
+                            // Calculate how many panels fit in one full ring (2π radians)
+                            const panelsPerRing = Math.floor((2 * Math.PI) / anglePerPanel);
+                            
+                            // Determine which ring this panel is in (0 = first ring, 1 = second ring, etc.)
+                            const ringIndex = Math.floor(i / panelsPerRing);
+                            
+                            // Calculate panel index within this ring
+                            const panelIndexInRing = i % panelsPerRing;
+                            
+                            // Each new ring has a slight inclination (tilt) relative to the first ring
+                            const inclinationPerRing = 0.1; // radians of inclination per ring
+                            const ringInclination = ringIndex * inclinationPerRing;
+                            
                             // Determine which side of the orbit (alternating)
                             // Even indices on one side, odd indices on the other
-                            const sideMultiplier = (i % 2 === 0) ? 1 : -1;
+                            const sideMultiplier = (panelIndexInRing % 2 === 0) ? 1 : -1;
                             const verticalOffset = 0.1 * sideMultiplier; // Small offset above/below orbital plane
                             
                             mesh.userData = {
@@ -347,20 +356,47 @@ class StructuresVisualization {
                                 buildingId: buildingId,
                                 isPowerStation: true,
                                 orbitalRadius: orbitalRadius,
-                                panelIndex: i,
+                                panelIndex: panelIndexInRing,
+                                ringIndex: ringIndex,
                                 anglePerPanel: anglePerPanel,
-                                verticalOffset: verticalOffset
+                                verticalOffset: verticalOffset,
+                                ringInclination: ringInclination,
+                                startOffsetAngle: startOffsetAngle
                             };
                             
                             // Initial position (will be updated in update())
                             this.updateStructurePosition(mesh, planetData);
                         } else if (buildingId === 'data_center') {
-                            // ODCs: polar orbit around planet (perpendicular to orbital plane)
-                            const planetRadius = planetData.planetRadius;
-                            const minOrbitalRadius = planetRadius * 3; // Minimum 3 planetary radii
-                            const orbitalRadius = minOrbitalRadius + Math.random() * 0.5; // 3-3.5 planetary radii
-                            const polarAngle = Math.random() * Math.PI * 2; // Angle in polar plane
-                            const orbitalSpeed = this.calculateOrbitalSpeed(orbitalRadius);
+                            // ODCs: positioned above and below power stations in the same orbital ring
+                            // They share the same orbital ring structure as power stations
+                            const planet = planetData.planet;
+                            const orbitalRadius = planet.userData?.radius || 2.0; // Same orbit as planet
+                            const planetRadius = planetData.planetRadius; // Visual size of the planet
+                            const panelWidth = 0.15; // Width of each panel (same as power stations)
+                            const spacing = 3 * panelWidth; // Spacing is 3X the width (0.45 units)
+                            
+                            // Calculate angle spacing (same as power stations)
+                            const anglePerPanel = spacing / orbitalRadius;
+                            
+                            // Offset starting position from planet to avoid overlap (same as power stations)
+                            // Start building structures 4 planetary radii ahead of the planet
+                            const startOffsetAngle = (4 * planetRadius) / orbitalRadius;
+                            
+                            // Calculate how many panels fit in one full ring
+                            const panelsPerRing = Math.floor((2 * Math.PI) / anglePerPanel);
+                            
+                            // Determine which ring this ODC is in (same ring structure as power stations)
+                            const ringIndex = Math.floor(i / panelsPerRing);
+                            const panelIndexInRing = i % panelsPerRing;
+                            
+                            // Each new ring has a slight inclination (same as power stations)
+                            const inclinationPerRing = 0.1; // radians of inclination per ring
+                            const ringInclination = ringIndex * inclinationPerRing;
+                            
+                            // ODCs are positioned above and below power stations
+                            // Alternate: even indices above, odd indices below
+                            const verticalMultiplier = (panelIndexInRing % 2 === 0) ? 1 : -1;
+                            const verticalOffset = 0.2 * verticalMultiplier; // Higher/lower than power stations
                             
                             mesh.userData = {
                                 zoneId: zoneId,
@@ -369,8 +405,12 @@ class StructuresVisualization {
                                 isPowerStation: false,
                                 isODC: true,
                                 orbitalRadius: orbitalRadius,
-                                polarAngle: polarAngle,
-                                orbitalSpeed: orbitalSpeed
+                                panelIndex: panelIndexInRing,
+                                ringIndex: ringIndex,
+                                anglePerPanel: anglePerPanel,
+                                verticalOffset: verticalOffset,
+                                ringInclination: ringInclination,
+                                startOffsetAngle: startOffsetAngle
                             };
                             
                             // Initial position (will be updated in update())
@@ -511,76 +551,119 @@ class StructuresVisualization {
         if (!userData) return;
 
         if (userData.isMassDriver) {
-            // Mass driver: static position relative to planet
-            mesh.position.copy(planetData.planetPosition);
-            const offset = new THREE.Vector3(
-                Math.cos(userData.angle) * userData.distanceFromPlanet,
-                userData.elevation,
-                Math.sin(userData.angle) * userData.distanceFromPlanet
-            );
-            mesh.position.add(offset);
+            // Mass driver: positioned tangent to orbital circle with slight deviations
+            const planet = planetData.planet;
+            const planetPos = planetData.planetPosition;
+            const orbitalRadius = planet.userData?.radius || 2.0;
+            const planetOrbitalAngle = planet.userData?.orbitalAngle || 0;
             
-            // Orient toward planet
-            mesh.lookAt(planetData.planetPosition);
-            mesh.rotateX(Math.PI / 2);
+            // Calculate tangent direction (perpendicular to radius from sun to planet)
+            const radiusDirX = Math.cos(planetOrbitalAngle);
+            const radiusDirZ = Math.sin(planetOrbitalAngle);
+            const tangentX = -radiusDirZ; // Perpendicular to radius
+            const tangentZ = radiusDirX;
+            
+            // Position along tangent with slight deviation
+            const deviationAngle = userData.deviationAngle || 0;
+            const deviation = Math.sin(deviationAngle) * 0.1; // Small deviation from tangent
+            
+            // Calculate position: start from planet, move along tangent
+            const distanceFromPlanet = userData.distanceFromPlanet || (orbitalRadius * 0.1);
+            const tangentOffsetX = tangentX * distanceFromPlanet;
+            const tangentOffsetZ = tangentZ * distanceFromPlanet;
+            
+            // Add perpendicular deviation
+            const perpX = radiusDirX * deviation;
+            const perpZ = radiusDirZ * deviation;
+            
+            mesh.position.copy(planetPos);
+            mesh.position.add(new THREE.Vector3(
+                tangentOffsetX + perpX,
+                userData.elevation || 0,
+                tangentOffsetZ + perpZ
+            ));
+            
+            // Orient along tangent direction (with slight deviation)
+            const lookDirection = new THREE.Vector3(tangentX, 0, tangentZ).normalize();
+            const lookPoint = mesh.position.clone().add(lookDirection);
+            mesh.lookAt(lookPoint);
+            mesh.rotateX(Math.PI / 2); // Adjust for cylinder orientation
         } else if (userData.isPowerStation) {
             // Power stations: positioned along planet's orbital path, facing sun
-            // Alternating on either side of the planet, moving outward
+            // Multiple rings with slight inclination when ring fills up
             const planet = planetData.planet;
             const orbitalRadius = userData.orbitalRadius;
             const planetOrbitalAngle = planet.userData?.orbitalAngle || 0;
+            const ringInclination = userData.ringInclination || 0;
+            const startOffsetAngle = userData.startOffsetAngle || 0;
             
-            // Calculate angle along orbit starting from planet's current position
-            // Moving outward from planet (positive angle direction)
-            const panelAngle = planetOrbitalAngle + (userData.panelIndex * userData.anglePerPanel);
+            // Calculate angle along orbit starting from planet's current position + offset
+            const panelAngle = planetOrbitalAngle + startOffsetAngle + (userData.panelIndex * userData.anglePerPanel);
             
             // Position along orbital ring (same orbit as planet)
-            // Add vertical offset to alternate above/below orbital plane
-            const x = Math.cos(panelAngle) * orbitalRadius;
-            const z = Math.sin(panelAngle) * orbitalRadius;
-            const y = userData.verticalOffset || 0;
+            // Apply ring inclination (tilt the ring)
+            const baseX = Math.cos(panelAngle) * orbitalRadius;
+            const baseZ = Math.sin(panelAngle) * orbitalRadius;
+            const baseY = userData.verticalOffset || 0;
+            
+            // Apply ring inclination rotation around the orbital direction
+            // Rotate the position around the tangent to the orbit
+            const tangentX = -Math.sin(planetOrbitalAngle);
+            const tangentZ = Math.cos(planetOrbitalAngle);
+            
+            // Rotate base position around tangent axis by ringInclination
+            const cosInc = Math.cos(ringInclination);
+            const sinInc = Math.sin(ringInclination);
+            const x = baseX * cosInc + baseY * sinInc * tangentX;
+            const y = baseY * cosInc - baseX * sinInc;
+            const z = baseZ * cosInc + baseY * sinInc * tangentZ;
+            
             mesh.position.set(x, y, z);
             
             // Face the sun (at origin)
             mesh.lookAt(0, 0, 0);
         } else if (userData.isODC) {
-            // ODCs: polar orbit around planet (perpendicular to orbital plane)
-            // Orbit goes over the planet's poles (north-south axis)
+            // ODCs: positioned above and below power stations in the same orbital ring
+            // Positioned 0.25 units further out than power stations
+            const planet = planetData.planet;
             const orbitalRadius = userData.orbitalRadius;
-            const polarAngle = userData.polarAngle;
+            const odcRadiusOffset = 0.25; // ODCs are 0.25 units further out
+            const effectiveRadius = orbitalRadius + odcRadiusOffset;
+            const planetOrbitalAngle = planet.userData?.orbitalAngle || 0;
+            const ringInclination = userData.ringInclination || 0;
+            const startOffsetAngle = userData.startOffsetAngle || 0;
             
-            // Calculate position in polar orbit plane (perpendicular to orbital plane)
-            // The orbit is in the Y-Z plane (vertical plane through planet)
-            // X is along the planet's orbital direction, Y is up/down (poles), Z is perpendicular
-            const planetPos = planetData.planetPosition;
+            // Calculate angle along orbit (same as power stations, with offset)
+            const panelAngle = planetOrbitalAngle + startOffsetAngle + (userData.panelIndex * userData.anglePerPanel);
             
-            // Get planet's orbital direction (tangent to its orbit)
-            const planetOrbitalAngle = planetData.planet.userData?.orbitalAngle || 0;
-            const planetOrbitalRadius = planetData.planet.userData?.radius || 2.0;
+            // Position along orbital ring (further out than power stations)
+            // Apply ring inclination (same as power stations)
+            const baseX = Math.cos(panelAngle) * effectiveRadius;
+            const baseZ = Math.sin(panelAngle) * effectiveRadius;
+            const baseY = userData.verticalOffset || 0; // Higher/lower than power stations
             
-            // Calculate tangent direction (perpendicular to radius)
+            // Apply ring inclination rotation around the orbital direction
             const tangentX = -Math.sin(planetOrbitalAngle);
             const tangentZ = Math.cos(planetOrbitalAngle);
-            const tangent = new THREE.Vector3(tangentX, 0, tangentZ).normalize();
             
-            // Up vector (Y axis)
+            // Rotate base position around tangent axis by ringInclination
+            const cosInc = Math.cos(ringInclination);
+            const sinInc = Math.sin(ringInclination);
+            const x = baseX * cosInc + baseY * sinInc * tangentX;
+            const y = baseY * cosInc - baseX * sinInc;
+            const z = baseZ * cosInc + baseY * sinInc * tangentZ;
+            
+            mesh.position.set(x, y, z);
+            
+            // Point towards the sun (at origin) - rotated 90 degrees
+            // Calculate direction to sun
+            const directionToSun = new THREE.Vector3(0, 0, 0).sub(mesh.position).normalize();
+            // Rotate 90 degrees around the up axis (Y) so it points along the orbit tangent
             const up = new THREE.Vector3(0, 1, 0);
-            
-            // Right vector (perpendicular to both tangent and up)
-            const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
-            
-            // Position in polar orbit: circle in plane perpendicular to orbital plane
-            // The orbit goes over the poles
-            const y = Math.sin(polarAngle) * orbitalRadius; // Vertical component (north-south)
-            const horizontalRadius = Math.cos(polarAngle) * orbitalRadius; // Horizontal radius in polar plane
-            
-            // Position relative to planet
-            mesh.position.copy(planetPos);
-            // Add offset in the polar plane (combination of up and right vectors)
-            const polarOffset = new THREE.Vector3()
-                .addScaledVector(up, y)
-                .addScaledVector(right, horizontalRadius);
-            mesh.position.add(polarOffset);
+            const tangent = new THREE.Vector3().crossVectors(directionToSun, up).normalize();
+            // Point along tangent direction (90 degrees rotated from sun direction)
+            const lookPoint = mesh.position.clone().add(tangent);
+            mesh.lookAt(lookPoint);
         } else {
             // Orbiting structure: calculate position in orbit around planet
             const orbitalRadius = userData.orbitalRadius;
@@ -614,6 +697,8 @@ class StructuresVisualization {
                     const planetData = this.getPlanetData(userData.zoneId);
                     if (!planetData) return;
 
+                    // Power stations and ODCs follow planet's orbit (no angle update needed)
+                    // Mass drivers are static relative to planet (no angle update needed)
                     if (!userData.isMassDriver && !userData.isPowerStation && !userData.isODC) {
                         // Update orbital angle for structures orbiting around planet
                         userData.orbitalAngle += userData.orbitalSpeed * deltaTime;
@@ -621,15 +706,8 @@ class StructuresVisualization {
                         if (userData.orbitalAngle > Math.PI * 2) {
                             userData.orbitalAngle -= Math.PI * 2;
                         }
-                    } else if (userData.isODC) {
-                        // Update polar angle for ODCs in polar orbit
-                        userData.polarAngle += userData.orbitalSpeed * deltaTime;
-                        // Keep angle in [0, 2π] range
-                        if (userData.polarAngle > Math.PI * 2) {
-                            userData.polarAngle -= Math.PI * 2;
-                        }
                     }
-                    // Power stations don't need orbital angle update - they follow planet's orbit
+                    // Power stations, ODCs, and mass drivers don't need orbital angle update
 
                     // Update position relative to planet
                     this.updateStructurePosition(mesh, planetData);

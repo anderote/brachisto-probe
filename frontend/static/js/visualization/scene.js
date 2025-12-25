@@ -8,6 +8,16 @@ class SceneManager {
         this.cameraController = null;
         this.animationId = null;
         this.keys = {};
+        this.solarSystem = null; // Reference to solar system for comet tracking
+        this.currentCometIndex = -1; // -1 means not tracking any comet
+        this.cometKeyPressed = false; // Track if 'c' key was just pressed (to avoid rapid cycling)
+        this.arrowLeftPressed = false; // Track arrow key state for comet navigation
+        this.arrowRightPressed = false; // Track arrow key state for comet navigation
+        
+        // Post-processing
+        this.composer = null;
+        this.bloomPass = null;
+        this.godRaysPass = null;
     }
 
     init() {
@@ -29,7 +39,12 @@ class SceneManager {
                 antialias: true
             });
             this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
-            this.renderer.setPixelRatio(window.devicePixelRatio);
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            
+            // Enable HDR tone mapping for better bloom
+            this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            this.renderer.toneMappingExposure = 1.0;
+            this.renderer.outputEncoding = THREE.sRGBEncoding;
             
             // Enable shadow maps
             this.renderer.shadowMap.enabled = true;
@@ -43,7 +58,12 @@ class SceneManager {
                     antialias: false
                 });
                 this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
-                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                
+                // Enable HDR tone mapping for better bloom
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 1.0;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
                 
                 // Enable shadow maps
                 this.renderer.shadowMap.enabled = true;
@@ -54,14 +74,17 @@ class SceneManager {
             }
         }
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        // Lighting - reduced ambient light for more dramatic shadows
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
         this.scene.add(ambientLight);
 
         // Sun (central light source) - will be enhanced in solar_system.js
         const sunLight = new THREE.PointLight(0xffffff, 2, 1000);
         sunLight.position.set(0, 0, 0);
         this.scene.add(sunLight);
+
+        // Initialize post-processing
+        this.initPostProcessing();
 
         // Initialize custom camera controller
         this.cameraController = new CameraController(this.camera);
@@ -187,12 +210,28 @@ class SceneManager {
         // Update camera controller
         const deltaTime = 0.016; // ~60fps
 
-        // Handle arrow key rotation
+        // Handle arrow key rotation (or comet navigation when tracking comets)
         if (this.keys['ArrowLeft']) {
-            this.cameraController.rotate(-1 * deltaTime * 60, 0);
+            if (this.currentCometIndex >= 0 && !this.arrowLeftPressed) {
+                // Navigate to previous comet
+                this.arrowLeftPressed = true;
+                this.cycleToPreviousComet();
+            } else if (this.currentCometIndex < 0) {
+                this.cameraController.rotate(-1 * deltaTime * 60, 0);
+            }
+        } else {
+            this.arrowLeftPressed = false;
         }
         if (this.keys['ArrowRight']) {
-            this.cameraController.rotate(1 * deltaTime * 60, 0);
+            if (this.currentCometIndex >= 0 && !this.arrowRightPressed) {
+                // Navigate to next comet
+                this.arrowRightPressed = true;
+                this.cycleToNextComet();
+            } else if (this.currentCometIndex < 0) {
+                this.cameraController.rotate(1 * deltaTime * 60, 0);
+            }
+        } else {
+            this.arrowRightPressed = false;
         }
         if (this.keys['ArrowUp']) {
             this.cameraController.rotate(0, -1 * deltaTime * 60);
@@ -214,10 +253,121 @@ class SceneManager {
         if (this.keys['s'] || this.keys['S']) {
             this.cameraController.pan(0, -1, deltaTime);
         }
+        
+        // Handle 'c' key to start tracking comets (only if not already tracking)
+        if ((this.keys['c'] || this.keys['C']) && !this.cometKeyPressed) {
+            this.cometKeyPressed = true;
+            // Only start tracking if not already tracking a comet
+            if (this.currentCometIndex < 0) {
+                this.startCometTracking();
+            }
+        } else if (!this.keys['c'] && !this.keys['C']) {
+            this.cometKeyPressed = false;
+        }
 
         this.cameraController.update(deltaTime);
 
-        this.renderer.render(this.scene, this.camera);
+        // Update god rays light position based on sun's screen position
+        if (this.godRaysPass) {
+            const sunPos = new THREE.Vector3(0, 0, 0);
+            sunPos.project(this.camera);
+            this.godRaysPass.uniforms.lightPositionOnScreen.value.set(
+                (sunPos.x + 1) / 2,
+                (sunPos.y + 1) / 2
+            );
+        }
+
+        // Render with post-processing
+        if (this.composer) {
+            this.composer.render();
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
+    }
+
+    initPostProcessing() {
+        // Create EffectComposer
+        this.composer = new THREE.EffectComposer(this.renderer);
+        
+        // Render pass (renders the scene normally first)
+        const renderPass = new THREE.RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+        
+        // Bloom pass for glowing sun and stars
+        const bloomParams = {
+            strength: 0.2,      // Intensity of bloom
+            radius: 0.1,        // Blur radius
+            threshold: 0.3      // Brightness threshold for bloom
+        };
+        this.bloomPass = new THREE.UnrealBloomPass(
+            new THREE.Vector2(this.canvas.clientWidth, this.canvas.clientHeight),
+            bloomParams.strength,
+            bloomParams.radius,
+            bloomParams.threshold
+        );
+        this.composer.addPass(this.bloomPass);
+        
+        // God rays pass (custom volumetric light scattering)
+        this.godRaysPass = new THREE.ShaderPass(this.getGodRaysShader());
+        this.godRaysPass.uniforms.lightPositionOnScreen.value = new THREE.Vector2(0.5, 0.5);
+        this.godRaysPass.uniforms.exposure.value = 0.18;
+        this.godRaysPass.uniforms.decay.value = 0.95;
+        this.godRaysPass.uniforms.density.value = 0.8;
+        this.godRaysPass.uniforms.weight.value = 0.4;
+        this.godRaysPass.uniforms.samples.value = 50;
+        this.composer.addPass(this.godRaysPass);
+    }
+
+    getGodRaysShader() {
+        return {
+            uniforms: {
+                tDiffuse: { value: null },
+                lightPositionOnScreen: { value: new THREE.Vector2(0.5, 0.5) },
+                exposure: { value: 0.18 },
+                decay: { value: 0.95 },
+                density: { value: 0.8 },
+                weight: { value: 0.4 },
+                samples: { value: 50 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform vec2 lightPositionOnScreen;
+                uniform float exposure;
+                uniform float decay;
+                uniform float density;
+                uniform float weight;
+                uniform int samples;
+                
+                varying vec2 vUv;
+                
+                void main() {
+                    vec2 texCoord = vUv;
+                    vec2 deltaTextCoord = texCoord - lightPositionOnScreen;
+                    deltaTextCoord *= 1.0 / float(samples) * density;
+                    
+                    vec4 color = texture2D(tDiffuse, texCoord);
+                    float illuminationDecay = 1.0;
+                    
+                    for(int i = 0; i < 50; i++) {
+                        if(i >= samples) break;
+                        texCoord -= deltaTextCoord;
+                        vec4 sampleColor = texture2D(tDiffuse, texCoord);
+                        sampleColor *= illuminationDecay * weight;
+                        color += sampleColor;
+                        illuminationDecay *= decay;
+                    }
+                    
+                    gl_FragColor = color * exposure;
+                }
+            `
+        };
     }
 
     onWindowResize() {
@@ -228,6 +378,14 @@ class SceneManager {
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(width, height);
+        
+        // Update composer size
+        if (this.composer) {
+            this.composer.setSize(width, height);
+        }
+        if (this.bloomPass) {
+            this.bloomPass.setSize(width, height);
+        }
     }
 
     getScene() {
@@ -262,6 +420,97 @@ class SceneManager {
     stopTracking() {
         if (this.cameraController) {
             this.cameraController.stopTracking();
+        }
+        this.currentCometIndex = -1;
+    }
+    
+    /**
+     * Set reference to solar system for comet tracking
+     */
+    setSolarSystem(solarSystem) {
+        this.solarSystem = solarSystem;
+    }
+    
+    /**
+     * Start tracking the first comet (called when 'c' is pressed and not already tracking)
+     */
+    startCometTracking() {
+        if (!this.solarSystem || !this.solarSystem.comets || this.solarSystem.comets.length === 0) {
+            return;
+        }
+        
+        // Start at first comet
+        this.currentCometIndex = 0;
+        
+        const comet = this.solarSystem.comets[this.currentCometIndex];
+        
+        if (comet) {
+            this.startTracking(() => {
+                if (comet && comet.position) {
+                    return comet.position.clone();
+                }
+                return null;
+            });
+        }
+    }
+    
+    /**
+     * Cycle camera to next comet in the list
+     */
+    cycleToNextComet() {
+        if (!this.solarSystem || !this.solarSystem.comets || this.solarSystem.comets.length === 0) {
+            // No comets available, stop tracking if we were tracking
+            if (this.currentCometIndex >= 0) {
+                this.stopTracking();
+            }
+            return;
+        }
+        
+        // Move to next comet, or wrap around to first
+        this.currentCometIndex = (this.currentCometIndex + 1) % this.solarSystem.comets.length;
+        
+        // Get the comet at current index
+        const comet = this.solarSystem.comets[this.currentCometIndex];
+        
+        if (comet) {
+            // Start tracking this comet
+            this.startTracking(() => {
+                // Return current position of the comet
+                if (comet && comet.position) {
+                    return comet.position.clone();
+                }
+                return null;
+            });
+        }
+    }
+    
+    /**
+     * Cycle camera to previous comet in the list
+     */
+    cycleToPreviousComet() {
+        if (!this.solarSystem || !this.solarSystem.comets || this.solarSystem.comets.length === 0) {
+            // No comets available, stop tracking if we were tracking
+            if (this.currentCometIndex >= 0) {
+                this.stopTracking();
+            }
+            return;
+        }
+        
+        // Move to previous comet, or wrap around to last
+        this.currentCometIndex = (this.currentCometIndex - 1 + this.solarSystem.comets.length) % this.solarSystem.comets.length;
+        
+        // Get the comet at current index
+        const comet = this.solarSystem.comets[this.currentCometIndex];
+        
+        if (comet) {
+            // Start tracking this comet
+            this.startTracking(() => {
+                // Return current position of the comet
+                if (comet && comet.position) {
+                    return comet.position.clone();
+                }
+                return null;
+            });
         }
     }
 

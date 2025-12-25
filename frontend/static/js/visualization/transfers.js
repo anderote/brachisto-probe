@@ -72,13 +72,8 @@ class TransferVisualization {
             return null;
         }
         
-        // First try to get the actual planet position and calculate radius from it
-        const planetPos = this.solarSystem.getZonePosition(zoneId);
-        if (planetPos) {
-            return Math.sqrt(planetPos.x * planetPos.x + planetPos.z * planetPos.z);
-        }
-        
         // Dyson sphere uses special visual radius: 0.8x Mercury's orbit
+        // Check this FIRST because getZonePosition returns (0,0,0) for Dyson sphere
         if (zoneId === 'dyson_sphere' || zoneId === 'dyson') {
             try {
                 const mercuryOrbitKm = this.solarSystem.planetData?.mercury?.orbit_km || 173700000;
@@ -88,6 +83,16 @@ class TransferVisualization {
                 }
             } catch (e) {
                 return null;
+            }
+        }
+        
+        // For other zones, try to get the actual planet position and calculate radius from it
+        const planetPos = this.solarSystem.getZonePosition(zoneId);
+        if (planetPos) {
+            const radius = Math.sqrt(planetPos.x * planetPos.x + planetPos.z * planetPos.z);
+            // Only use if radius is non-zero (avoid issues with zones at origin)
+            if (radius > 0) {
+                return radius;
             }
         }
         
@@ -168,9 +173,11 @@ class TransferVisualization {
     }
     
     /**
-     * Create ellipse arc geometry for Hohmann transfer
+     * Create ellipse arc geometry for transfer orbit
      * @param {Object} params - Ellipse parameters
      * @param {number} fromAngle - Angle of origin planet at launch time
+     * @param {number} toAngle - Angle of destination planet at arrival time
+     * @param {number} transferAngle - Angular span of transfer (can be > 180° for wrap-around)
      * @param {number} fromRadiusAU - Origin radius in AU
      * @param {number} toRadiusAU - Destination radius in AU
      * @param {number} segments - Number of segments for the arc
@@ -178,176 +185,116 @@ class TransferVisualization {
      * @param {string} toZoneId - Destination zone ID (for getting visual position)
      * @returns {THREE.BufferGeometry} Ellipse arc geometry
      */
-    createEllipseArc(params, fromAngle, fromRadiusAU, toRadiusAU, segments = 64, fromZoneId = null, toZoneId = null) {
-        const { a, e, rInner, rOuter } = params;
+    createEllipseArc(params, fromAngle, toAngle, transferAngle, fromRadiusAU, toRadiusAU, segments = 64, fromZoneId = null, toZoneId = null) {
+        // Get origin orbital radius (use getVisualOrbitRadius which handles Dyson sphere specially)
+        const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
         
-        // Determine if going outward or inward
-        const isOutward = toRadiusAU > fromRadiusAU;
+        // Get origin position - prefer actual planet position, but fall back to calculated position
+        let fromVisualPos = null;
+        const isDysonOrigin = fromZoneId === 'dyson_sphere' || fromZoneId === 'dyson';
         
-        // Calculate semi-minor axis
-        const b = a * Math.sqrt(1 - e * e);
+        if (!isDysonOrigin && fromZoneId && this.solarSystem) {
+            fromVisualPos = this.solarSystem.getZonePosition(fromZoneId);
+        }
+        
+        // If no position or position is at origin, calculate from angle and radius
+        if (!fromVisualPos || (fromVisualPos.x === 0 && fromVisualPos.z === 0)) {
+            if (fromVisualRadius !== null) {
+                fromVisualPos = new THREE.Vector3(
+                    Math.cos(fromAngle) * fromVisualRadius,
+                    0,
+                    Math.sin(fromAngle) * fromVisualRadius
+                );
+            }
+        }
+        
+        // Get destination orbital ring radius (visual space)
+        const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
+        
+        if (!fromVisualPos || fromVisualRadius === null || toVisualRadius === null) {
+            return new THREE.BufferGeometry();
+        }
+        
+        // Origin planet distance and angle from sun
+        const r1 = Math.sqrt(fromVisualPos.x * fromVisualPos.x + fromVisualPos.z * fromVisualPos.z);
+        const theta1 = Math.atan2(fromVisualPos.z, fromVisualPos.x);
+        const r2 = toVisualRadius;
+        
+        // Hohmann transfer: semi-major axis lies on line from origin through sun
+        // Origin is at one vertex, destination intersection at the opposite vertex (180° away)
+        
+        // Determine if transfer is outward or inward
+        const isOutward = r2 > r1;
         
         // For Hohmann transfer:
-        // - If outward: periapsis at inner radius, apoapsis at outer radius
-        // - If inward: periapsis at outer radius, apoapsis at inner radius
-        // We want to start at origin planet position and end at destination radius on opposite side
+        // - Periapsis at the inner orbit radius
+        // - Apoapsis at the outer orbit radius
+        // - Semi-major axis a = (r_inner + r_outer) / 2
+        // - Eccentricity e = (r_outer - r_inner) / (r_outer + r_inner)
+        const rInner = Math.min(r1, r2);
+        const rOuter = Math.max(r1, r2);
+        const a = (rInner + rOuter) / 2;
+        const e = (rOuter - rInner) / (rOuter + rInner);
         
-        // Convert AU to km for calculations
-        const AU_KM = 149600000;
-        const fromRadiusKm = fromRadiusAU * AU_KM;
-        const toRadiusKm = toRadiusAU * AU_KM;
-        
-        // Find true anomaly where ellipse intersects origin radius
-        // r = a(1-e²)/(1+e*cos(ν))
-        // Solving for ν: cos(ν) = (a(1-e²)/r - 1)/e
-        const rFrom = fromRadiusKm;
-        const cosNuFrom = (a * (1 - e * e) / rFrom - 1) / e;
-        // Choose the angle that makes sense (0 to π for outward, π to 2π for inward)
-        let nuFrom = Math.acos(Math.max(-1, Math.min(1, cosNuFrom)));
-        if (!isOutward) {
-            // For inward transfer, origin is at apoapsis (ν = π)
-            nuFrom = Math.PI;
-        }
-        
-        // Find true anomaly where ellipse intersects destination radius
-        // We want it on the opposite side (approximately π away)
-        const rTo = toRadiusKm;
-        const cosNuTo = (a * (1 - e * e) / rTo - 1) / e;
-        // Choose the angle that's approximately π away from nuFrom
-        let nuTo = Math.acos(Math.max(-1, Math.min(1, cosNuTo)));
+        // True anomaly at origin and destination
+        // For outward: origin at periapsis (ν=0), destination at apoapsis (ν=π)
+        // For inward: origin at apoapsis (ν=π), destination at periapsis (ν=0 or 2π)
+        let nuFrom, nuTo;
         if (isOutward) {
-            // For outward transfer, destination is at apoapsis (ν = π)
-            nuTo = Math.PI;
+            nuFrom = 0;      // Periapsis (closest to sun)
+            nuTo = Math.PI;  // Apoapsis (farthest from sun, 180° away)
         } else {
-            // For inward transfer, destination is at periapsis (ν = 0 or 2π)
-            // But we want opposite side, so use 2π
-            nuTo = 0;
+            nuFrom = Math.PI; // Apoapsis
+            nuTo = 2 * Math.PI; // Back to periapsis (going the other way)
         }
         
-        // Ensure we're going the right direction (from nuFrom to nuTo should span ~π)
-        // If going outward: nuFrom = 0, nuTo = π
-        // If going inward: nuFrom = π, nuTo = 2π (or 0, wrapping around)
-        if (isOutward) {
-            nuFrom = 0;
-            nuTo = Math.PI;
-        } else {
-            nuFrom = Math.PI;
-            nuTo = 2 * Math.PI; // Wrap around to opposite side
-        }
+        // Argument of periapsis (ω): places periapsis in space
+        // For outward: periapsis at theta1, so ω = theta1
+        // For inward: apoapsis at theta1, so ω + π = theta1, thus ω = theta1 - π
+        const omega = isOutward ? theta1 : theta1 - Math.PI;
         
-        // Get actual visual positions for origin and destination planets
-        let fromVisualPos = null;
-        let toVisualPos = null;
-        let fromVisualRadius = null;
-        let toVisualRadius = null;
+        // Destination angle is 180° opposite from origin
+        const destAngle = theta1 + Math.PI;
         
-        if (fromZoneId && this.solarSystem) {
-            // Use actual planet position (already scaled correctly)
-            fromVisualPos = this.solarSystem.getZonePosition(fromZoneId);
-            if (fromVisualPos) {
-                fromVisualRadius = Math.sqrt(fromVisualPos.x * fromVisualPos.x + fromVisualPos.z * fromVisualPos.z);
-            }
-        }
+        // Semi-latus rectum
+        const p = a * (1 - e * e);
         
-        if (toZoneId && this.solarSystem) {
-            // Get actual destination planet position
-            const toPlanetPos = this.solarSystem.getZonePosition(toZoneId);
-            if (toPlanetPos) {
-                // Use actual planet position, but adjust to opposite side for Hohmann transfer
-                toVisualRadius = Math.sqrt(toPlanetPos.x * toPlanetPos.x + toPlanetPos.z * toPlanetPos.z);
-                // Calculate angle to destination planet
-                const toPlanetAngle = Math.atan2(toPlanetPos.z, toPlanetPos.x);
-                // For Hohmann transfer, destination should be on opposite side from origin
-                // But use the actual orbit radius of the destination planet
-                toVisualPos = new THREE.Vector3(
-                    Math.cos(fromAngle + Math.PI) * toVisualRadius,
-                    0,
-                    Math.sin(fromAngle + Math.PI) * toVisualRadius
-                );
-            } else {
-                // Fallback: use visual orbit radius if planet position not available
-                const toVisualRadiusRaw = this.getVisualOrbitRadius(toZoneId);
-                if (toVisualRadiusRaw !== null) {
-                    toVisualRadius = toVisualRadiusRaw;
-                    toVisualPos = new THREE.Vector3(
-                        Math.cos(fromAngle + Math.PI) * toVisualRadius,
-                        0,
-                        Math.sin(fromAngle + Math.PI) * toVisualRadius
-                    );
-                }
-            }
-        }
-        
-        // Create points along the transfer arc
+        // Create points along the ellipse arc (half orbit from origin to opposite side)
         const points = [];
         for (let i = 0; i <= segments; i++) {
-            // Interpolate true anomaly from nuFrom to nuTo
             const t = i / segments;
+            
+            // Interpolate true anomaly from nuFrom to nuTo
             const nu = nuFrom + (nuTo - nuFrom) * t;
             
-            // Calculate distance from focus at this true anomaly
-            const r = a * (1 - e * e) / (1 + e * Math.cos(nu));
+            // Calculate radius using ellipse equation: r = p / (1 + e * cos(ν))
+            const r = p / (1 + e * Math.cos(nu));
             
-            // Calculate position on ellipse (in ellipse's local coordinate system)
-            const x = r * Math.cos(nu);
-            const y = r * Math.sin(nu);
+            // Calculate angle in space: angle = ω + ν
+            const angle = omega + nu;
             
-            // Rotate ellipse so it starts at fromAngle and ends at fromAngle + π (opposite side)
-            // For outward: nuFrom=0 should map to fromAngle, nuTo=π should map to fromAngle+π
-            // For inward: nuFrom=π should map to fromAngle, nuTo=2π should map to fromAngle+π
-            let angle;
-            if (isOutward) {
-                // Outward: nu goes from 0 to π, angle goes from fromAngle to fromAngle+π
-                angle = fromAngle + nu;
+            // Create point at this position
+            let point;
+            if (i === 0) {
+                // Start exactly at origin planet
+                point = fromVisualPos.clone();
+            } else if (i === segments) {
+                // End exactly on destination orbital ring at 180° opposite
+                point = new THREE.Vector3(
+                    Math.cos(destAngle) * r2,
+                    0,
+                    Math.sin(destAngle) * r2
+                );
             } else {
-                // Inward: nu goes from π to 2π, angle goes from fromAngle to fromAngle+π
-                // When nu=π, angle=fromAngle; when nu=2π, angle=fromAngle+π
-                angle = fromAngle + (nu - Math.PI);
+                // Intermediate points follow the ellipse
+                point = new THREE.Vector3(
+                    Math.cos(angle) * r,
+                    0,
+                    Math.sin(angle) * r
+                );
             }
             
-            // Override first point with actual origin visual position
-            if (i === 0 && fromVisualPos) {
-                points.push(fromVisualPos.clone());
-                continue;
-            }
-            
-            // Override last point with actual destination visual position
-            if (i === segments && toVisualPos) {
-                points.push(toVisualPos.clone());
-                continue;
-            }
-            
-            // For intermediate points, interpolate between visual radii
-            // This ensures the ellipse uses the same scaling as the planets
-            let orbitRadius;
-            if (fromVisualRadius !== null && toVisualRadius !== null) {
-                // Interpolate visual radius between origin and destination
-                // Use the ellipse's true anomaly to determine interpolation factor
-                // For outward: nu goes 0->π, radius goes fromVisualRadius->toVisualRadius
-                // For inward: nu goes π->2π, radius goes fromVisualRadius->toVisualRadius
-                let radiusT;
-                if (isOutward) {
-                    // nu is 0 to π, map to 0 to 1
-                    radiusT = nu / Math.PI;
-                } else {
-                    // nu is π to 2π, map to 0 to 1
-                    radiusT = (nu - Math.PI) / Math.PI;
-                }
-                // Interpolate visual radius
-                orbitRadius = fromVisualRadius + (toVisualRadius - fromVisualRadius) * radiusT;
-            } else {
-                // Fallback: use log scaling if visual radii not available
-                const orbitKm = r;
-                orbitRadius = this.solarSystem?.logScaleOrbit ? 
-                    this.solarSystem.logScaleOrbit(orbitKm) : orbitKm * 0.00001;
-            }
-            
-            // Position in XZ plane (Y=0 for orbital plane)
-            points.push(new THREE.Vector3(
-                Math.cos(angle) * orbitRadius,
-                0,
-                Math.sin(angle) * orbitRadius
-            ));
+            points.push(point);
         }
         
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -358,6 +305,8 @@ class TransferVisualization {
      * Calculate position along ellipse based on transfer progress
      * @param {Object} params - Ellipse parameters
      * @param {number} fromAngle - Angle of origin planet at launch time
+     * @param {number} toAngle - Angle of destination planet at arrival time
+     * @param {number} transferAngle - Angular span of transfer
      * @param {number} fromRadiusAU - Origin radius in AU
      * @param {number} toRadiusAU - Destination radius in AU
      * @param {number} progress - Progress from 0.0 (origin) to 1.0 (destination)
@@ -365,123 +314,85 @@ class TransferVisualization {
      * @param {string} toZoneId - Destination zone ID (optional, for exact visual position)
      * @returns {THREE.Vector3} Position in 3D space
      */
-    calculatePositionOnEllipse(params, fromAngle, fromRadiusAU, toRadiusAU, progress, fromZoneId = null, toZoneId = null) {
-        const { a, e } = params;
-        
-        // Convert AU to km for calculations
-        const AU_KM = 149600000;
-        const fromRadiusKm = fromRadiusAU * AU_KM;
-        const toRadiusKm = toRadiusAU * AU_KM;
-        
-        // Determine if going outward or inward
-        const isOutward = toRadiusAU > fromRadiusAU;
-        
-        // Find true anomaly where ellipse intersects origin radius
-        const rFrom = fromRadiusKm;
-        
-        // For Hohmann transfer:
-        // - Outward: start at periapsis (ν = 0), end at apoapsis (ν = π)
-        // - Inward: start at apoapsis (ν = π), end at periapsis (ν = 0, but we want opposite side so use 2π)
-        let nuFrom, nuTo;
-        if (isOutward) {
-            nuFrom = 0; // Periapsis (inner radius)
-            nuTo = Math.PI; // Apoapsis (outer radius)
-        } else {
-            nuFrom = Math.PI; // Apoapsis (outer radius)
-            nuTo = 2 * Math.PI; // Periapsis on opposite side (inner radius)
-        }
-        
-        // Use exact visual positions at start and end
-        if (progress <= 0.001 && fromZoneId && this.solarSystem) {
-            const fromVisualPos = this.solarSystem.getZonePosition(fromZoneId);
-            if (fromVisualPos) {
-                return fromVisualPos.clone();
-            }
-        }
-        
-        if (progress >= 0.999 && toZoneId && this.solarSystem) {
-            // Get actual destination planet position
-            const toPlanetPos = this.solarSystem.getZonePosition(toZoneId);
-            if (toPlanetPos) {
-                const toVisualRadius = Math.sqrt(toPlanetPos.x * toPlanetPos.x + toPlanetPos.z * toPlanetPos.z);
-                // Position on opposite side for Hohmann transfer
-                return new THREE.Vector3(
-                    Math.cos(fromAngle + Math.PI) * toVisualRadius,
-                    0,
-                    Math.sin(fromAngle + Math.PI) * toVisualRadius
-                );
-            } else {
-                // Fallback
-                const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
-                if (toVisualRadius !== null) {
-                    return new THREE.Vector3(
-                        Math.cos(fromAngle + Math.PI) * toVisualRadius,
-                        0,
-                        Math.sin(fromAngle + Math.PI) * toVisualRadius
-                    );
-                }
-            }
-        }
-        
-        // Interpolate true anomaly based on progress
-        const nu = nuFrom + (nuTo - nuFrom) * progress;
-        
-        // Calculate distance from focus at this true anomaly
-        const r = a * (1 - e * e) / (1 + e * Math.cos(nu));
-        
-        // Calculate position on ellipse (in ellipse's local coordinate system)
-        const x = r * Math.cos(nu);
-        const y = r * Math.sin(nu);
-        
-        // Rotate ellipse so it starts at fromAngle and ends at fromAngle + π (opposite side)
-        // For outward: nu goes from 0 to π, angle goes from fromAngle to fromAngle+π
-        // For inward: nu goes from π to 2π, angle goes from fromAngle to fromAngle+π
-        let angle;
-        if (isOutward) {
-            // Outward: nu goes from 0 to π, angle goes from fromAngle to fromAngle+π
-            angle = fromAngle + nu;
-        } else {
-            // Inward: nu goes from π to 2π, angle goes from fromAngle to fromAngle+π
-            // When nu=π, angle=fromAngle; when nu=2π, angle=fromAngle+π
-            angle = fromAngle + (nu - Math.PI);
-        }
-        
-        // Get visual radii for interpolation
+    calculatePositionOnEllipse(params, fromAngle, toAngle, transferAngle, fromRadiusAU, toRadiusAU, progress, fromZoneId = null, toZoneId = null) {
+        // Get orbital radii (these are fixed, don't depend on planet rotation)
         let fromVisualRadius = null;
         let toVisualRadius = null;
         
         if (fromZoneId && this.solarSystem) {
-            const fromPos = this.solarSystem.getZonePosition(fromZoneId);
-            if (fromPos) {
-                fromVisualRadius = Math.sqrt(fromPos.x * fromPos.x + fromPos.z * fromPos.z);
-            }
+            fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
         }
-        
         if (toZoneId && this.solarSystem) {
-            const toPos = this.solarSystem.getZonePosition(toZoneId);
-            if (toPos) {
-                toVisualRadius = Math.sqrt(toPos.x * toPos.x + toPos.z * toPos.z);
-            } else {
-                toVisualRadius = this.getVisualOrbitRadius(toZoneId);
-            }
+            toVisualRadius = this.getVisualOrbitRadius(toZoneId);
         }
         
-        // Interpolate visual radius between origin and destination
-        let orbitRadius;
-        if (fromVisualRadius !== null && toVisualRadius !== null) {
-            // Use progress to interpolate visual radius
-            orbitRadius = fromVisualRadius + (toVisualRadius - fromVisualRadius) * progress;
-        } else {
-            // Fallback: use log scaling if visual radii not available
-            const orbitKm = r;
-            orbitRadius = this.solarSystem?.logScaleOrbit ? 
-                this.solarSystem.logScaleOrbit(orbitKm) : orbitKm * 0.00001;
+        if (fromVisualRadius === null || toVisualRadius === null) {
+            return new THREE.Vector3(0, 0, 0);
         }
+        
+        // Use the FIXED angle from launch time (fromAngle), not the current planet position
+        // This ensures the cargo follows the trajectory, not the rotating planet
+        const r1 = fromVisualRadius;
+        const theta1 = fromAngle; // Fixed angle from when transfer was created
+        const r2 = toVisualRadius;
+        
+        // Use exact start position (at fixed angle, not rotating planet)
+        if (progress <= 0.001) {
+            return new THREE.Vector3(
+                Math.cos(theta1) * r1,
+                0,
+                Math.sin(theta1) * r1
+            );
+        }
+        
+        // Hohmann transfer (same logic as createEllipseArc)
+        const isOutward = r2 > r1;
+        const rInner = Math.min(r1, r2);
+        const rOuter = Math.max(r1, r2);
+        const a = (rInner + rOuter) / 2;
+        const e = (rOuter - rInner) / (rOuter + rInner);
+        
+        // True anomaly at origin and destination
+        let nuFrom, nuTo;
+        if (isOutward) {
+            nuFrom = 0;
+            nuTo = Math.PI;
+        } else {
+            nuFrom = Math.PI;
+            nuTo = 2 * Math.PI;
+        }
+        
+        // Argument of periapsis
+        const omega = isOutward ? theta1 : theta1 - Math.PI;
+        
+        // Destination angle is 180° opposite from origin
+        const destAngle = theta1 + Math.PI;
+        
+        // Use exact position at end
+        if (progress >= 0.999) {
+            return new THREE.Vector3(
+                Math.cos(destAngle) * r2,
+                0,
+                Math.sin(destAngle) * r2
+            );
+        }
+        
+        // Semi-latus rectum
+        const p = a * (1 - e * e);
+        
+        // Interpolate true anomaly
+        const nu = nuFrom + (nuTo - nuFrom) * progress;
+        
+        // Calculate radius using ellipse equation
+        const r = p / (1 + e * Math.cos(nu));
+        
+        // Calculate angle in space
+        const angle = omega + nu;
         
         return new THREE.Vector3(
-            Math.cos(angle) * orbitRadius,
+            Math.cos(angle) * r,
             0,
-            Math.sin(angle) * orbitRadius
+            Math.sin(angle) * r
         );
     }
     
@@ -489,29 +400,80 @@ class TransferVisualization {
      * Calculate launch angles for ellipse orientation
      * @param {string} fromZoneId - Source zone ID
      * @param {string} toZoneId - Destination zone ID
-     * @returns {Object} {fromAngle, toAngle} - Angles in radians (toAngle is opposite side)
+     * @returns {Object} {fromAngle, toAngle, transferAngle} - Angles in radians
      */
     calculateLaunchAngles(fromZoneId, toZoneId) {
         // Get actual zone positions at launch time
         const fromPos = this.solarSystem?.getZonePosition(fromZoneId);
+        const toPos = this.solarSystem?.getZonePosition(toZoneId);
         
         // Special handling: Dyson sphere is at origin (0,0,0), but we want to connect to its orbital ring
-        // on the opposite side from the origin planet
         const isDysonDestination = toZoneId === 'dyson_sphere' || toZoneId === 'dyson';
         
-        if (fromPos && (fromPos.x !== 0 || fromPos.z !== 0)) {
-            // Calculate angle from origin to origin planet
-            const fromAngle = Math.atan2(fromPos.z, fromPos.x);
-            // Destination is always on opposite side of sun (wrap around)
-            // This works for both regular planets and Dyson sphere orbital ring
-            const toAngle = fromAngle + Math.PI;
-            
-            return { fromAngle, toAngle };
+        if (!fromPos || (fromPos.x === 0 && fromPos.z === 0)) {
+            // Fallback: if fromPos is at origin or null, use default
+            return { fromAngle: 0, toAngle: Math.PI, transferAngle: Math.PI };
         }
         
-        // Fallback: if fromPos is at origin or null, use default
-        // This shouldn't happen for normal planets, but handle it gracefully
-        return { fromAngle: 0, toAngle: Math.PI };
+        // Calculate angle from sun to origin planet
+        const fromAngle = Math.atan2(fromPos.z, fromPos.x);
+        
+        let toAngle;
+        let transferAngle;
+        
+        if (isDysonDestination) {
+            // For Dyson sphere, use opposite side from origin planet
+            toAngle = fromAngle + Math.PI;
+            transferAngle = Math.PI;
+        } else if (toPos && (toPos.x !== 0 || toPos.z !== 0)) {
+            // Get actual destination planet position
+            toAngle = Math.atan2(toPos.z, toPos.x);
+            
+            // Calculate angular separation (normalized to [-π, π])
+            let deltaAngle = toAngle - fromAngle;
+            // Normalize to [-π, π]
+            while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+            while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+            
+            // Smart logic: If planets are on same side (|deltaAngle| < π), 
+            // choose longer path that wraps behind sun if it makes orbital sense
+            const absDeltaAngle = Math.abs(deltaAngle);
+            
+            if (absDeltaAngle < Math.PI) {
+                // Same side - check if wrap-around would be more efficient
+                // For small angles, direct path is usually better
+                // For larger angles (> 90°), wrap-around can be more interesting
+                // Use wrap-around if angle > 90° (π/2) for visual interest
+                if (absDeltaAngle > Math.PI / 2) {
+                    // Use longer path that wraps behind sun
+                    transferAngle = 2 * Math.PI - absDeltaAngle;
+                    // Adjust toAngle to be on the longer path
+                    if (deltaAngle > 0) {
+                        toAngle = fromAngle - (2 * Math.PI - deltaAngle);
+                    } else {
+                        toAngle = fromAngle + (2 * Math.PI + deltaAngle);
+                    }
+                } else {
+                    // Use shorter direct path
+                    transferAngle = absDeltaAngle;
+                    toAngle = fromAngle + deltaAngle;
+                }
+            } else {
+                // Opposite sides - use shorter path
+                transferAngle = absDeltaAngle;
+                toAngle = fromAngle + deltaAngle;
+            }
+        } else {
+            // Fallback: destination position not available, use opposite side
+            toAngle = fromAngle + Math.PI;
+            transferAngle = Math.PI;
+        }
+        
+        // Normalize toAngle to [0, 2π]
+        while (toAngle < 0) toAngle += 2 * Math.PI;
+        while (toAngle >= 2 * Math.PI) toAngle -= 2 * Math.PI;
+        
+        return { fromAngle, toAngle, transferAngle };
     }
     
     /**
@@ -524,10 +486,10 @@ class TransferVisualization {
         }
         
         // Calculate launch angles at launch time (fixed)
-        const { fromAngle, toAngle } = this.calculateLaunchAngles(fromZoneId, toZoneId);
+        const { fromAngle, toAngle, transferAngle } = this.calculateLaunchAngles(fromZoneId, toZoneId);
         
         // Create geometry once with fixed orientation, passing zone IDs for visual position matching
-        const geometry = this.createEllipseArc(params, fromAngle, params.fromAU, params.toAU, 64, fromZoneId, toZoneId);
+        const geometry = this.createEllipseArc(params, fromAngle, toAngle, transferAngle, params.fromAU, params.toAU, 64, fromZoneId, toZoneId);
         const color = this.colors[resourceType] || this.colors.probe;
         
         // Create dashed line material
@@ -545,7 +507,7 @@ class TransferVisualization {
         const line = new THREE.Line(geometry, material);
         line.computeLineDistances(); // Required for dashed lines
         
-        return { line, params, fromAngle, toAngle, fromAU: params.fromAU, toAU: params.toAU };
+        return { line, params, fromAngle, toAngle, transferAngle, fromAU: params.fromAU, toAU: params.toAU };
     }
     
     /**
@@ -647,6 +609,8 @@ class TransferVisualization {
             ellipse: ellipseData.line,
             params: ellipseData.params,
             fromAngle: ellipseData.fromAngle, // Fixed at launch time
+            toAngle: ellipseData.toAngle, // Fixed at launch time
+            transferAngle: ellipseData.transferAngle, // Fixed at launch time
             fromAU: ellipseData.fromAU,
             toAU: ellipseData.toAU,
             fromZoneId: fromZoneId, // Store for visual position calculation
@@ -773,6 +737,8 @@ class TransferVisualization {
                             const position = this.calculatePositionOnEllipse(
                                 batchViz.params,
                                 batchViz.fromAngle,
+                                batchViz.toAngle,
+                                batchViz.transferAngle,
                                 batchViz.fromAU,
                                 batchViz.toAU,
                                 progress,
@@ -813,6 +779,8 @@ class TransferVisualization {
                         ellipse: ellipseData.line,
                         params: ellipseData.params,
                         fromAngle: ellipseData.fromAngle,
+                        toAngle: ellipseData.toAngle,
+                        transferAngle: ellipseData.transferAngle,
                         fromAU: ellipseData.fromAU,
                         toAU: ellipseData.toAU,
                         fromZoneId: fromZoneId, // Store for visual position calculation
@@ -831,6 +799,8 @@ class TransferVisualization {
                 const position = this.calculatePositionOnEllipse(
                     transferViz.params,
                     transferViz.fromAngle,
+                    transferViz.toAngle,
+                    transferViz.transferAngle,
                     transferViz.fromAU,
                     transferViz.toAU,
                     progress,
