@@ -154,9 +154,139 @@ class StructuresVisualization {
     }
 
     /**
-     * Create mesh for a building type
+     * Create Electromagnetic Gas Miner mesh - lines extending into gas giant like hair
+     * Group of thin lines radiating downward toward planet center
      */
-    createStructureMesh(buildingId) {
+    createEMGasMinerMesh(planetRadius) {
+        const group = new THREE.Group();
+        
+        // Central hub - small metallic sphere
+        const hubGeometry = new THREE.SphereGeometry(0.03, 12, 12);
+        const hubMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4488FF,
+            metalness: 0.9,
+            roughness: 0.1,
+            emissive: 0x2244AA,
+            emissiveIntensity: 0.3
+        });
+        const hub = new THREE.Mesh(hubGeometry, hubMaterial);
+        group.add(hub);
+        
+        // Create "hair" lines extending toward planet
+        // These are thin cylinders radiating downward
+        const numLines = 12;
+        const lineLength = Math.max(0.3, planetRadius * 0.8); // Scale with planet size
+        const lineRadius = 0.005;
+        
+        const lineMaterial = new THREE.MeshStandardMaterial({
+            color: 0x66AAFF,
+            metalness: 0.7,
+            roughness: 0.3,
+            emissive: 0x3366CC,
+            emissiveIntensity: 0.4
+        });
+        
+        for (let i = 0; i < numLines; i++) {
+            // Random angle spread for hair-like effect
+            const spreadAngle = (Math.random() - 0.5) * 0.6; // ±0.3 radians spread
+            const rotationAngle = (i / numLines) * Math.PI * 2; // Around the hub
+            
+            const lineGeometry = new THREE.CylinderGeometry(lineRadius, lineRadius * 0.3, lineLength, 6);
+            const line = new THREE.Mesh(lineGeometry, lineMaterial);
+            
+            // Position at bottom of hub and angle slightly outward
+            line.position.y = -lineLength / 2;
+            
+            // Create a pivot group for each line
+            const pivot = new THREE.Group();
+            pivot.add(line);
+            pivot.rotation.x = spreadAngle;
+            pivot.rotation.z = Math.sin(rotationAngle) * spreadAngle * 0.5;
+            pivot.rotation.y = rotationAngle;
+            
+            group.add(pivot);
+        }
+        
+        // Mark this as an EM gas miner for animation
+        group.userData.isEMGasMiner = true;
+        
+        return group;
+    }
+
+    /**
+     * Create Space Elevator mesh - lines extending into rocky planet like tethers
+     * Single main tether with supporting cables
+     */
+    createSpaceElevatorMesh(planetRadius) {
+        const group = new THREE.Group();
+        
+        // Orbital station - larger metallic platform
+        const stationGeometry = new THREE.BoxGeometry(0.08, 0.02, 0.08);
+        const stationMaterial = new THREE.MeshStandardMaterial({
+            color: 0xCCCCCC,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+        const station = new THREE.Mesh(stationGeometry, stationMaterial);
+        group.add(station);
+        
+        // Main tether - thick line extending to planet
+        const tetherLength = Math.max(0.5, planetRadius * 1.2);
+        const mainTetherRadius = 0.01;
+        
+        const tetherMaterial = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            metalness: 0.6,
+            roughness: 0.4
+        });
+        
+        const mainTetherGeometry = new THREE.CylinderGeometry(mainTetherRadius, mainTetherRadius * 0.5, tetherLength, 8);
+        const mainTether = new THREE.Mesh(mainTetherGeometry, tetherMaterial);
+        mainTether.position.y = -tetherLength / 2;
+        group.add(mainTether);
+        
+        // Supporting cables - thinner lines
+        const numCables = 6;
+        const cableRadius = 0.003;
+        
+        const cableMaterial = new THREE.MeshStandardMaterial({
+            color: 0x666666,
+            metalness: 0.5,
+            roughness: 0.5
+        });
+        
+        for (let i = 0; i < numCables; i++) {
+            const angle = (i / numCables) * Math.PI * 2;
+            const spreadAngle = 0.15; // Slight spread outward
+            
+            const cableGeometry = new THREE.CylinderGeometry(cableRadius, cableRadius * 0.3, tetherLength * 0.9, 4);
+            const cable = new THREE.Mesh(cableGeometry, cableMaterial);
+            
+            // Position cables around main tether
+            const offsetX = Math.cos(angle) * 0.03;
+            const offsetZ = Math.sin(angle) * 0.03;
+            
+            cable.position.set(offsetX, -tetherLength * 0.45, offsetZ);
+            
+            // Slight angle outward
+            cable.rotation.x = Math.cos(angle) * spreadAngle;
+            cable.rotation.z = -Math.sin(angle) * spreadAngle;
+            
+            group.add(cable);
+        }
+        
+        // Mark this as a space elevator for positioning
+        group.userData.isSpaceElevator = true;
+        
+        return group;
+    }
+
+    /**
+     * Create mesh for a building type
+     * @param {string} buildingId - The building type ID
+     * @param {number} planetRadius - Optional planet radius for scaled structures
+     */
+    createStructureMesh(buildingId, planetRadius = 0.1) {
         switch (buildingId) {
             case 'data_center':
                 return this.createODCMesh();
@@ -170,6 +300,14 @@ class StructuresVisualization {
             //     return this.createFactoryMesh(); // Use factory mesh for omni_fab
             case 'mass_driver':
                 return this.createMassDriverMesh();
+            case 'em_gas_miner':
+                return this.createEMGasMinerMesh(planetRadius);
+            case 'space_elevator':
+                return this.createSpaceElevatorMesh(planetRadius);
+            // Structures without visuals return null
+            case 'robotic_asteroid_factory':
+            case 'deep_space_fusion_plant':
+                return null;
             default:
                 // Default: small grey box
                 const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
@@ -291,7 +429,12 @@ class StructuresVisualization {
                     }
 
                     for (let i = currentCount; i < requiredCount; i++) {
-                        const mesh = this.createStructureMesh(buildingId);
+                        const mesh = this.createStructureMesh(buildingId, planetData.planetRadius);
+                        
+                        // Skip if mesh is null (structures with no visual)
+                        if (!mesh) {
+                            continue;
+                        }
                         
                         // Set up positioning based on structure type
                         if (buildingId === 'mass_driver') {
@@ -424,6 +567,60 @@ class StructuresVisualization {
                             };
                             
                             // Initial position (will be updated in update())
+                            this.updateStructurePosition(mesh, planetData);
+                        } else if (buildingId === 'em_gas_miner') {
+                            // EM Gas Miner: positioned in low orbit with tethers extending into gas giant
+                            const planet = planetData.planet;
+                            const orbitalRadius = planet.userData?.radius || 2.0;
+                            const planetRadius = planetData.planetRadius;
+                            
+                            // Position just above the planet's atmosphere (1.5x planet radius)
+                            const minerOrbitalRadius = planetRadius * 1.5;
+                            
+                            // Distribute miners around the planet
+                            const angleOffset = (i / Math.max(1, requiredCount)) * Math.PI * 2;
+                            const orbitalSpeed = this.calculateOrbitalSpeed(minerOrbitalRadius);
+                            
+                            mesh.userData = {
+                                zoneId: zoneId,
+                                buildingId: buildingId,
+                                isEMGasMiner: true,
+                                planetOrbitalRadius: orbitalRadius,
+                                localOrbitalRadius: minerOrbitalRadius,
+                                planetRadius: planetRadius,
+                                orbitalAngle: angleOffset,
+                                orbitalSpeed: orbitalSpeed,
+                                minerIndex: i
+                            };
+                            
+                            // Initial position
+                            this.updateStructurePosition(mesh, planetData);
+                        } else if (buildingId === 'space_elevator') {
+                            // Space Elevator: positioned above planet with tether extending down
+                            const planet = planetData.planet;
+                            const orbitalRadius = planet.userData?.radius || 2.0;
+                            const planetRadius = planetData.planetRadius;
+                            
+                            // Geostationary-like orbit (2x planet radius)
+                            const elevatorOrbitalRadius = planetRadius * 2.0;
+                            
+                            // Distribute elevators around the planet (equatorial positions)
+                            const angleOffset = (i / Math.max(1, requiredCount)) * Math.PI * 2;
+                            const orbitalSpeed = this.calculateOrbitalSpeed(elevatorOrbitalRadius);
+                            
+                            mesh.userData = {
+                                zoneId: zoneId,
+                                buildingId: buildingId,
+                                isSpaceElevator: true,
+                                planetOrbitalRadius: orbitalRadius,
+                                localOrbitalRadius: elevatorOrbitalRadius,
+                                planetRadius: planetRadius,
+                                orbitalAngle: angleOffset,
+                                orbitalSpeed: orbitalSpeed,
+                                elevatorIndex: i
+                            };
+                            
+                            // Initial position
                             this.updateStructurePosition(mesh, planetData);
                         } else {
                             // Other structures: orbit around planet
@@ -676,6 +873,66 @@ class StructuresVisualization {
             // Point along tangent direction (90 degrees rotated from sun direction)
             const lookPoint = mesh.position.clone().add(tangent);
             mesh.lookAt(lookPoint);
+        } else if (userData.isEMGasMiner) {
+            // EM Gas Miner: orbits around planet in low orbit with tethers pointing toward planet
+            const planet = planetData.planet;
+            const planetOrbitalRadius = userData.planetOrbitalRadius;
+            const localOrbitalRadius = userData.localOrbitalRadius;
+            const planetOrbitalAngle = planet.userData?.orbitalAngle || 0;
+            const localAngle = userData.orbitalAngle;
+            
+            // Get planet's position in the solar system
+            const planetX = Math.cos(planetOrbitalAngle) * planetOrbitalRadius;
+            const planetZ = Math.sin(planetOrbitalAngle) * planetOrbitalRadius;
+            
+            // Calculate miner's position relative to planet
+            const localX = Math.cos(localAngle) * localOrbitalRadius;
+            const localZ = Math.sin(localAngle) * localOrbitalRadius;
+            
+            // Final position = planet position + local offset
+            const x = planetX + localX;
+            const z = planetZ + localZ;
+            const y = 0;
+            
+            mesh.position.set(x, y, z);
+            
+            // Orient so "down" (tethers) point toward planet center
+            // The mesh group has tethers extending in -Y direction
+            // We need to rotate so -Y points toward planet
+            const toPlanet = new THREE.Vector3(planetX - x, 0, planetZ - z).normalize();
+            const downVec = new THREE.Vector3(0, -1, 0);
+            
+            // Calculate rotation to align -Y with direction to planet
+            mesh.quaternion.setFromUnitVectors(downVec, toPlanet);
+        } else if (userData.isSpaceElevator) {
+            // Space Elevator: orbits around planet with tether extending toward planet
+            const planet = planetData.planet;
+            const planetOrbitalRadius = userData.planetOrbitalRadius;
+            const localOrbitalRadius = userData.localOrbitalRadius;
+            const planetOrbitalAngle = planet.userData?.orbitalAngle || 0;
+            const localAngle = userData.orbitalAngle;
+            
+            // Get planet's position in the solar system
+            const planetX = Math.cos(planetOrbitalAngle) * planetOrbitalRadius;
+            const planetZ = Math.sin(planetOrbitalAngle) * planetOrbitalRadius;
+            
+            // Calculate elevator's position relative to planet
+            const localX = Math.cos(localAngle) * localOrbitalRadius;
+            const localZ = Math.sin(localAngle) * localOrbitalRadius;
+            
+            // Final position = planet position + local offset
+            const x = planetX + localX;
+            const z = planetZ + localZ;
+            const y = 0;
+            
+            mesh.position.set(x, y, z);
+            
+            // Orient so tether (extending in -Y) points toward planet center
+            const toPlanet = new THREE.Vector3(planetX - x, 0, planetZ - z).normalize();
+            const downVec = new THREE.Vector3(0, -1, 0);
+            
+            // Calculate rotation to align -Y with direction to planet
+            mesh.quaternion.setFromUnitVectors(downVec, toPlanet);
         } else {
             // Orbiting structure: calculate position in orbit around planet
             const orbitalRadius = userData.orbitalRadius;

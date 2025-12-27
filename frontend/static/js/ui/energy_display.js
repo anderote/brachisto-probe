@@ -65,45 +65,49 @@ class EnergyDisplay {
             html += '<div class="energy-tooltip-section">';
             html += '<div class="energy-tooltip-title">Production:</div>';
             
-            // Energy probes
-            const energyProbes = this.gameState.probes?.energy_probe || 0;
-            if (energyProbes > 0) {
-                const probeEnergy = energyProbes * 2000; // 2000W per probe
-                html += `<div class="energy-tooltip-item">Energy Probes (${energyProbes}): ${this.formatEnergy(probeEnergy)}</div>`;
+            const productionBreakdown = breakdown.production.breakdown || {};
+            
+            // Base supply
+            const baseSupply = productionBreakdown.base_supply || 0;
+            if (baseSupply > 0) {
+                html += `<div class="energy-tooltip-item">Base Supply: ${this.formatEnergy(baseSupply)}</div>`;
             }
             
-            // Structures
-            if (this.gameState.structures) {
-                let structureEnergy = 0;
-                const structureDetails = [];
-                for (const [buildingId, count] of Object.entries(this.gameState.structures)) {
-                    // We'd need building data to get exact energy, but we can show count
-                    if (count > 0) {
-                        structureDetails.push(`${buildingId}: ${count}`);
-                    }
+            // --- Structures by Type ---
+            html += '<div class="energy-tooltip-subtitle" style="margin-top: 8px; font-weight: bold; font-size: 11px; color: rgba(255, 200, 100, 0.9);">Structures:</div>';
+            const structuresByType = productionBreakdown.structures_by_type || {};
+            const structureTypeEntries = Object.entries(structuresByType);
+            if (structureTypeEntries.length > 0) {
+                for (const [buildingId, data] of structureTypeEntries) {
+                    html += `<div class="energy-tooltip-item" style="padding-left: 8px;">${data.name} (${data.count}): ${this.formatEnergy(data.production)}</div>`;
                 }
-                if (structureDetails.length > 0) {
-                    html += `<div class="energy-tooltip-item">Structures: ${structureDetails.join(', ')}</div>`;
+            } else {
+                const structuresTotal = productionBreakdown.structures || 0;
+                if (structuresTotal > 0) {
+                    html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Total: ${this.formatEnergy(structuresTotal)}</div>`;
+                } else {
+                    html += `<div class="energy-tooltip-item" style="padding-left: 8px; opacity: 0.6;">None</div>`;
                 }
             }
             
-            // Base production from breakdown
-            const baseProduction = breakdown.production.base || 0; // Backend in watts
-            if (baseProduction > 0) {
-                html += `<div class="energy-tooltip-item">Base: ${this.formatEnergy(baseProduction)}</div>`;
+            // Dyson sphere
+            const dysonProduction = productionBreakdown.dyson_sphere || 0;
+            if (dysonProduction > 0) {
+                html += `<div class="energy-tooltip-item" style="margin-top: 4px;">Dyson Sphere: ${this.formatEnergy(dysonProduction)}</div>`;
             }
             
             // Upgrades
             if (breakdown.production.upgrades && breakdown.production.upgrades.length > 0) {
+                html += '<div class="energy-tooltip-subtitle" style="margin-top: 8px; font-weight: bold; font-size: 11px; color: rgba(100, 255, 100, 0.9);">Efficiency Bonuses:</div>';
                 breakdown.production.upgrades.forEach(upgrade => {
                     if (upgrade.researched) {
-                        html += `<div class="energy-tooltip-upgrade">${upgrade.name}: +${(upgrade.bonus * 100).toFixed(1)}%</div>`;
+                        html += `<div class="energy-tooltip-upgrade" style="padding-left: 8px;">${upgrade.name}: +${(upgrade.bonus * 100).toFixed(1)}%</div>`;
                     }
                 });
             }
             
             const totalProduction = breakdown.production.total || 0; // Backend in watts
-            html += `<div class="energy-tooltip-total">Total: ${this.formatEnergy(totalProduction)}</div>`;
+            html += `<div class="energy-tooltip-total" style="margin-top: 8px;">Total: ${this.formatEnergy(totalProduction)}</div>`;
             html += '</div>';
         }
         
@@ -112,57 +116,79 @@ class EnergyDisplay {
             html += '<div class="energy-tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.2);">';
             html += '<div class="energy-tooltip-title">Consumption:</div>';
             
-            // Probes
-            const totalProbes = this.gameState.probes?.probe || 0;
-            const minerProbes = this.gameState.probes?.miner_probe || 0;
-            const computeProbes = this.gameState.probes?.compute_probe || 0;
-            const constructionProbes = this.gameState.probes?.construction_probe || 0;
+            const consumptionBreakdown = breakdown.consumption.breakdown || {};
             
-            if (totalProbes > 0) {
-                html += `<div class="energy-tooltip-item">Probes (${totalProbes}): Base consumption</div>`;
-            }
-            if (minerProbes > 0) {
-                html += `<div class="energy-tooltip-item">Miner Probes (${minerProbes})</div>`;
-            }
-            if (computeProbes > 0) {
-                html += `<div class="energy-tooltip-item">Compute Probes (${computeProbes})</div>`;
-            }
-            if (constructionProbes > 0) {
-                html += `<div class="energy-tooltip-item">Construction Probes (${constructionProbes})</div>`;
-            }
-            
-            // Structures
-            if (this.gameState.structures) {
-                const structureCount = Object.values(this.gameState.structures).reduce((a, b) => a + b, 0);
-                if (structureCount > 0) {
-                    html += `<div class="energy-tooltip-item">Structures (${structureCount}): Base consumption</div>`;
+            // --- Structures by Type ---
+            html += '<div class="energy-tooltip-subtitle" style="margin-top: 8px; font-weight: bold; font-size: 11px; color: rgba(255, 200, 100, 0.9);">Structures:</div>';
+            const structuresByType = consumptionBreakdown.structures_by_type || {};
+            const structureTypeEntries = Object.entries(structuresByType);
+            if (structureTypeEntries.length > 0) {
+                for (const [buildingId, data] of structureTypeEntries) {
+                    html += `<div class="energy-tooltip-item" style="padding-left: 8px;">${data.name} (${data.count}): ${this.formatEnergy(data.consumption)}</div>`;
+                }
+            } else {
+                const structuresTotal = consumptionBreakdown.structures || 0;
+                if (structuresTotal > 0) {
+                    html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Total: ${this.formatEnergy(structuresTotal)}</div>`;
+                } else {
+                    html += `<div class="energy-tooltip-item" style="padding-left: 8px; opacity: 0.6;">None</div>`;
                 }
             }
             
-            // Harvesting energy cost
-            const harvestAllocation = this.gameState.probe_allocations?.harvest || {};
-            const totalHarvestProbes = Object.values(harvestAllocation).reduce((a, b) => a + (b || 0), 0);
-            if (totalHarvestProbes > 0) {
-                html += `<div class="energy-tooltip-item">Harvesting (${Math.floor(totalHarvestProbes)} probes): Delta-V cost</div>`;
+            // --- Drone Activities ---
+            html += '<div class="energy-tooltip-subtitle" style="margin-top: 8px; font-weight: bold; font-size: 11px; color: rgba(100, 200, 255, 0.9);">Drone Activities:</div>';
+            
+            // Probe base consumption
+            const probesConsumption = consumptionBreakdown.probes || 0;
+            const totalProbes = this.gameState.probes?.probe || 0;
+            if (probesConsumption > 0 || totalProbes > 0) {
+                html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Base (${totalProbes} probes): ${this.formatEnergy(probesConsumption)}</div>`;
             }
             
-            // Base consumption from breakdown
-            const baseConsumption = breakdown.consumption.base || 0; // Backend in watts
-            if (baseConsumption > 0) {
-                html += `<div class="energy-tooltip-item">Base: ${this.formatEnergy(baseConsumption)}</div>`;
+            // Harvesting/Mining
+            const harvestingConsumption = consumptionBreakdown.harvesting || 0;
+            if (harvestingConsumption > 0) {
+                const harvestAllocation = this.gameState.probe_allocations?.harvest || {};
+                const totalHarvestProbes = Object.values(harvestAllocation).reduce((a, b) => a + (b || 0), 0);
+                html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Mining (${Math.floor(totalHarvestProbes)} probes): ${this.formatEnergy(harvestingConsumption)}</div>`;
             }
             
-            // Upgrades
+            // Probe construction
+            const probeConstructionConsumption = consumptionBreakdown.probe_construction || 0;
+            if (probeConstructionConsumption > 0) {
+                html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Probe Construction: ${this.formatEnergy(probeConstructionConsumption)}</div>`;
+            }
+            
+            // Structure construction
+            const structureConstructionConsumption = consumptionBreakdown.structure_construction || 0;
+            if (structureConstructionConsumption > 0) {
+                html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Structure Construction: ${this.formatEnergy(structureConstructionConsumption)}</div>`;
+            }
+            
+            // Dyson construction
+            const dysonConstructionConsumption = consumptionBreakdown.dyson_construction || 0;
+            if (dysonConstructionConsumption > 0) {
+                html += `<div class="energy-tooltip-item" style="padding-left: 8px;">Dyson Construction: ${this.formatEnergy(dysonConstructionConsumption)}</div>`;
+            }
+            
+            // Show "None" if no drone activities
+            if (probesConsumption === 0 && harvestingConsumption === 0 && probeConstructionConsumption === 0 && 
+                structureConstructionConsumption === 0 && dysonConstructionConsumption === 0) {
+                html += `<div class="energy-tooltip-item" style="padding-left: 8px; opacity: 0.6;">None</div>`;
+            }
+            
+            // --- Upgrades ---
             if (breakdown.consumption.upgrades && breakdown.consumption.upgrades.length > 0) {
+                html += '<div class="energy-tooltip-subtitle" style="margin-top: 8px; font-weight: bold; font-size: 11px; color: rgba(100, 255, 100, 0.9);">Efficiency Bonuses:</div>';
                 breakdown.consumption.upgrades.forEach(upgrade => {
                     if (upgrade.researched) {
-                        html += `<div class="energy-tooltip-upgrade">${upgrade.name}: -${(upgrade.bonus * 100).toFixed(1)}%</div>`;
+                        html += `<div class="energy-tooltip-upgrade" style="padding-left: 8px;">${upgrade.name}: -${(upgrade.bonus * 100).toFixed(1)}%</div>`;
                     }
                 });
             }
             
             const totalConsumption = breakdown.consumption.total || 0; // Backend in watts
-            html += `<div class="energy-tooltip-total">Total: ${this.formatEnergy(totalConsumption)}</div>`;
+            html += `<div class="energy-tooltip-total" style="margin-top: 8px;">Total: ${this.formatEnergy(totalConsumption)}</div>`;
             html += '</div>';
         }
         

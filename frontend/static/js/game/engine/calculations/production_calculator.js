@@ -17,9 +17,16 @@ class ProductionCalculator {
         // Default values (will be overwritten by economic rules)
         this.BASE_MINING_RATE = 100.0;      // kg/day per probe
         this.BASE_BUILDING_RATE = 20.0;     // kg/day per probe
+        this.BASE_PROBE_MASS = 100.0;       // kg per probe
+        this.BASE_ISP = 500;                // seconds (base specific impulse)
         this.CROWDING_THRESHOLD = 0.01;     // 1% - penalty starts after this ratio
         this.CROWDING_DECAY_RATE = 4.395;   // Exponential decay constant
-        this.GEOMETRIC_SCALING_EXPONENT = 2.1;
+        this.GEOMETRIC_SCALING_EXPONENT = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+        
+        // Probe count scaling penalty parameters (diminishing returns for probe count)
+        this.PROBE_COUNT_BASE_PENALTY = 0.0;     // No penalty per doubling (disabled)
+        this.PROBE_COUNT_MIN_PENALTY = 0.0;      // No penalty per doubling (disabled)
+        this.PROBE_COUNT_COMPUTE_THRESHOLD = 6.19; // Compute skill level for min penalty
         
         // Skill coefficients (loaded from economic rules)
         this.skillCoefficients = null;
@@ -39,6 +46,12 @@ class ProductionCalculator {
         if (economicRules.probe) {
             this.BASE_MINING_RATE = economicRules.probe.base_mining_rate_kg_per_day || 100.0;
             this.BASE_BUILDING_RATE = economicRules.probe.base_build_rate_kg_per_day || 20.0;
+            this.BASE_PROBE_MASS = economicRules.probe.mass_kg || 100.0;
+        }
+        
+        // Load propulsion parameters
+        if (economicRules.propulsion) {
+            this.BASE_ISP = economicRules.propulsion.base_isp_seconds || 500;
         }
         
         // Load crowding parameters
@@ -49,7 +62,14 @@ class ProductionCalculator {
         
         // Load structure parameters
         if (economicRules.structures) {
-            this.GEOMETRIC_SCALING_EXPONENT = economicRules.structures.geometric_scaling_exponent || 2.1;
+            this.GEOMETRIC_SCALING_EXPONENT = economicRules.structures.geometric_scaling_exponent ?? this.GEOMETRIC_SCALING_EXPONENT;
+        }
+        
+        // Load probe count scaling penalty parameters
+        if (economicRules.probe_count_scaling) {
+            this.PROBE_COUNT_BASE_PENALTY = economicRules.probe_count_scaling.base_penalty_per_doubling || 0.40;
+            this.PROBE_COUNT_MIN_PENALTY = economicRules.probe_count_scaling.min_penalty_per_doubling || 0.01;
+            this.PROBE_COUNT_COMPUTE_THRESHOLD = economicRules.probe_count_scaling.compute_skill_threshold || 6.19;
         }
         
         // Load skill coefficients
@@ -64,6 +84,42 @@ class ProductionCalculator {
     getSkillCoefficients(category) {
         if (!this.skillCoefficients) return null;
         return this.skillCoefficients[category] || null;
+    }
+    
+    /**
+     * Get probe mass in kg (base value, no upgrades currently affect this)
+     * @returns {number} Probe mass in kg
+     */
+    getProbeMass() {
+        return this.BASE_PROBE_MASS;
+    }
+    
+    /**
+     * Get base specific impulse (ISP) in seconds
+     * @returns {number} Base ISP in seconds
+     */
+    getBaseIsp() {
+        return this.BASE_ISP;
+    }
+    
+    /**
+     * Get effective specific impulse with propulsion skill applied
+     * @param {Object} skills - Current skills (for propulsion modifier)
+     * @returns {number} Effective ISP in seconds
+     */
+    getEffectiveIsp(skills) {
+        const propulsionSkill = skills?.propulsion || 1.0;
+        return this.BASE_ISP * propulsionSkill;
+    }
+    
+    /**
+     * Get exhaust velocity in m/s based on current propulsion skill
+     * @param {Object} skills - Current skills (for propulsion modifier)
+     * @returns {number} Exhaust velocity in m/s
+     */
+    getExhaustVelocity(skills) {
+        const g0 = 9.80665; // Standard gravity m/s²
+        return this.getEffectiveIsp(skills) * g0;
     }
     
     /**
@@ -111,42 +167,96 @@ class ProductionCalculator {
     }
     
     /**
-     * Calculate tech tree upgrade factor using geometric mean and exponential scaling
-     * Formula: F = exp(alpha * log(G)) where G is geometric mean of skill values
-     * @param {Array<number>} skillValues - Array of (skill * coefficient) values
-     * @param {number} alpha - Tech growth scale factor (from config)
-     * @returns {number} Tech tree upgrade factor
+     * Calculate probe count scaling penalty (diminishing returns for probe count within a zone)
+     * Each doubling of probe count reduces efficiency.
+     * Formula: efficiency = (1 - penalty_per_doubling)^log2(probe_count)
+     * 
+     * The penalty_per_doubling is interpolated based on compute skill:
+     * - At base compute (1.0): 40% penalty per doubling (so doubling only gives 20% more output)
+     * - At max compute (6.19x): 1% penalty per doubling (so doubling gives ~98% more output)
+     * 
+     * @param {number} probeCount - Total number of probes in the zone
+     * @param {Object} skills - Current skills (for compute level)
+     * @returns {number} Efficiency factor (0-1), where 1 = no penalty
      */
-    calculateTechTreeUpgradeFactor(skillValues, alpha) {
-        if (!skillValues || skillValues.length === 0) return 1.0;
+    calculateProbeCountScalingPenalty(probeCount, skills) {
+        // No penalty for 0 or 1 probe
+        if (probeCount <= 1) {
+            return 1.0;
+        }
         
-        // Filter out zero/negative values (safety check)
-        const validValues = skillValues.filter(v => v > 0);
-        if (validValues.length === 0) return 1.0;
+        // Get compute skill (geometric mean of cpu, gpu, interconnect, io_bandwidth)
+        const computeSkill = skills?.computer?.total || 1.0;
         
-        // Calculate geometric mean: G = (v1 * v2 * ... * vn)^(1/n)
-        const product = validValues.reduce((prod, val) => prod * val, 1.0);
-        const geometricMean = Math.pow(product, 1.0 / validValues.length);
+        // Interpolate penalty per doubling based on compute skill
+        // At compute 1.0: use base penalty (40%)
+        // At compute >= threshold: use min penalty (1%)
+        // Linear interpolation between them
+        const normalizedCompute = Math.min(1.0, Math.max(0, (computeSkill - 1.0) / (this.PROBE_COUNT_COMPUTE_THRESHOLD - 1.0)));
+        const penaltyPerDoubling = this.PROBE_COUNT_BASE_PENALTY - (this.PROBE_COUNT_BASE_PENALTY - this.PROBE_COUNT_MIN_PENALTY) * normalizedCompute;
         
-        // Calculate log(G)
-        const logG = Math.log(geometricMean);
+        // Calculate number of doublings: log2(probeCount)
+        const doublings = Math.log2(probeCount);
         
-        // F = exp(alpha * log(G)) = G^alpha
-        const factor = Math.exp(alpha * logG);
+        // Efficiency = (1 - penalty)^doublings
+        // For example, with 40% penalty and 2 probes (1 doubling): 0.6^1 = 0.6 efficiency
+        // With 4 probes (2 doublings): 0.6^2 = 0.36 efficiency
+        const efficiencyPerDoubling = 1.0 - penaltyPerDoubling;
+        const efficiency = Math.pow(efficiencyPerDoubling, doublings);
         
-        return factor;
+        // Clamp to reasonable minimum (0.1% efficiency minimum)
+        return Math.max(0.001, efficiency);
     }
     
     /**
-     * Calculate upgrade factors for performance and cost using alpha factors
-     * @param {Array<number>} skillValues - Array of skill values
-     * @param {number} alphaPerf - Performance alpha factor (e.g., ALPHA_STRUCTURE_FACTOR)
-     * @param {number} alphaCost - Cost alpha factor (average of ALPHA_COST_FACTOR and performance alpha)
+     * Calculate upgrade factor using weighted sum
+     * Formula: factor = 1 + Σ(weight_i * (skill_i - 1))
+     * @param {Array<{name: string, value: number, weight: number}>|Array<number>} skillInfo - Array of skill info, or legacy array format
+     * @param {number} alpha - DEPRECATED: Alpha factor (ignored, kept for API compatibility)
+     * @returns {number} Upgrade factor
+     */
+    calculateTechTreeUpgradeFactor(skillInfo, alpha) {
+        if (!skillInfo || skillInfo.length === 0) return 1.0;
+        
+        // Handle legacy array format (for backward compatibility with fallback code)
+        if (Array.isArray(skillInfo) && typeof skillInfo[0] === 'number') {
+            // Legacy: array of (coefficient * skill) values
+            // Convert to weighted sum approximation
+            let bonus = 0;
+            for (const val of skillInfo) {
+                if (val > 0 && isFinite(val)) {
+                    // Approximate: treat as weight * skill, contribution ≈ (val - 1) * normalized_weight
+                    bonus += (val - 1.0) * 0.4; // Rough approximation for legacy code
+                }
+            }
+            return 1.0 + bonus;
+        }
+        
+        // New format: array of {name, value, weight} objects
+        let bonus = 0;
+        for (const { value, weight } of skillInfo) {
+            // Skip invalid values
+            if (value <= 0 || !isFinite(value)) continue;
+            
+            // Calculate contribution: weight * (skillValue - 1)
+            bonus += weight * (value - 1.0);
+        }
+        
+        return 1.0 + bonus;
+    }
+    
+    /**
+     * Calculate upgrade factors for performance and cost (alpha factors deprecated)
+     * @param {Array<{name: string, value: number, weight: number}>|Array<number>} skillInfo - Array of skill info
+     * @param {number} alphaPerf - DEPRECATED: Performance alpha factor (ignored)
+     * @param {number} alphaCost - DEPRECATED: Cost alpha factor (ignored)
      * @returns {Object} {performance: factor, cost: factor}
      */
-    calculateUpgradeFactors(skillValues, alphaPerf, alphaCost) {
-        const performanceFactor = this.calculateTechTreeUpgradeFactor(skillValues, alphaPerf);
-        const costFactor = this.calculateTechTreeUpgradeFactor(skillValues, alphaCost);
+    calculateUpgradeFactors(skillInfo, alphaPerf, alphaCost) {
+        // Both use same weighted sum now (alpha factors deprecated)
+        const factor = this.calculateTechTreeUpgradeFactor(skillInfo);
+        const performanceFactor = factor;
+        const costFactor = factor;
         return {
             performance: performanceFactor,
             cost: costFactor
@@ -154,38 +264,64 @@ class ProductionCalculator {
     }
     
     /**
-     * Build skill values array from coefficients and skills
+     * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * @param {string} skillName - Skill name from economic rules
+     * @returns {string} Canonical skill name
+     */
+    resolveSkillAlias(skillName) {
+        // Map economic_rules skill names to SKILL_DEFINITIONS skill names
+        const aliasMap = {
+            'energy_storage': 'battery_density',
+            'thermal_management': 'radiator',
+            'robotics': 'manipulation',
+            'robotic': 'manipulation',
+            'energy': 'solar_pv',
+            'energy_collection': 'solar_pv',
+            'materials_science': 'materials'
+        };
+        return aliasMap[skillName] || skillName;
+    }
+
+    /**
+     * Build skill values with names for breakdown tracking
+     * Dynamically reads ALL skills from coefficients and resolves aliases
      * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
      * @param {Object} skills - Current skills from research
-     * @returns {Array<number>} Array of (coefficient * skill) values
+     * @returns {Array<{name: string, value: number, weight: number}>} Array of skill info
      */
     buildSkillValues(coefficients, skills) {
-        if (!coefficients) return [1.0];
+        if (!coefficients) return [];
         
         const values = [];
-        for (const [skillName, coefficient] of Object.entries(coefficients)) {
-            if (skillName === 'description') continue; // Skip description field
+        for (const [rawSkillName, coefficient] of Object.entries(coefficients)) {
+            if (rawSkillName === 'description') continue; // Skip description field
             
-            // Map skill names to actual skill values
-            let skillValue = 1.0;
-            switch (skillName) {
-                case 'robotic':
-                    skillValue = skills.robotic || skills.manipulation || 1.0;
-                    break;
-                case 'computer':
-                    skillValue = skills.computer?.total || 1.0;
-                    break;
-                case 'solar_pv':
-                    skillValue = skills.solar_pv || skills.energy_collection || 1.0;
-                    break;
-                default:
-                    skillValue = skills[skillName] || 1.0;
+            // Resolve skill alias to canonical name
+            const skillName = this.resolveSkillAlias(rawSkillName);
+            
+            // Get skill value (with fallbacks for common aliases)
+            let skillValue = skills[skillName] || 1.0;
+            
+            // Additional fallback handling for complex skill types
+            if (skillValue === 1.0 && skillName === 'manipulation') {
+                skillValue = skills.manipulation || skills.robotic || 1.0;
+            }
+            if (skillValue === 1.0 && skillName === 'solar_pv') {
+                skillValue = skills.solar_pv || skills.energy_collection || 1.0;
+            }
+            if (skillValue === 1.0 && rawSkillName === 'computer') {
+                skillValue = skills.computer?.total || 1.0;
             }
             
-            values.push(coefficient * skillValue);
+            values.push({
+                name: rawSkillName, // Keep original name for display
+                canonicalName: skillName,
+                value: skillValue,
+                weight: coefficient
+            });
         }
         
-        return values.length > 0 ? values : [1.0];
+        return values;
     }
     
     /**
@@ -206,9 +342,9 @@ class ProductionCalculator {
             const probeBuildValues = this.buildSkillValues(probeBuildingCoeffs, skills);
             const energyGenerationValues = this.buildSkillValues(energyGenCoeffs, skills);
             
-            const probeMiningFactor = this.calculateTechTreeUpgradeFactor(probeMiningValues, alpha);
-            const probeBuildFactor = this.calculateTechTreeUpgradeFactor(probeBuildValues, alpha);
-            const energyGenerationFactor = this.calculateTechTreeUpgradeFactor(energyGenerationValues, alpha);
+            const probeMiningFactor = this.calculateTechTreeUpgradeFactor(probeMiningValues);
+            const probeBuildFactor = this.calculateTechTreeUpgradeFactor(probeBuildValues);
+            const energyGenerationFactor = this.calculateTechTreeUpgradeFactor(energyGenerationValues);
             
             return {
                 probe_mining: probeMiningFactor,
@@ -237,7 +373,7 @@ class ProductionCalculator {
             0.5 * locomotionSkill,
             0.2 * energyTransportSkill
         ];
-        const probeMiningFactor = this.calculateTechTreeUpgradeFactor(probeMiningValues, alpha);
+        const probeMiningFactor = this.calculateTechTreeUpgradeFactor(probeMiningValues);
         
         // Probe build: 0.3*acds, 1.0*robotic, 0.35*computer, 1.0*production, 0.2*energy_transport
         const probeBuildValues = [
@@ -247,7 +383,7 @@ class ProductionCalculator {
             1.0 * productionSkill,
             0.2 * energyTransportSkill
         ];
-        const probeBuildFactor = this.calculateTechTreeUpgradeFactor(probeBuildValues, alpha);
+        const probeBuildFactor = this.calculateTechTreeUpgradeFactor(probeBuildValues);
         
         // Energy generation
         const energyGenerationValues = [
@@ -255,7 +391,7 @@ class ProductionCalculator {
             0.5 * energyTransportSkill,
             0.3 * computerSkill
         ];
-        const energyGenerationFactor = this.calculateTechTreeUpgradeFactor(energyGenerationValues, alpha);
+        const energyGenerationFactor = this.calculateTechTreeUpgradeFactor(energyGenerationValues);
         
         return {
             probe_mining: probeMiningFactor,
@@ -271,16 +407,20 @@ class ProductionCalculator {
      * Calculate mining rate for a zone (returns MASS mining rate, not metal)
      * Uses pre-calculated upgrade factor from state
      * Applies zone crowding penalty based on probe mass vs original planetary mass
+     * Applies probe count scaling penalty (diminishing returns for probe count)
      * @param {number} probeCount - Number of probes allocated to mining
      * @param {string} zoneId - Zone identifier
      * @param {Object} state - Game state (to get pre-calculated upgrade factors)
+     * @param {number} totalZoneProbes - Total probes in the zone (optional, for probe count scaling)
      * @returns {number} Mass mining rate in kg/day
      */
-    calculateMiningRate(probeCount, zoneId, state) {
+    calculateMiningRate(probeCount, zoneId, state, totalZoneProbes = null) {
         if (probeCount <= 0) return 0;
         
         // Base rate per probe (mass extraction rate)
-        const baseRatePerProbe = this.BASE_MINING_RATE;
+        // Apply mining rate bonus from starting skill points
+        const miningRateBonus = state.skill_bonuses?.mining_rate_bonus || 0;
+        const baseRatePerProbe = this.BASE_MINING_RATE + miningRateBonus;
         
         // Get upgrade factor from state (prefer new system, fallback to legacy)
         const upgradeFactor = state.upgrade_factors?.probe?.mining?.performance || 
@@ -295,8 +435,29 @@ class ProductionCalculator {
         // Apply crowding penalty (diminishing returns based on probe mass vs planetary mass)
         const crowdingEfficiency = this.calculateZoneCrowdingPenalty(zoneId, state);
         
-        // Total rate = probes * rate_per_probe * zone_multiplier * crowding_efficiency
-        return probeCount * ratePerProbe * zoneMultiplier * crowdingEfficiency;
+        // Apply probe count scaling penalty (diminishing returns based on probe count in zone)
+        // Use total zone probes if provided, otherwise calculate from state
+        const zoneProbeCount = totalZoneProbes ?? this.getZoneProbeCount(zoneId, state);
+        const skills = state.skills || {};
+        const probeCountEfficiency = this.calculateProbeCountScalingPenalty(zoneProbeCount, skills);
+        
+        // Total rate = probes * rate_per_probe * zone_multiplier * crowding_efficiency * probe_count_efficiency
+        return probeCount * ratePerProbe * zoneMultiplier * crowdingEfficiency * probeCountEfficiency;
+    }
+    
+    /**
+     * Get total probe count in a zone from state
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} state - Game state
+     * @returns {number} Total probe count in zone
+     */
+    getZoneProbeCount(zoneId, state) {
+        const zoneProbes = state.probes_by_zone?.[zoneId] || {};
+        let total = 0;
+        for (const probeType in zoneProbes) {
+            total += zoneProbes[probeType] || 0;
+        }
+        return total;
     }
     
     /**
@@ -369,16 +530,20 @@ class ProductionCalculator {
      * Calculate building rate (for structures and probes)
      * Uses pre-calculated upgrade factor from state
      * Applies zone crowding penalty based on probe mass vs original planetary mass
+     * Applies probe count scaling penalty (diminishing returns for probe count)
      * @param {number} probeCount - Number of probes allocated to building
      * @param {Object} state - Game state (to get pre-calculated upgrade factors)
      * @param {string} zoneId - Zone identifier (optional, for crowding penalty)
+     * @param {number} totalZoneProbes - Total probes in the zone (optional, for probe count scaling)
      * @returns {number} Building rate in kg/day
      */
-    calculateBuildingRate(probeCount, state, zoneId = null) {
+    calculateBuildingRate(probeCount, state, zoneId = null, totalZoneProbes = null) {
         if (probeCount <= 0) return 0;
         
         // Base rate per probe
-        const baseRatePerProbe = this.BASE_BUILDING_RATE;
+        // Apply replication rate bonus from starting skill points
+        const replicationRateBonus = state.skill_bonuses?.replication_rate_bonus || 0;
+        const baseRatePerProbe = this.BASE_BUILDING_RATE + replicationRateBonus;
         
         // Get upgrade factor from state (prefer new system, fallback to legacy)
         const upgradeFactor = state.upgrade_factors?.probe?.building?.performance || 
@@ -390,8 +555,16 @@ class ProductionCalculator {
             crowdingEfficiency = this.calculateZoneCrowdingPenalty(zoneId, state);
         }
         
-        // Total rate = probes * base_rate * upgrade_factor * crowding_efficiency
-        return probeCount * baseRatePerProbe * upgradeFactor * crowdingEfficiency;
+        // Apply probe count scaling penalty (diminishing returns based on probe count in zone)
+        let probeCountEfficiency = 1.0;
+        if (zoneId) {
+            const zoneProbeCount = totalZoneProbes ?? this.getZoneProbeCount(zoneId, state);
+            const skills = state.skills || {};
+            probeCountEfficiency = this.calculateProbeCountScalingPenalty(zoneProbeCount, skills);
+        }
+        
+        // Total rate = probes * base_rate * upgrade_factor * crowding_efficiency * probe_count_efficiency
+        return probeCount * baseRatePerProbe * upgradeFactor * crowdingEfficiency * probeCountEfficiency;
     }
     
     /**
@@ -459,8 +632,8 @@ class ProductionCalculator {
                 // Apply zone efficiency
                 const zoneEfficiency = building.orbital_efficiency?.[zoneId] || 1.0;
                 
-                // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                const geometricFactor = Math.pow(count, 2.1);
+                // Apply geometric scaling to benefits (same exponent as cost scaling)
+                const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                 const effectiveRate = baseRate * geometricFactor * zoneEfficiency * perfFactor;
                 totalRate += effectiveRate;
             } else if (building.effects?.metal_production_per_day) {
@@ -468,8 +641,8 @@ class ProductionCalculator {
                 const baseRate = building.effects.metal_production_per_day;
                 const upgradeFactor = state.tech_upgrade_factors?.refinery_mine || 1.0;
                 const zoneEfficiency = building.orbital_efficiency?.[zoneId] || 1.0;
-                // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                const geometricFactor = Math.pow(count, 2.1);
+                // Apply geometric scaling to benefits (same exponent as cost scaling)
+                const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                 const effectiveRate = baseRate * geometricFactor * zoneEfficiency * upgradeFactor;
                 totalRate += effectiveRate;
             }
@@ -515,8 +688,8 @@ class ProductionCalculator {
                 // Apply zone efficiency
                 const zoneEfficiency = building.orbital_efficiency?.[zoneId] || 1.0;
                 
-                // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                const geometricFactor = Math.pow(count, 2.1);
+                // Apply geometric scaling to benefits (same exponent as cost scaling)
+                const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                 const effectiveRate = baseRate * geometricFactor * zoneEfficiency * perfFactor;
                 totalRate += effectiveRate;
             } else if (building.effects?.probe_production_per_day || building.effects?.structure_production_per_day) {
@@ -525,8 +698,8 @@ class ProductionCalculator {
                                building.effects?.structure_production_per_day || 0;
                 const upgradeFactor = state.tech_upgrade_factors?.factory_replicate || 1.0;
                 const zoneEfficiency = building.orbital_efficiency?.[zoneId] || 1.0;
-                // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                const geometricFactor = Math.pow(count, 2.1);
+                // Apply geometric scaling to benefits (same exponent as cost scaling)
+                const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                 const effectiveRate = baseRate * geometricFactor * zoneEfficiency * upgradeFactor;
                 totalRate += effectiveRate;
             }
@@ -596,8 +769,9 @@ class ProductionCalculator {
         const miningProbes = totalProbes * harvestAllocation;
         const buildingProbes = totalProbes * constructAllocation;
         
-        const probeMiningRate = this.calculateMiningRate(miningProbes, zoneId, state);
-        const probeBuildingRate = this.calculateBuildingRate(buildingProbes, state, zoneId);
+        // Pass totalProbes to rate calculations for probe count scaling penalty
+        const probeMiningRate = this.calculateMiningRate(miningProbes, zoneId, state, totalProbes);
+        const probeBuildingRate = this.calculateBuildingRate(buildingProbes, state, zoneId, totalProbes);
         
         // Structure-based rates (use state for upgrade factors)
         const structureMiningRate = this.calculateStructureMiningRate(structuresByZone, zoneId, buildings, state);
@@ -611,6 +785,59 @@ class ProductionCalculator {
             structureMining: structureMiningRate,
             structureBuilding: structureBuildingRate
         };
+    }
+    
+    /**
+     * Calculate methalox production from refineries in a zone
+     * @param {Object} structuresByZone - Structures by zone {zoneId: {buildingId: count}}
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} buildings - Building definitions
+     * @param {Object} state - Game state with skills and upgrade factors
+     * @returns {number} Methalox production rate in kg/day
+     */
+    calculateMethaloxProduction(structuresByZone, zoneId, buildings, state) {
+        const zoneStructures = structuresByZone[zoneId] || {};
+        const allBuildings = buildings?.buildings || buildings || {};
+        const building = allBuildings['methalox_refinery'];
+        
+        if (!building) return 0;
+        
+        const count = zoneStructures['methalox_refinery'] || 0;
+        if (count === 0) return 0;
+        
+        // Base production rate per refinery
+        const baseRate = building.production_rate_kg_per_day || 100;
+        
+        // Simple linear scaling: no exponential performance or skill modifiers
+        // Total production = base rate * count
+        const totalProduction = baseRate * count;
+        
+        return totalProduction;
+    }
+    
+    /**
+     * Calculate upgrade factor from skill coefficients
+     * @param {string} category - Category name (e.g., 'methalox_production')
+     * @param {Object} skills - Current skills
+     * @returns {number} Upgrade factor
+     */
+    calculateUpgradeFactorFromCoefficients(category, skills) {
+        if (!this.skillCoefficients) return 1.0;
+        
+        const coefficients = this.skillCoefficients[category];
+        if (!coefficients) return 1.0;
+        
+        let bonus = 0;
+        for (const [skillName, weight] of Object.entries(coefficients)) {
+            if (skillName === 'description') continue;
+            
+            const skillValue = skills[skillName] || 1.0;
+            if (skillValue > 0 && isFinite(skillValue)) {
+                bonus += weight * (skillValue - 1.0);
+            }
+        }
+        
+        return 1.0 + bonus;
     }
 }
 

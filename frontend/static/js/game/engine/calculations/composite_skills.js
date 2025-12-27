@@ -20,87 +20,115 @@ class CompositeSkillsCalculator {
     }
     
     /**
-     * Build skill values array from coefficients and skills
+     * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * @param {string} skillName - Skill name from economic rules
+     * @returns {string} Canonical skill name
+     */
+    resolveSkillAlias(skillName) {
+        // Map economic_rules skill names to SKILL_DEFINITIONS skill names
+        const aliasMap = {
+            'energy_storage': 'battery_density',
+            'thermal_management': 'radiator',
+            'robotics': 'manipulation',
+            'robotic': 'manipulation',
+            'energy': 'solar_pv',
+            'energy_collection': 'solar_pv',
+            'materials_science': 'materials'
+        };
+        return aliasMap[skillName] || skillName;
+    }
+
+    /**
+     * Build skill values with names for breakdown tracking
+     * Dynamically reads ALL skills from coefficients and resolves aliases
      * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
      * @param {Object} skills - Current skills from research
-     * @returns {Array<number>} Array of (coefficient * skill) values
+     * @returns {Array<{name: string, value: number, weight: number}>} Array of skill info
      */
     buildSkillValues(coefficients, skills) {
-        if (!coefficients) return [1.0];
+        if (!coefficients) return [];
         
         const values = [];
-        for (const [skillName, coefficient] of Object.entries(coefficients)) {
-            if (skillName === 'description') continue; // Skip description field
+        for (const [rawSkillName, coefficient] of Object.entries(coefficients)) {
+            if (rawSkillName === 'description') continue; // Skip description field
             
-            // Map skill names to actual skill values
-            let skillValue = 1.0;
-            switch (skillName) {
-                case 'robotic':
-                    skillValue = skills.robotic || skills.manipulation || 1.0;
-                    break;
-                case 'computer':
-                    skillValue = skills.computer?.total || 1.0;
-                    break;
-                case 'solar_pv':
-                    skillValue = skills.solar_pv || skills.energy_collection || 1.0;
-                    break;
-                default:
-                    skillValue = skills[skillName] || 1.0;
+            // Resolve skill alias to canonical name
+            const skillName = this.resolveSkillAlias(rawSkillName);
+            
+            // Get skill value (with fallbacks for common aliases)
+            let skillValue = skills[skillName] || 1.0;
+            
+            // Additional fallback handling for complex skill types
+            if (skillValue === 1.0 && skillName === 'manipulation') {
+                skillValue = skills.manipulation || skills.robotic || 1.0;
+            }
+            if (skillValue === 1.0 && skillName === 'solar_pv') {
+                skillValue = skills.solar_pv || skills.energy_collection || 1.0;
+            }
+            if (skillValue === 1.0 && rawSkillName === 'computer') {
+                skillValue = skills.computer?.total || 1.0;
             }
             
-            values.push(coefficient * skillValue);
+            values.push({
+                name: rawSkillName, // Keep original name for display
+                canonicalName: skillName,
+                value: skillValue,
+                weight: coefficient
+            });
         }
         
-        return values.length > 0 ? values : [1.0];
+        return values;
     }
     
     /**
-     * Calculate tech tree upgrade factor using geometric mean
-     * Formula: F = G^alpha where G = (c1*s1 * c2*s2 * ... * cn*sn)^(1/n)
-     * @param {Array<number>} skillValues - Array of (skill * coefficient) values
-     * @param {number} alpha - Tech growth scale factor (default 0.75)
-     * @returns {number} Tech tree upgrade factor
+     * Calculate upgrade factor using weighted sum
+     * Formula: factor = 1 + Σ(weight_i * (skill_i - 1))
+     * @param {Array<{name: string, value: number, weight: number}>} skillInfo - Array of skill info
+     * @returns {{factor: number, breakdown: Object}} Upgrade factor and breakdown by skill
      */
-    calculateTechTreeUpgradeFactor(skillValues, alpha = 0.75) {
-        if (!skillValues || skillValues.length === 0) return 1.0;
+    calculateTechTreeUpgradeFactor(skillInfo) {
+        if (!skillInfo || skillInfo.length === 0) {
+            return { factor: 1.0, breakdown: {} };
+        }
         
-        // Filter out zero/negative values (safety check)
-        const validValues = skillValues.filter(v => v > 0);
-        if (validValues.length === 0) return 1.0;
+        let bonus = 0;
+        const breakdown = {};
         
-        // Calculate geometric mean: G = (v1 * v2 * ... * vn)^(1/n)
-        const product = validValues.reduce((prod, val) => prod * val, 1.0);
-        const geometricMean = Math.pow(product, 1.0 / validValues.length);
+        for (const { name, value, weight } of skillInfo) {
+            // Skip invalid values
+            if (value <= 0 || !isFinite(value)) continue;
+            
+            // Calculate contribution: weight * (skillValue - 1)
+            // This gives 0 when skill = 1.0, and scales linearly
+            const contribution = weight * (value - 1.0);
+            bonus += contribution;
+            breakdown[name] = contribution;
+        }
         
-        // Calculate log(G)
-        const logG = Math.log(geometricMean);
-        
-        // F = exp(alpha * log(G)) = G^alpha
-        const factor = Math.exp(alpha * logG);
-        
-        return factor;
+        return {
+            factor: 1.0 + bonus,
+            breakdown: breakdown
+        };
     }
     
     /**
      * Calculate upgrade factor from skill coefficients
      * @param {string} category - Category name (e.g., 'salvage_efficiency')
      * @param {Object} skills - Current skills
-     * @param {number} alpha - Alpha factor (default from config)
-     * @returns {number} Upgrade factor
+     * @returns {{factor: number, breakdown: Object}} Upgrade factor and breakdown
      */
-    calculateUpgradeFactorFromCoefficients(category, skills, alpha = null) {
+    calculateUpgradeFactorFromCoefficients(category, skills) {
         if (!this.economicRules || !this.economicRules.skill_coefficients) {
-            return 1.0;
+            return { factor: 1.0, breakdown: {} };
         }
         
         const coefficients = this.economicRules.skill_coefficients[category];
         if (!coefficients) {
-            return 1.0;
+            return { factor: 1.0, breakdown: {} };
         }
         
-        const skillValues = this.buildSkillValues(coefficients, skills);
-        const alphaFactor = alpha !== null ? alpha : (this.economicRules.alpha_factors?.probe_performance || 0.75);
-        return this.calculateTechTreeUpgradeFactor(skillValues, alphaFactor);
+        const skillInfo = this.buildSkillValues(coefficients, skills);
+        return this.calculateTechTreeUpgradeFactor(skillInfo);
     }
     
     /**
@@ -172,16 +200,25 @@ class CompositeSkillsCalculator {
     /**
      * Calculate salvage efficiency (recycling fraction)
      * @param {Object} skills - Current skills
-     * @returns {number} Metal recovery fraction (0-1)
+     * @returns {number|Object} Metal recovery fraction (0-1), or object with factor and breakdown if detailed
      */
-    calculateSalvageEfficiency(skills) {
+    calculateSalvageEfficiency(skills, detailed = false) {
         const baseRecyclingEfficiency = 0.75; // 75% base
         
         // Use config-driven coefficients if available
-        const upgradeFactor = this.calculateUpgradeFactorFromCoefficients('salvage_efficiency', skills);
+        const result = this.calculateUpgradeFactorFromCoefficients('salvage_efficiency', skills);
         
         // Base efficiency can improve up to 100% with research
-        return Math.min(1.0, baseRecyclingEfficiency * upgradeFactor);
+        const efficiency = Math.min(1.0, baseRecyclingEfficiency * result.factor);
+        
+        if (detailed) {
+            return {
+                efficiency: efficiency,
+                factor: result.factor,
+                breakdown: result.breakdown
+            };
+        }
+        return efficiency;
     }
     
     /**
@@ -259,15 +296,24 @@ class CompositeSkillsCalculator {
      * Calculate transfer efficiency (delta-v multiplier, lower is better)
      * @param {Object} skills - Current skills
      * @param {number} baseDeltaV - Base delta-v cost (unused, kept for API compatibility)
-     * @returns {number} Effective delta-v multiplier
+     * @returns {number|Object} Effective delta-v multiplier, or object with factor and breakdown if detailed
      */
-    calculateTransferEfficiency(skills, baseDeltaV) {
+    calculateTransferEfficiency(skills, baseDeltaV, detailed = false) {
         // Use config-driven coefficients if available
-        const upgradeFactor = this.calculateUpgradeFactorFromCoefficients('delta_v_reduction', skills);
+        const result = this.calculateUpgradeFactorFromCoefficients('delta_v_reduction', skills);
         
         // Delta-v reduction: higher upgrade factor = lower delta-v requirement
         // Return inverse (1 / factor) so that factor > 1 means less delta-v needed
-        return 1.0 / upgradeFactor;
+        const multiplier = 1.0 / result.factor;
+        
+        if (detailed) {
+            return {
+                multiplier: multiplier,
+                factor: result.factor,
+                breakdown: result.breakdown
+            };
+        }
+        return multiplier;
     }
     
     /**

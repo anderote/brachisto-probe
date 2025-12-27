@@ -52,17 +52,55 @@ class ProbeSystem {
         const allocations = probeAllocationsByZone[zoneId] || {};
         const replicateAllocation = allocations.replicate || 0;
         
+        // Get mass limits for this zone
+        const zoneMassLimits = newState.zone_mass_limits?.[zoneId] || {};
+        const replicateLimit = zoneMassLimits.replicate || 0;
+        
         // Process replication
         // Replicating probes = total probes * replication allocation
         if (replicateAllocation > 0) {
-            const replicatingProbes = totalProbes * replicateAllocation;
-            // Calculate building rate from probes allocated to replication
-            // Uses pre-calculated upgrade factors from state
-            // Applies zone crowding penalty
-            const replicationRate = this.productionCalculator.calculateBuildingRate(replicatingProbes, newState, zoneId);
-            // Apply energy throttle to replication rate before metal throttle
-            const throttledReplicationRate = replicationRate * energyThrottle;
-            this.processReplication(newState, zoneId, throttledReplicationRate, deltaTime);
+            // Check mass limit: if probe_mass >= replicateLimit % of total zone mass, skip replication
+            let massThrottle = 1.0;
+            if (replicateLimit > 0) {
+                const zone = newState.zones?.[zoneId];
+                if (zone) {
+                    // Calculate total zone mass
+                    const massRemaining = zone.mass_remaining || 0;
+                    const storedMetal = zone.stored_metal || 0;
+                    const probeMass = zone.probe_mass || 0;
+                    const structureMass = zone.structure_mass || 0;
+                    const slagMass = zone.slag_mass || 0;
+                    const totalZoneMass = massRemaining + storedMetal + probeMass + structureMass + slagMass;
+                    
+                    if (totalZoneMass > 0) {
+                        const currentProbeRatio = probeMass / totalZoneMass;
+                        if (currentProbeRatio >= replicateLimit) {
+                            // At or above limit - stop replication
+                            massThrottle = 0;
+                        } else {
+                            // Approaching limit - calculate how much room we have
+                            // Smoothly reduce rate as we approach the limit
+                            const headroom = replicateLimit - currentProbeRatio;
+                            // If within 10% of limit, start throttling
+                            const throttleThreshold = replicateLimit * 0.1;
+                            if (headroom < throttleThreshold && throttleThreshold > 0) {
+                                massThrottle = headroom / throttleThreshold;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (massThrottle > 0) {
+                const replicatingProbes = totalProbes * replicateAllocation;
+                // Calculate building rate from probes allocated to replication
+                // Uses pre-calculated upgrade factors from state
+                // Applies zone crowding penalty and probe count scaling penalty
+                const replicationRate = this.productionCalculator.calculateBuildingRate(replicatingProbes, newState, zoneId, totalProbes);
+                // Apply energy throttle and mass throttle to replication rate
+                const throttledReplicationRate = replicationRate * energyThrottle * massThrottle;
+                this.processReplication(newState, zoneId, throttledReplicationRate, deltaTime);
+            }
         }
         
         return newState;

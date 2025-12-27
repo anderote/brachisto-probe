@@ -88,9 +88,12 @@ class GameEngineClient {
                 const resolver = this.pendingActions.get(actionId);
                 if (resolver) {
                     this.pendingActions.delete(actionId);
+                    // Propagate success/error properly from worker
+                    // The worker now sends {success, error, result, gameState}
                     resolver.resolve({
                         success: data.success,
                         result: data.result,
+                        error: data.error || (data.result && data.result.error) || null,
                         gameState: data.gameState
                     });
                 }

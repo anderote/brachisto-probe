@@ -303,12 +303,12 @@ class SkillsCalculator {
     }
     
     /**
-     * Calculate bonus from a research tree (multiplicative compounding, no time-based compounding)
+     * Calculate bonus from a research tree (compounding per tranche within tiers)
      * @param {Object} researchState - Research state
      * @param {Object} tree - Research tree definition
      * @param {number} currentTime - Current time in days (not used, kept for compatibility)
      * @param {string} treeId - Tree ID (key in research_trees object)
-     * @returns {number} Total multiplier (e.g., 3.981 = 3.981x)
+     * @returns {number} Total multiplier (1.0 to ~6.19x when fully researched)
      */
     calculateBonusFromTree(researchState, tree, currentTime, treeId = null) {
         if (!tree || !tree.tiers) return 1.0; // Return 1.0 (no change) instead of 0.0
@@ -318,6 +318,10 @@ class SkillsCalculator {
         const treeState = researchState[lookupKey] || {};
         let totalMultiplier = 1.0; // Start at 1.0 for multiplicative compounding
         
+        // Default tier multiplier: 1.2x (20% per tier)
+        const DEFAULT_TIER_MULTIPLIER = 1.2;
+        const DEFAULT_TRANCHES_PER_TIER = 10;
+        
         for (const tier of tree.tiers) {
             const tierState = treeState[tier.id];
             if (!tierState || !tierState.enabled) continue;
@@ -325,19 +329,19 @@ class SkillsCalculator {
             const tranchesCompleted = tierState.tranches_completed || 0;
             if (tranchesCompleted === 0) continue;
             
-            // Get the tier's total multiplier from tier.tier_multiplier
-            // This should be set in the JSON to achieve 1e6 total (1,000,000^(1/10) ≈ 3.981)
-            const tierMultiplier = tier.tier_multiplier || 1.0;
-            const isCompleted = tranchesCompleted >= tier.tranches;
+            const totalTranches = tier.tranches || DEFAULT_TRANCHES_PER_TIER;
+            // Get tier multiplier (default 1.2x = 20% per tier)
+            const tierMultiplier = tier.tier_multiplier || DEFAULT_TIER_MULTIPLIER;
             
-            if (isCompleted) {
-                // Tier completed: 100% of the multiplier
+            if (tranchesCompleted >= totalTranches) {
+                // Tier completed: full multiplier (1.2x)
                 totalMultiplier *= tierMultiplier;
             } else {
-                // Tier in progress: up to 50% of the performance gain
-                // If tier gives multiplier X, gain is (X - 1)
-                // During completion: 1 + 0.5 * (X - 1) = 0.5 + 0.5 * X
-                const partialMultiplier = 0.5 + 0.5 * tierMultiplier;
+                // Tier in progress: compound per tranche
+                // Each tranche gives: tierMultiplier^(1/totalTranches)
+                // So N tranches give: tierMultiplier^(N/totalTranches)
+                const perTrancheMultiplier = Math.pow(tierMultiplier, 1.0 / totalTranches);
+                const partialMultiplier = Math.pow(perTrancheMultiplier, tranchesCompleted);
                 totalMultiplier *= partialMultiplier;
             }
         }

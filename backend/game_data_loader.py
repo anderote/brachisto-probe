@@ -33,6 +33,7 @@ class GameDataLoader:
         self._buildings = None
         self._research_trees = None
         self._zone_metal_limits = None
+        self._economic_rules = None
         
     def load_orbital_mechanics(self):
         """Load orbital mechanics data."""
@@ -152,6 +153,35 @@ class GameDataLoader:
         """Get a specific research tree by ID."""
         all_trees = self.get_all_research_trees()
         return all_trees.get(tree_id)
+    
+    def load_economic_rules(self):
+        """Load economic rules data."""
+        if self._economic_rules is None:
+            file_path = self.data_dir / 'economic_rules.json'
+            if file_path.exists():
+                with open(file_path, 'r') as f:
+                    self._economic_rules = json.load(f)
+            else:
+                self._economic_rules = {}
+        return self._economic_rules
+    
+    def get_probe_config(self):
+        """Get probe configuration from economic rules."""
+        rules = self.load_economic_rules()
+        return rules.get('probe', {})
+    
+    def get_structures_config(self):
+        """Get structures configuration from economic rules."""
+        rules = self.load_economic_rules()
+        return rules.get('structures', {})
+    
+    def get_skill_coefficients(self, category=None):
+        """Get skill coefficients from economic rules."""
+        rules = self.load_economic_rules()
+        coefficients = rules.get('skill_coefficients', {})
+        if category:
+            return coefficients.get(category, {})
+        return coefficients
     
     def validate_data(self):
         """Validate loaded data structure."""

@@ -4,18 +4,12 @@
     "power_station": {
       "id": "power_station",
       "name": "Power Station",
-      "description": "Specialized energy production facility. Produces 100 MW base power.",
+      "description": "Specialized solar energy production facility. Produces 100 GW at Earth orbit. Output scales with solar irradiance (inverse square of orbital radius).",
       "mass_multiplier": 100,
-      "power_output_mw": 100,
+      "power_output_mw": 100000,
+      "uses_solar": true,
       "energy_cost_multiplier": 0,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
-      "orbital_efficiency": {
-        "mercury": 1.4,
-        "venus": 1.1,
-        "earth": 1.0,
-        "mars": 0.6,
-        "asteroid_belt": 0.4
-      },
       "research_skills": {
         "power_output": ["solar_pv", "energy_converter", "radiator"],
         "energy_cost": []
@@ -24,19 +18,16 @@
     "data_center": {
       "id": "data_center",
       "name": "Orbital Data Center",
-      "description": "Specialized computing facility for research. Produces 10 EFLOPS base compute.",
+      "description": "Specialized computing facility with integrated solar arrays. Produces 10 EFLOPS compute and 10 GW solar power at Earth orbit. Net-zero energy at Earth; becomes energy consumer further from the Sun.",
       "mass_multiplier": 100,
       "compute_eflops": 10,
-      "energy_cost_multiplier": 50,
-      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
-      "orbital_efficiency": {
-        "mercury": 1.5,
-        "venus": 1.4,
-        "earth": 1.2,
-        "mars": 1.0
-      },
+      "power_output_mw": 10000,
+      "uses_solar": true,
+      "base_power_consumption_mw": 10000,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
       "research_skills": {
         "compute": ["cpu", "gpu", "interconnect", "io_bandwidth"],
+        "power_output": ["solar_pv", "energy_converter"],
         "energy_cost": ["energy_converter", "radiator", "heat_pump"]
       }
     },
@@ -49,6 +40,9 @@
       "base_delta_v": 5000,
       "metal_launch_capacity_kg_per_day": 100000000000000,
       "energy_cost_multiplier": 200,
+      "power_draw_mw": 100,
+      "energy_efficiency": 0.4,
+      "base_muzzle_velocity_km_s": 4.5,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt", "jupiter", "saturn", "uranus", "neptune", "kuiper"],
       "orbital_efficiency": {
         "mercury": 1.0,
@@ -64,7 +58,112 @@
       },
       "research_skills": {
         "capacity": ["strength", "locomotion"],
-        "delta_v": ["energy_converter", "propulsion", "thrust"]
+        "delta_v": ["energy_converter", "propulsion", "thrust"],
+        "muzzle_velocity": ["energy_converter", "propulsion", "thrust"],
+        "power_draw": ["solar_pv", "energy_transport"],
+        "efficiency": ["energy_converter", "radiator", "heat_pump"]
+      }
+    },
+    "em_gas_miner": {
+      "id": "em_gas_miner",
+      "name": "Electromagnetic Gas Miner",
+      "description": "Electromagnetic extraction system that rapidly mines gas giants and separates valuable metals from the atmosphere. Only constructible on gas giant planets.",
+      "mass_multiplier": 1000000,
+      "mining_rate_multiplier": 1000000000,
+      "energy_cost_multiplier": 400000,
+      "allowed_orbital_zones": ["jupiter", "saturn", "uranus", "neptune"],
+      "orbital_efficiency": {
+        "jupiter": 1.2,
+        "saturn": 1.0,
+        "uranus": 0.9,
+        "neptune": 0.85
+      },
+      "research_skills": {
+        "mining_rate": ["robotic", "acds", "locomotion"],
+        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
+      }
+    },
+    "space_elevator": {
+      "id": "space_elevator",
+      "name": "Space Elevator",
+      "description": "Massive tether system that rapidly hauls raw materials from planetary surface into orbit. Only constructible on rocky planets.",
+      "mass_multiplier": 1000000000,
+      "mining_rate_multiplier": 1000000000000,
+      "energy_cost_multiplier": 400000000,
+      "allowed_orbital_zones": ["mercury", "venus", "earth", "mars"],
+      "orbital_efficiency": {
+        "mercury": 1.0,
+        "venus": 0.9,
+        "earth": 1.0,
+        "mars": 1.1
+      },
+      "research_skills": {
+        "mining_rate": ["strength", "robotic", "locomotion"],
+        "energy_cost": ["energy_converter", "materials", "heat_pump"]
+      }
+    },
+    "robotic_asteroid_factory": {
+      "id": "robotic_asteroid_factory",
+      "name": "Robotic Asteroid Factory",
+      "description": "Automated factory complex that rapidly mines asteroids and produces probes. Self-replicating capability allows massive probe production. Only constructible in asteroid-rich zones.",
+      "mass_multiplier": 500000000,
+      "mining_rate_multiplier": 500000000,
+      "build_rate_multiplier": 5000,
+      "energy_cost_multiplier": 400000,
+      "allowed_orbital_zones": ["asteroid_belt", "kuiper", "oort_cloud"],
+      "orbital_efficiency": {
+        "asteroid_belt": 1.2,
+        "kuiper": 1.0,
+        "oort_cloud": 0.8
+      },
+      "research_skills": {
+        "mining_rate": ["robotic", "acds", "production"],
+        "build_rate": ["robotic", "production", "computer"],
+        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
+      }
+    },
+    "deep_space_fusion_plant": {
+      "id": "deep_space_fusion_plant",
+      "name": "Deep Space Fusion Plant",
+      "description": "Fusion power plant that harvests hydrogen isotopes for power generation far beyond solar's limits. Produces massive amounts of energy independent of solar distance.",
+      "mass_multiplier": 5000000,
+      "power_output_mw": 10000000,
+      "energy_cost_multiplier": 0,
+      "allowed_orbital_zones": ["asteroid_belt", "jupiter", "saturn", "uranus", "neptune", "kuiper", "oort_cloud"],
+      "orbital_efficiency": {
+        "asteroid_belt": 1.0,
+        "jupiter": 1.2,
+        "saturn": 1.1,
+        "uranus": 1.0,
+        "neptune": 1.0,
+        "kuiper": 0.9,
+        "oort_cloud": 0.8
+      },
+      "research_skills": {
+        "power_output": ["energy_converter", "radiator", "fusion"],
+        "energy_cost": []
+      }
+    },
+    "methalox_refinery": {
+      "id": "methalox_refinery",
+      "name": "Methalox Refinery",
+      "description": "Produces methalox fuel for probe transfers. 100 kg/day base output. Requires 10 GW to operate.",
+      "mass_multiplier": 100,
+      "energy_cost_multiplier": 40000,
+      "production_rate_kg_per_day": 100,
+      "allowed_orbital_zones": ["earth", "venus", "mars", "asteroid_belt", "jupiter", "saturn", "neptune"],
+      "max_per_zone": {
+        "earth": 2,
+        "venus": 4,
+        "mars": 1,
+        "asteroid_belt": 50,
+        "jupiter": 200,
+        "saturn": 100,
+        "neptune": 150
+      },
+      "research_skills": {
+        "production_rate": ["production", "heat_pump", "materials"],
+        "energy_cost": ["energy_converter", "radiator", "heat_pump"]
       }
     }
   }

@@ -36,6 +36,8 @@
             <div id="zone-info-panel" class="zone-info-panel-container"></div>
             <!-- Zone Hover Tooltip (separate from selected zone panel) -->
             <div id="zone-hover-tooltip" class="zone-hover-tooltip" style="display: none;"></div>
+            <!-- Transfer Info Overlay (shown when tracking a transfer with 't' key) -->
+            <div id="transfer-info-overlay" class="transfer-info-overlay" style="display: none;"></div>
             <!-- Command Panel - Center Left (separate window) -->
             <div id="command-panel-column" class="command-panel-column">
                 <div id="command-panel-content"></div>
@@ -84,6 +86,9 @@
         
         <!-- Visual Effects Debug Panel (toggleable with G key) -->
         <div id="visual-effects-panel" class="visual-effects-panel-container"></div>
+        
+        <!-- Summary Plot Panel (toggleable with H key) -->
+        <div id="summary-plot-panel" class="summary-plot-panel-container"></div>
         
         <!-- Bottom: Scripting Window (collapsible, collapsed by default) - Hidden for now -->
         <div id="scripting-window" class="scripting-window collapsed" style="display: none;">
@@ -142,15 +147,133 @@
             <div class="modal-content" style="max-width: 600px;">
                 <h2 style="text-align: center; margin-bottom: 30px;">Brachisto-Probe</h2>
                 <div id="game-menu-content">
-                    <button id="new-game-btn" class="menu-btn" style="width: 100%; padding: 15px; margin-bottom: 15px; font-size: 18px; background: #4a9eff; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                        New Game
-                    </button>
-                    <div id="load-game-section" style="margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #4a9eff; text-align: center;">New Game</h3>
+                    <div class="difficulty-buttons" style="display: flex; gap: 15px; margin-bottom: 25px;">
+                        <button id="easy-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Easy</div>
+                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">100 Probes<br>10 Power Stations<br>10 Data Centers<br>1 Mass Driver</div>
+                        </button>
+                        <button id="medium-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Medium</div>
+                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">10 Probes<br>2 Power Stations<br>2 Data Centers</div>
+                        </button>
+                        <button id="hard-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Hard</div>
+                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">1 Probe<br>No Structures</div>
+                        </button>
+                    </div>
+                    <div id="load-game-section" style="margin-top: 20px; border-top: 1px solid rgba(74, 158, 255, 0.3); padding-top: 20px;">
                         <h3 style="margin-bottom: 15px; color: #4a9eff;">Load Previous Game</h3>
-                        <div id="saved-games-list" style="max-height: 400px; overflow-y: auto;">
+                        <div id="saved-games-list" style="max-height: 300px; overflow-y: auto;">
                             <p style="text-align: center; color: #888; padding: 20px;">Loading saved games...</p>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Skill Point Allocation Modal -->
+        <div id="skill-allocation-modal" class="modal" style="display: none;">
+            <div class="modal-content skill-allocation-content" style="max-width: 700px; padding: 25px 35px;">
+                <h2 style="text-align: center; margin-bottom: 10px; color: #4a9eff;">Customize Your Start</h2>
+                <p id="difficulty-label" style="text-align: center; color: #888; margin-bottom: 20px; font-size: 14px;">Medium Difficulty</p>
+                
+                <!-- Starting Planet Selection -->
+                <div class="starting-planet-section" style="margin-bottom: 25px;">
+                    <h3 style="color: #4a9eff; margin-bottom: 12px; font-size: 15px;">Starting Location</h3>
+                    <div id="starting-planet-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="planet-btn" data-planet="mercury" style="flex: 1; min-width: 80px; padding: 12px 8px; background: #8C7853; color: white; border: 3px solid transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                            <div style="font-weight: bold; font-size: 13px;">Mercury</div>
+                            <div style="font-size: 10px; opacity: 0.8; margin-top: 3px;">High solar</div>
+                        </button>
+                        <button class="planet-btn" data-planet="venus" style="flex: 1; min-width: 80px; padding: 12px 8px; background: #FFC649; color: #333; border: 3px solid transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                            <div style="font-weight: bold; font-size: 13px;">Venus</div>
+                            <div style="font-size: 10px; opacity: 0.8; margin-top: 3px;">High energy</div>
+                        </button>
+                        <button class="planet-btn selected" data-planet="earth" style="flex: 1; min-width: 80px; padding: 12px 8px; background: #6B93D6; color: white; border: 3px solid #4a9eff; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                            <div style="font-weight: bold; font-size: 13px;">Earth</div>
+                            <div style="font-size: 10px; opacity: 0.8; margin-top: 3px;">Balanced</div>
+                        </button>
+                        <button class="planet-btn" data-planet="mars" style="flex: 1; min-width: 80px; padding: 12px 8px; background: #CD5C5C; color: white; border: 3px solid transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                            <div style="font-weight: bold; font-size: 13px;">Mars</div>
+                            <div style="font-size: 10px; opacity: 0.8; margin-top: 3px;">Good metal</div>
+                        </button>
+                        <button class="planet-btn" data-planet="asteroid_belt" style="flex: 1; min-width: 80px; padding: 12px 8px; background: #9E9E9E; color: white; border: 3px solid transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                            <div style="font-weight: bold; font-size: 13px;">Asteroids</div>
+                            <div style="font-size: 10px; opacity: 0.8; margin-top: 3px;">Rich mining</div>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Skill Points Allocation -->
+                <div class="skill-points-section" style="margin-bottom: 25px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="color: #4a9eff; margin: 0; font-size: 15px;">Skill Points</h3>
+                        <div id="points-remaining" style="background: rgba(74, 158, 255, 0.2); padding: 6px 14px; border-radius: 15px; font-weight: bold; color: #4a9eff;">
+                            10 points remaining
+                        </div>
+                    </div>
+                    
+                    <div class="skill-sliders" style="display: grid; gap: 12px;">
+                        <!-- Mass Driver Velocity -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Mass Driver Δv</label>
+                            <input type="range" id="skill-mass-driver" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-mass-driver-value" style="text-align: right; color: #4a9eff; font-size: 13px;">+0.0 km/s</span>
+                        </div>
+                        
+                        <!-- Probe Delta-V -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Probe Δv</label>
+                            <input type="range" id="skill-probe-dv" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-probe-dv-value" style="text-align: right; color: #4a9eff; font-size: 13px;">+0.0 km/s</span>
+                        </div>
+                        
+                        <!-- Mining Rate -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Mining Rate</label>
+                            <input type="range" id="skill-mining" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-mining-value" style="text-align: right; color: #27ae60; font-size: 13px;">+0 kg/s</span>
+                        </div>
+                        
+                        <!-- Replication Rate -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Replication Rate</label>
+                            <input type="range" id="skill-replication" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-replication-value" style="text-align: right; color: #27ae60; font-size: 13px;">+0 kg/s</span>
+                        </div>
+                        
+                        <!-- Base Compute -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Base Compute</label>
+                            <input type="range" id="skill-compute" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-compute-value" style="text-align: right; color: #9b59b6; font-size: 13px;">+0%</span>
+                        </div>
+                        
+                        <!-- Base Energy -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Base Energy</label>
+                            <input type="range" id="skill-energy" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-energy-value" style="text-align: right; color: #f1c40f; font-size: 13px;">+0%</span>
+                        </div>
+                        
+                        <!-- Base Dexterity -->
+                        <div class="skill-row" style="display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 12px;">
+                            <label style="color: #ccc; font-size: 13px;">Base Dexterity</label>
+                            <input type="range" id="skill-dexterity" class="skill-slider" min="0" max="10" value="0" style="width: 100%;">
+                            <span class="skill-value" id="skill-dexterity-value" style="text-align: right; color: #e74c3c; font-size: 13px;">+0%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button id="skill-back-btn" style="padding: 12px 30px; background: rgba(255, 255, 255, 0.1); color: #ccc; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; cursor: pointer; font-size: 15px; transition: all 0.2s;">
+                        ← Back
+                    </button>
+                    <button id="skill-start-btn" style="padding: 12px 40px; background: linear-gradient(135deg, #4a9eff 0%, #2878d8 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; transition: all 0.2s;">
+                        Start Game →
+                    </button>
                 </div>
             </div>
         </div>
@@ -178,6 +301,9 @@
     <script src="/static/js/game/data_loader.js"></script>
     <script src="/static/js/game/skill_definitions.js"></script>
     <script src="/static/js/game/storage.js"></script>
+    <!-- Calculation classes for UI (needed for delta-v overlay) -->
+    <script src="/static/js/game/engine/calculations/orbital_mechanics.js"></script>
+    <script src="/static/js/game/engine/systems/transfer_system.js"></script>
     <!-- Worker-based engine architecture -->
     <script src="/static/js/game/client/state_manager.js"></script>
     <script src="/static/js/game/client/engine_client.js"></script>
@@ -203,7 +329,7 @@
         <script src="/static/js/ui/probe_summary_panel.js"></script>
         <script src="/static/js/ui/zone_info_panel.js"></script>
         <script src="/static/js/ui/transfer_panel.js"></script>
-    <script src="/static/js/ui/resource_display.js"></script>
+    <script src="/static/js/ui/resource_display.js?v=2"></script>
     <script src="/static/js/ui/probe_allocation.js"></script>
     <script src="/static/js/ui/orbital_zone_selector.js"></script>
     <script src="/static/js/ui/energy_display.js"></script>
@@ -212,6 +338,7 @@
     <script src="/static/js/ui/time_controls.js"></script>
     <script src="/static/js/ui/performance_panel.js"></script>
     <script src="/static/js/ui/visual_effects_panel.js"></script>
+    <script src="/static/js/ui/summary_plot_panel.js"></script>
     <script src="/static/js/main.js"></script>
 </body>
 </html>

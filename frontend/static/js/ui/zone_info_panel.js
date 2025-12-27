@@ -121,6 +121,10 @@ class ZoneInfoPanel {
             const baseProbeMass = Config.PROBE_MASS || 100; // kg
             return baseProbeMass * building.mass_multiplier;
         }
+        // Direct mass specification fallback
+        if (building.mass_kg !== undefined) {
+            return building.mass_kg;
+        }
         // Legacy format: use base_cost_metal
         return building.base_cost_metal || 0;
     }
@@ -180,6 +184,67 @@ class ZoneInfoPanel {
         }
     }
 
+    /**
+     * Calculate penalty factors based on net energy and metal figures
+     * @param {Object} zoneData - Zone data from derived state
+     * @returns {Object} { energyPenalty, metalPenalty, effectivePenalty }
+     */
+    calculatePenalties(zoneData) {
+        // Get global energy totals
+        const globalTotals = this.gameState.derived?.totals || {};
+        const globalEnergyProduced = globalTotals.energy_produced || 0;
+        const globalEnergyConsumed = globalTotals.energy_consumed || 0;
+        const globalEnergyNet = globalTotals.energy_net || (globalEnergyProduced - globalEnergyConsumed);
+        
+        // Calculate global energy penalty
+        // If net is negative, penalty = production / consumption (how much we can supply)
+        let energyPenalty = 1.0;
+        if (globalEnergyNet < 0 && globalEnergyConsumed > 0) {
+            energyPenalty = Math.max(0, globalEnergyProduced / globalEnergyConsumed);
+        }
+        
+        // Get zone metal rates
+        const zoneMetal_mined_rate = zoneData.metal_mined_rate || 0;
+        const zoneMetalConsumedRate = zoneData.metal_consumed_rate || 0;
+        const zoneMetalNet = zoneMetal_mined_rate - zoneMetalConsumedRate;
+        
+        // Calculate zone metal penalty
+        // If net is negative, penalty = production / consumption (how much we can supply)
+        let metalPenalty = 1.0;
+        if (zoneMetalNet < 0 && zoneMetalConsumedRate > 0) {
+            metalPenalty = Math.max(0, zoneMetal_mined_rate / zoneMetalConsumedRate);
+        }
+        
+        // Effective penalty is the minimum of both
+        const effectivePenalty = Math.min(energyPenalty, metalPenalty);
+        
+        return {
+            energyPenalty,
+            metalPenalty,
+            effectivePenalty,
+            globalEnergyNet,
+            zoneMetalNet
+        };
+    }
+
+    /**
+     * Format a rate value with penalty indicator
+     * @param {number} rate - The rate value
+     * @param {string} unit - The unit type ('kg', 'probes', etc.)
+     * @param {number} penalty - Penalty factor (0-1, 1 = no penalty)
+     * @returns {string} Formatted HTML string
+     */
+    formatRateWithPenalty(rate, unit, penalty) {
+        const penalizedRate = rate * penalty;
+        const formattedRate = FormatUtils.formatRate(penalizedRate, unit);
+        
+        if (penalty < 1.0 && rate > 0) {
+            const penaltyPercent = ((1 - penalty) * 100).toFixed(0);
+            return `<span style="color: #ff6b6b;">${formattedRate}</span> <span style="color: #ff6b6b; font-size: 9px;">(-${penaltyPercent}%)</span>`;
+        }
+        return formattedRate;
+    }
+
     updateZoneInfo(zoneId, zoneData, zone) {
         if (!this.container || !zoneId) {
             this.render();
@@ -191,6 +256,9 @@ class ZoneInfoPanel {
         const zoneStructures = structuresByZone[zoneId] || {};
         const zoneAllocations = (this.gameState.probe_allocations_by_zone || {})[zoneId] || {};
         
+        // Calculate penalty factors based on net figures
+        const penalties = this.calculatePenalties(zoneData);
+        
         // Calculate values
         const numProbes = (this.gameState.probes_by_zone?.[zoneId]?.probe) || 0;
         const storedMetal = zoneData.stored_metal || 0;
@@ -200,13 +268,13 @@ class ZoneInfoPanel {
         // Calculate structure mass
         const structureMass = this.calculateStructureMass(zoneId);
         
-        // Calculate rates
-        let dysonBuildRate = 0;
-        let probeProductionRate = 0;
-        let probesPerDay = 0;
-        let miningRate = 0;
-        let metalMiningRate = 0;
-        let slagMiningRate = 0;
+        // Calculate BASE rates (before penalties)
+        let baseDysonBuildRate = 0;
+        let baseProbeProductionRate = 0;
+        let baseProbesPerDay = 0;
+        let baseMiningRate = 0;
+        let baseMetalMiningRate = 0;
+        let baseSlagMiningRate = 0;
         
         // Get factory production (for all zones)
         const factoryProductionByZone = this.gameState.factory_production_by_zone || {};
@@ -219,14 +287,14 @@ class ZoneInfoPanel {
             const dysonProbes = numProbes * constructAllocation;
             if (dysonProbes > 0) {
                 const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE;
-                dysonBuildRate = dysonProbes * PROBE_BUILD_RATE;
+                baseDysonBuildRate = dysonProbes * PROBE_BUILD_RATE;
             }
             
-            probeProductionRate = factoryProductionRate;
+            baseProbeProductionRate = factoryProductionRate;
         } else {
-            metalMiningRate = zoneData.metal_mined_rate || 0;
-            slagMiningRate = zoneData.slag_produced_rate || 0;
-            miningRate = metalMiningRate + slagMiningRate;
+            baseMetalMiningRate = zoneData.metal_mined_rate || 0;
+            baseSlagMiningRate = zoneData.slag_produced_rate || 0;
+            baseMiningRate = baseMetalMiningRate + baseSlagMiningRate;
         }
         
         // Calculate probe production rate (includes both replication and factory production)
@@ -240,31 +308,31 @@ class ZoneInfoPanel {
         // Calculate replicating probes and production rate
         const replicatingProbes = numProbes * replicateAllocation;
         const baseProbesPerDayPerProbe = Config.PROBE_BUILD_RATE / Config.PROBE_MASS; // probes/day per probe
-        const zoneProbeProductionRate = replicatingProbes * baseProbesPerDayPerProbe * upgradeFactor;
+        const baseZoneProbeProductionRate = replicatingProbes * baseProbesPerDayPerProbe * upgradeFactor;
         
         // Add factory production to total probe production rate
-        probesPerDay = zoneProbeProductionRate + factoryProductionRate;
+        baseProbesPerDay = baseZoneProbeProductionRate + factoryProductionRate;
         
         // For Dyson zones, update probeProductionRate to match total (for consistency)
         if (isDysonZone) {
-            probeProductionRate = probesPerDay;
+            baseProbeProductionRate = baseProbesPerDay;
         }
         
         // Calculate build capacity (kg/day from probes allocated to construct)
         const constructAllocationFraction = zoneAllocations.construct || 0;
         const probesConstructing = numProbes * constructAllocationFraction;
-        const buildCapacity = probesConstructing * (Config.PROBE_BUILD_RATE || 10);
+        const baseBuildCapacity = probesConstructing * (Config.PROBE_BUILD_RATE || 10);
         
         // Calculate metal consumption rate (probe replication + structure building)
         // Probe replication consumes metal at the same rate as probe production (in kg/day)
-        const probeReplicationMetalConsumption = zoneProbeProductionRate * Config.PROBE_MASS;
+        const baseProbeReplicationMetalConsumption = baseZoneProbeProductionRate * Config.PROBE_MASS;
         
         // Structure building consumes metal from build capacity (split between probes and structures based on build_allocation)
         const buildAllocation = this.gameState.build_allocation || 100; // 0 = all structures, 100 = all probes
         const structureBuildingFraction = (100 - buildAllocation) / 100.0;
-        const structureBuildingMetalConsumption = buildCapacity * structureBuildingFraction;
+        const baseStructureBuildingMetalConsumption = baseBuildCapacity * structureBuildingFraction;
         
-        const metalConsumptionRate = probeReplicationMetalConsumption + structureBuildingMetalConsumption;
+        const baseMetalConsumptionRate = baseProbeReplicationMetalConsumption + baseStructureBuildingMetalConsumption;
         
         // Get zone energy
         const zoneEnergy = {
@@ -313,10 +381,10 @@ class ZoneInfoPanel {
         html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(structureMass)} kg</div>`;
         html += '</div>';
         
-        // Build Capacity (kg/day from probes constructing)
+        // Build Capacity (kg/day from probes constructing) - apply penalty to constructing rate
         html += '<div class="probe-summary-item">';
         html += '<div class="probe-summary-label">Build Capacity</div>';
-        html += `<div class="probe-summary-value">${FormatUtils.formatRate(buildCapacity, 'kg')}</div>`;
+        html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseBuildCapacity, 'kg', penalties.effectivePenalty)}</div>`;
         html += '</div>';
         
         if (isDysonZone) {
@@ -344,6 +412,14 @@ class ZoneInfoPanel {
             html += '<div class="probe-summary-item">';
             html += '<div class="probe-summary-label">Stored Slag</div>';
             html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(dysonSlagMass)} kg</div>`;
+            html += '</div>';
+            
+            // Stored Methalox
+            const zones = this.gameState.zones || {};
+            const dysonMethalox = zones[zoneId]?.methalox || 0;
+            html += '<div class="probe-summary-item">';
+            html += '<div class="probe-summary-label">Methalox</div>';
+            html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(dysonMethalox)} kg</div>`;
             html += '</div>';
             
             // Dyson Sphere section header
@@ -375,10 +451,10 @@ class ZoneInfoPanel {
             html += `<div class="probe-summary-value">${arealDensity.toFixed(2)} kg/m²</div>`;
             html += '</div>';
             
-            // Build Rate
+            // Build Rate - apply penalty to Dyson construction rate
             html += '<div class="probe-summary-item">';
             html += '<div class="probe-summary-label">Build Rate</div>';
-            html += `<div class="probe-summary-value">${FormatUtils.formatRate(dysonActualBuildRate, 'kg')}</div>`;
+            html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseDysonBuildRate, 'kg', penalties.effectivePenalty)}</div>`;
             html += '</div>';
             
             // Solar Effectiveness
@@ -410,41 +486,41 @@ class ZoneInfoPanel {
             html += `<div class="probe-summary-value">${this.formatEnergy(dysonPowerCompute)}</div>`;
             html += '</div>';
             
-            // Probe Production
-            if (probeProductionRate > 0) {
+            // Probe Production - apply penalty to replication rate
+            if (baseProbeProductionRate > 0) {
                 html += '<div class="probe-summary-item" style="margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">';
                 html += '<div class="probe-summary-label">Probe Production</div>';
-                html += `<div class="probe-summary-value">${FormatUtils.formatRate(probeProductionRate, 'probes')}</div>`;
+                html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseProbeProductionRate, 'probes', penalties.effectivePenalty)}</div>`;
                 html += '</div>';
             }
         } else {
-            // Probe Production Rate (always show)
+            // Probe Production Rate (always show) - apply penalty to replication rate
             html += '<div class="probe-summary-item">';
             html += '<div class="probe-summary-label">Probe Production Rate</div>';
-            html += `<div class="probe-summary-value">${FormatUtils.formatRate(probesPerDay, 'probes')}</div>`;
+            html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseProbesPerDay, 'probes', penalties.effectivePenalty)}</div>`;
             html += '</div>';
             
-            // Metal Consumption Rate
-            if (metalConsumptionRate > 0) {
+            // Metal Consumption Rate (this is how much would be consumed at full capacity)
+            if (baseMetalConsumptionRate > 0) {
                 html += '<div class="probe-summary-item">';
                 html += '<div class="probe-summary-label">Metal Consumption Rate</div>';
-                html += `<div class="probe-summary-value">${FormatUtils.formatRate(metalConsumptionRate, 'kg')}</div>`;
+                html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseMetalConsumptionRate, 'kg', penalties.effectivePenalty)}</div>`;
                 html += '</div>';
             }
             
-            // Metal Production (fixed: removed extra /day)
-            if (metalMiningRate > 0) {
+            // Metal Production (mining rate) - apply penalty to mining rate
+            if (baseMetalMiningRate > 0) {
                 html += '<div class="probe-summary-item">';
                 html += '<div class="probe-summary-label">Metal Production</div>';
-                html += `<div class="probe-summary-value">${FormatUtils.formatRate(metalMiningRate, 'kg')}</div>`;
+                html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseMetalMiningRate, 'kg', penalties.effectivePenalty)}</div>`;
                 html += '</div>';
             }
             
-            // Slag Production (fixed: removed extra /day)
-            if (slagMiningRate > 0) {
+            // Slag Production - apply penalty to mining rate
+            if (baseSlagMiningRate > 0) {
                 html += '<div class="probe-summary-item">';
                 html += '<div class="probe-summary-label">Slag Production</div>';
-                html += `<div class="probe-summary-value">${FormatUtils.formatRate(slagMiningRate, 'kg')}</div>`;
+                html += `<div class="probe-summary-value">${this.formatRateWithPenalty(baseSlagMiningRate, 'kg', penalties.effectivePenalty)}</div>`;
                 html += '</div>';
             }
             
@@ -459,6 +535,19 @@ class ZoneInfoPanel {
             html += '<div class="probe-summary-item">';
             html += '<div class="probe-summary-label">Slag Stores</div>';
             html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(slagStores)} kg</div>`;
+            html += '</div>';
+            
+            // Methalox
+            const zones = this.gameState.zones || {};
+            const zoneMethalox = zones[zoneId]?.methalox || 0;
+            const methaloxProductionRate = zoneData.methalox_production_rate || 0;
+            html += '<div class="probe-summary-item">';
+            html += '<div class="probe-summary-label">Methalox</div>';
+            html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(zoneMethalox)} kg`;
+            if (methaloxProductionRate > 0) {
+                html += ` <span style="color: rgba(255, 255, 255, 0.5); font-size: 10px;">(+${this.formatRateWithPenalty(methaloxProductionRate, 'kg', penalties.effectivePenalty)})</span>`;
+            }
+            html += '</div>';
             html += '</div>';
         }
         
@@ -480,6 +569,31 @@ class ZoneInfoPanel {
         html += '<div class="probe-summary-label">FLOPS</div>';
         html += `<div class="probe-summary-value">${this.formatFlops(globalFlops)}</div>`;
         html += '</div>';
+        
+        // Penalty Status Section (only show if there are penalties)
+        if (penalties.effectivePenalty < 1.0) {
+            html += '<div class="probe-summary-item" style="margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">';
+            html += '<div class="probe-summary-label" style="color: #ff6b6b; font-weight: bold;">⚠ Production Penalties</div>';
+            html += '</div>';
+            
+            // Global Energy Penalty
+            if (penalties.energyPenalty < 1.0) {
+                const energyPenaltyPercent = ((1 - penalties.energyPenalty) * 100).toFixed(1);
+                html += '<div class="probe-summary-item">';
+                html += '<div class="probe-summary-label">Energy Deficit</div>';
+                html += `<div class="probe-summary-value" style="color: #ff6b6b;">-${energyPenaltyPercent}% (${FormatUtils.formatEnergy(penalties.globalEnergyNet)})</div>`;
+                html += '</div>';
+            }
+            
+            // Zone Metal Penalty
+            if (penalties.metalPenalty < 1.0) {
+                const metalPenaltyPercent = ((1 - penalties.metalPenalty) * 100).toFixed(1);
+                html += '<div class="probe-summary-item">';
+                html += '<div class="probe-summary-label">Metal Deficit</div>';
+                html += `<div class="probe-summary-value" style="color: #ff6b6b;">-${metalPenaltyPercent}% (${FormatUtils.formatRate(penalties.zoneMetalNet, 'kg')})</div>`;
+                html += '</div>';
+            }
+        }
         
         html += '</div>';
         

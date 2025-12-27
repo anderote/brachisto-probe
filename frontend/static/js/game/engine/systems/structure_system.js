@@ -8,6 +8,25 @@
 class StructureSystem {
     constructor(productionCalculator) {
         this.productionCalculator = productionCalculator;
+        this.economicRules = null;
+        
+        // Default values (fallbacks if economic rules not loaded)
+        this.BASE_STRUCTURE_ENERGY_COST = 250000; // 250 kW base for structure energy multipliers
+        this.GEOMETRIC_SCALING_EXPONENT = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+    }
+    
+    /**
+     * Initialize with economic rules
+     * @param {Object} economicRules - Economic rules from data loader
+     */
+    initializeEconomicRules(economicRules) {
+        this.economicRules = economicRules;
+        
+        // Load base values from economic rules (with fallbacks to defaults)
+        if (economicRules?.structures) {
+            this.BASE_STRUCTURE_ENERGY_COST = economicRules.structures.base_energy_cost_w ?? this.BASE_STRUCTURE_ENERGY_COST;
+            this.GEOMETRIC_SCALING_EXPONENT = economicRules.structures.geometric_scaling_exponent ?? this.GEOMETRIC_SCALING_EXPONENT;
+        }
     }
     
     /**
@@ -21,7 +40,16 @@ class StructureSystem {
      * @returns {number} Effective mass cost in kg
      */
     calculateStructureCost(building, state, zoneId = null, buildingId = null) {
-        if (!building || !building.mass_multiplier) {
+        if (!building) {
+            return 0;
+        }
+        
+        // Check for mass_multiplier first (preferred format)
+        if (!building.mass_multiplier) {
+            // Fallback to mass_kg (direct mass specification)
+            if (building.mass_kg) {
+                return building.mass_kg;
+            }
             // Fallback to old base_cost_metal if available
             return building.base_cost_metal || 0;
         }
@@ -35,13 +63,19 @@ class StructureSystem {
         // Base cost with research factor
         const baseCost = baseMass * costFactor;
         
+        // Methalox refineries use flat scaling (no geometric increase)
+        // They have zone limits instead of exponential cost scaling
+        if (buildingId === 'methalox_refinery') {
+            return baseCost;
+        }
+        
         // Apply exponential scaling based on existing structures in this zone
-        // Cost = baseCost * (count + 1)^2.1, so building #10 costs ~126x baseCost
+        // Cost = baseCost * (count + 1)^exponent, using same exponent as output scaling
         if (zoneId && buildingId && state.structures_by_zone) {
             const zoneStructures = state.structures_by_zone[zoneId] || {};
             const currentCount = zoneStructures[buildingId] || 0;
-            // Next building will be count + 1, so multiply by (currentCount + 1)^2.1
-            const scalingFactor = Math.pow(currentCount + 1, 2.1);
+            // Next building will be count + 1, so multiply by (currentCount + 1)^exponent
+            const scalingFactor = Math.pow(currentCount + 1, this.GEOMETRIC_SCALING_EXPONENT);
             return baseCost * scalingFactor;
         }
         
@@ -99,9 +133,9 @@ class StructureSystem {
         
         if (building.energy_cost_multiplier === 0) return 0;
         
-        // Buildings use constructing rate (250kW) as base, multiplied by their multiplier
-        const baseProbeEnergyCost = 250000; // 250 kW (constructing rate)
-        const baseCost = baseProbeEnergyCost * building.energy_cost_multiplier;
+        // Buildings use base structure energy cost, multiplied by their multiplier
+        const baseEnergyCost = this.BASE_STRUCTURE_ENERGY_COST;
+        const baseCost = baseEnergyCost * building.energy_cost_multiplier;
         
         // Get cost upgrade factor (energy costs decrease with research, so divide by cost factor)
         const costFactor = state.upgrade_factors?.structure?.building?.cost || 1.0;
@@ -212,6 +246,7 @@ class StructureSystem {
                     probe_mass: 0,
                     structure_mass: 0,
                     slag_mass: 0,
+                    methalox: 0,
                     depleted: false
                 };
             }
@@ -242,15 +277,50 @@ class StructureSystem {
                 continue; // No probes allocated to construction
             }
             
+            // Check mass limit for construction
+            const zoneMassLimits = newState.zone_mass_limits?.[zoneId] || {};
+            const constructLimit = zoneMassLimits.construct || 0;
+            let massThrottle = 1.0;
+            
+            if (constructLimit > 0) {
+                // Calculate total zone mass
+                const massRemaining = zone.mass_remaining || 0;
+                const storedMetalMass = zone.stored_metal || 0;
+                const probeMass = zone.probe_mass || 0;
+                const structureMass = zone.structure_mass || 0;
+                const slagMass = zone.slag_mass || 0;
+                const totalZoneMass = massRemaining + storedMetalMass + probeMass + structureMass + slagMass;
+                
+                if (totalZoneMass > 0) {
+                    const currentStructureRatio = structureMass / totalZoneMass;
+                    if (currentStructureRatio >= constructLimit) {
+                        // At or above limit - stop construction
+                        massThrottle = 0;
+                    } else {
+                        // Approaching limit - calculate how much room we have
+                        const headroom = constructLimit - currentStructureRatio;
+                        // If within 10% of limit, start throttling
+                        const throttleThreshold = constructLimit * 0.1;
+                        if (headroom < throttleThreshold && throttleThreshold > 0) {
+                            massThrottle = headroom / throttleThreshold;
+                        }
+                    }
+                }
+            }
+            
+            if (massThrottle === 0) {
+                continue; // At mass limit, skip construction for this zone
+            }
+            
             // Calculate building probes (probes allocated to structure building)
             // constructAllocation is now a direct fraction (0-1) of probes for structure building
             const structureBuildingProbes = totalProbes * constructAllocation;
             
             // Calculate build rate for this zone (kg/day)
             // Uses pre-calculated upgrade factors from state
-            // Applies zone crowding penalty
-            const totalBuildRate = this.productionCalculator.calculateBuildingRate(structureBuildingProbes, newState, zoneId);
-            const effectiveBuildRate = totalBuildRate * energyThrottle; // Apply energy throttle
+            // Applies zone crowding penalty and probe count scaling penalty
+            const totalBuildRate = this.productionCalculator.calculateBuildingRate(structureBuildingProbes, newState, zoneId, totalProbes);
+            const effectiveBuildRate = totalBuildRate * energyThrottle * massThrottle; // Apply energy and mass throttle
             
             // Get enabled buildings for this zone
             const enabledBuildings = enabledBuildingsByZone[zoneId];
@@ -315,52 +385,37 @@ class StructureSystem {
                 
                 // Check if metal requirement is met
                 if (remainingToBuild <= 0) {
-                    // Metal requirement met - check minimum build time
+                    // Metal requirement met - building is complete
                     const startTime = structureStartTimes[enabledKey] || currentTime;
                     const elapsedTime = currentTime - startTime;
-                    // Minimum build times per structure type (in days)
-                    let minBuildTime = 3; // default for other structures
-                    if (buildingId === 'mass_driver') {
-                        minBuildTime = 10; // Mass drivers: 100 days minimum
-                    } else if (buildingId === 'power_station' || buildingId === 'data_center') {
-                        minBuildTime = 2; // Power stations and Orbital Data Centers: 2 days minimum
+                    console.log(`[StructureSystem] ✓ Building complete: ${enabledKey} (took ${elapsedTime.toFixed(2)} days)`);
+                    if (!structuresByZone[zoneId]) {
+                        structuresByZone[zoneId] = {};
                     }
+                    if (!structuresByZone[zoneId][buildingId]) {
+                        structuresByZone[zoneId][buildingId] = 0;
+                    }
+                    structuresByZone[zoneId][buildingId] += 1;
                     
-                    if (elapsedTime >= minBuildTime) {
-                        // Both metal and time requirements met - building is complete
-                        console.log(`[StructureSystem] ✓ Building complete: ${enabledKey} (took ${elapsedTime.toFixed(2)} days)`);
-                        if (!structuresByZone[zoneId]) {
-                            structuresByZone[zoneId] = {};
-                        }
-                        if (!structuresByZone[zoneId][buildingId]) {
-                            structuresByZone[zoneId][buildingId] = 0;
-                        }
-                        structuresByZone[zoneId][buildingId] += 1;
-                        
-                        // Update zone structure_mass
-                        zone.structure_mass = (zone.structure_mass || 0) + costMetal;
-                        
-                        // If still enabled, start next one immediately (reset progress to 0 and clear target)
-                        if (enabledConstruction.includes(enabledKey)) {
-                            structureProgress[enabledKey] = 0.0;
-                            delete structureTargets[enabledKey]; // Clear target so next building gets new cost
-                            delete structureStartTimes[enabledKey]; // Clear start time for next building
-                            console.log(`[StructureSystem] Starting next ${buildingId} in ${zoneId}`);
-                            // Continue to process the next building in the same tick
-                            // The next iteration will set a new target and start time
-                            continue;
-                        } else {
-                            // Not enabled anymore, remove from progress and target
-                            delete structureProgress[enabledKey];
-                            delete structureTargets[enabledKey];
-                            delete structureStartTimes[enabledKey];
-                        }
-                        continue; // Skip progress calculation for this tick
+                    // Update zone structure_mass
+                    zone.structure_mass = (zone.structure_mass || 0) + costMetal;
+                    
+                    // If still enabled, start next one immediately (reset progress to 0 and clear target)
+                    if (enabledConstruction.includes(enabledKey)) {
+                        structureProgress[enabledKey] = 0.0;
+                        delete structureTargets[enabledKey]; // Clear target so next building gets new cost
+                        delete structureStartTimes[enabledKey]; // Clear start time for next building
+                        console.log(`[StructureSystem] Starting next ${buildingId} in ${zoneId}`);
+                        // Continue to process the next building in the same tick
+                        // The next iteration will set a new target and start time
+                        continue;
                     } else {
-                        // Metal is done but time isn't - wait for minimum time
-                        // Don't make progress (it's already at 100%), just wait
-                        continue; // Skip progress calculation, wait for time
+                        // Not enabled anymore, remove from progress and target
+                        delete structureProgress[enabledKey];
+                        delete structureTargets[enabledKey];
+                        delete structureStartTimes[enabledKey];
                     }
+                    continue; // Skip progress calculation for this tick
                 }
                 
                 // Calculate progress this tick - NO RESOURCE CHECK, start immediately
@@ -483,6 +538,7 @@ class StructureSystem {
                     probe_mass: 0,
                     structure_mass: 0,
                     slag_mass: 0,
+                    methalox: 0,
                     depleted: false
                 };
             }
@@ -527,6 +583,57 @@ class StructureSystem {
         }
         
         newState.structures_by_zone = structuresByZone;
+        return newState;
+    }
+    
+    /**
+     * Process methalox production from refineries
+     * @param {Object} state - Game state
+     * @param {number} deltaTime - Time delta in days
+     * @param {Object} skills - Current skills
+     * @param {Object} buildings - Building definitions
+     * @returns {Object} Updated state
+     */
+    processMethaloxProduction(state, deltaTime, skills, buildings) {
+        const newState = JSON.parse(JSON.stringify(state)); // Deep clone
+        const structuresByZone = newState.structures_by_zone || {};
+        const zones = newState.zones || {};
+        
+        for (const zoneId in structuresByZone) {
+            const zoneStructures = structuresByZone[zoneId] || {};
+            const refineryCount = zoneStructures['methalox_refinery'] || 0;
+            
+            if (refineryCount === 0) continue;
+            
+            // Ensure zone exists
+            if (!zones[zoneId]) {
+                zones[zoneId] = {
+                    mass_remaining: 0,
+                    stored_metal: 0,
+                    probe_mass: 0,
+                    structure_mass: 0,
+                    slag_mass: 0,
+                    methalox: 0,
+                    depleted: false
+                };
+            }
+            
+            // Calculate production rate for this zone
+            const productionRate = this.productionCalculator.calculateMethaloxProduction(
+                structuresByZone,
+                zoneId,
+                buildings,
+                newState
+            );
+            
+            // Calculate amount produced this tick
+            const methaloxProduced = productionRate * deltaTime;
+            
+            // Add to zone's methalox storage
+            zones[zoneId].methalox = (zones[zoneId].methalox || 0) + methaloxProduced;
+        }
+        
+        newState.zones = zones;
         return newState;
     }
 }

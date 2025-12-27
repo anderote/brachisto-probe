@@ -19,23 +19,57 @@ class SolarSystem {
         this.initialZoneMasses = {}; // Store initial mass for each zone
         
         // Resource particle visualization
-        // Stored metal and slag appear as particles orbiting around the planet
+        // Stored metal, slag, and methalox appear as particles orbiting around the planet
         // Particles spawn near planet and orbit at 80% speed, forming trailing cloud
         // When resources are consumed, particles are removed
         this.resourceParticles = {}; // {zoneId: THREE.Points}
-        this.resourceParticleData = {}; // {zoneId: {metal: [...], slag: [...]}}
-        this.previousResources = {}; // {zoneId: {metal: 0, slag: 0}} - track changes
-        this.maxResourceParticles = 4000; // Max particles per planet (metal + slag combined)
+        this.resourceParticleData = {}; // {zoneId: {metal: [...], slag: [...], methalox: [...]}}
+        this.previousResources = {}; // {zoneId: {metal: 0, slag: 0, methalox: 0}} - track changes
+        this.pendingMass = {}; // {zoneId: {metal: 0, slag: 0, methalox: 0}} - accumulated mass waiting to become particles
+        this.lastUpdateTime = {}; // {zoneId: timestamp} - track last update time per zone
+        this.lastSpawnTime = {}; // {zoneId_resourceType: timestamp} - track last spawn time for rate limiting
+        this.maxResourceParticles = 50000; // Max particles per planet (metal + slag combined)
         
-        // Resource scaling: 1000kg = 1 dot (linear), then log scaling after 100 dots
+        // Resource size tiers with progressive filling limits (separate for metal and slag)
+        this.resourceSizes = {
+            small:  { mass: 1e9,  size: 0.15 },
+            medium: { mass: 1e12,  size: 0.275 },
+            large:  { mass: 1e15, size: 0.4 },
+            xlarge: { mass: 1e22, size: 0.45 }
+        };
+        // Separate max particles per resource type
+        this.maxParticlesByType = {
+            metal: {
+                small: 50000,
+                medium: 20000,
+                large: 8000,
+                xlarge: 2000
+            },
+            slag: {
+                small: 20000,
+                medium: 10000,
+                large: 5000,
+                xlarge: 2000
+            },
+            methalox: {
+                small: 20000,
+                medium: 10000,
+                large: 5000,
+                xlarge: 2000
+            }
+        };
+        this.maxDotsPerZone = 15000; // Maximum dots per zone (metal + slag combined) - kept for compatibility
+        
+        // Legacy resource scaling (kept for backward compatibility, will be replaced)
         this.resourceKgPerDot = 1000; // 1000kg of slag/metal = 1 dot
         this.resourceLinearMaxDots = 100; // First 100 dots are linear (100,000 kg)
         this.resourceLogMaxMass = 1e24; // Reference mass for max dots - full planet mass scale
         
-        // Resource colors (metal = silver, slag = brown-grey)
+        // Resource colors (metal = silver, slag = brown-grey, methalox = pale blue)
         this.resourceColors = {
             metal: new THREE.Color(0xC0C0C0),    // Silver
-            slag: new THREE.Color(0x5C4033)       // Brown-grey
+            slag: new THREE.Color(0x5C4033),     // Brown-grey
+            methalox: new THREE.Color(0x7EC8E3) // Pale blue
         };
         
         // Particle drift settings
@@ -47,17 +81,19 @@ class SolarSystem {
         this.AU_KM = 149600000;
         this.planetData = {
             sun: { radius_km: 696000 },
-            mercury: { radius_km: 2440, orbit_km: 173700000 },         // 1.17 AU (3x: 0.39 -> 1.17)
-            venus: { radius_km: 6052, orbit_km: 324600000 },          // 2.16 AU (3x: 0.72 -> 2.16)
-            earth: { radius_km: 6371, orbit_km: 448800000 },          // 3.0 AU (3x: 1.0 -> 3.0)
-            mars: { radius_km: 3390, orbit_km: 683700000 },           // 4.56 AU (3x: 1.52 -> 4.56)
-            jupiter: { radius_km: 69911, orbit_km: 2335500000 },       // 15.6 AU (3x: 5.2 -> 15.6)
-            saturn: { radius_km: 58232, orbit_km: 4290000000 },       // 28.5 AU (3x: 9.5 -> 28.5)
-            uranus: { radius_km: 25362, orbit_km: 8610000000 },       // 57.6 AU (3x: 19.2 -> 57.6)
-            neptune: { radius_km: 24622, orbit_km: 13500000000 },      // 90.3 AU (3x: 30.1 -> 90.3)
-            kuiper: { orbit_km: 135 * 149600000 },                     // 135 AU (3x: 45 -> 135)
-            oort: { orbit_km: 300 * 149600000 },                      // 300 AU (3x: 100 -> 300)
-            oort_outer: { orbit_km: 420 * 149600000 }                 // 420 AU (3x: 140 -> 420)
+            mercury: { radius_km: 2440, orbit_km: 0.39 * 149600000 },         // 0.39 AU
+            venus: { radius_km: 6052, orbit_km: 0.72 * 149600000 },          // 0.72 AU
+            earth: { radius_km: 6371, orbit_km: 1.0 * 149600000 },           // 1.0 AU
+            mars: { radius_km: 3390, orbit_km: 1.52 * 149600000 },            // 1.52 AU
+            jupiter: { radius_km: 69911, orbit_km: 5.2 * 149600000 },        // 5.2 AU
+            saturn: { radius_km: 58232, orbit_km: 9.5 * 149600000 },         // 9.5 AU
+            uranus: { radius_km: 25362, orbit_km: 19.2 * 149600000 },        // 19.2 AU
+            neptune: { radius_km: 24622, orbit_km: 30.1 * 149600000 },        // 30.1 AU
+            // Pluto - dwarf planet and main body of the Kuiper Belt zone
+            // Real orbit: ~40 AU average (Kuiper belt center)
+            kuiper: { radius_km: 1188, orbit_km: 40.0 * 149600000 },         // 40 AU
+            oort: { orbit_km: 140.0 * 149600000 },                            // 140 AU (inner Oort cloud)
+            oort_outer: { orbit_km: 140.0 * 149600000 }                      // 140 AU (outer boundary)
         };
 
         // Load orbital data (will calculate scaling and create sun)
@@ -65,43 +101,32 @@ class SolarSystem {
     }
 
     calculateScalingFactors() {
-        // Find min/max for log scaling
+        // Find min/max for radius scaling (planet sizes)
         const radii = Object.values(this.planetData).filter(p => p.radius_km).map(p => p.radius_km);
-        const orbits = Object.values(this.planetData)
-            .filter(p => p.orbit_km)
-            .map(p => p.orbit_km);
-
         this.minRadius = Math.min(...radii);
         this.maxRadius = Math.max(...radii);
-        this.minOrbit = Math.min(...orbits);
-        // Use Oort cloud outer edge (140 AU) as the max orbit for proper log scaling
-        this.maxOrbit = this.planetData.oort_outer.orbit_km;
 
-        // Log ranges for scaling
+        // Log ranges for planet radius scaling
         this.logMinRadius = Math.log10(this.minRadius);
         this.logMaxRadius = Math.log10(this.maxRadius);
-        this.logMinOrbit = Math.log10(this.minOrbit);
-        this.logMaxOrbit = Math.log10(this.maxOrbit);
 
         // Scale factors for visualization (target sizes in 3D units)
         this.radiusScale = 0.5; // Max planet radius will be 0.5 units
-        this.orbitScale = 120.0;  // Max orbit distance in view units - increase to spread planets further apart, decrease to bring them closer
+        this.orbitScale = 800.0;  // Max orbit distance in view units - increase to spread planets further apart, decrease to bring them closer
         this.sunScale = 1.0;     // Sun will be 1.0 units
         
-        // Store Mercury's orbit for reference (will be set to 6 solar radii)
-        this.mercuryOrbitKm = this.planetData.mercury.orbit_km;
+        // Hybrid orbital scaling constants
+        // Inner solar system: linear scaling from Sun to Mars (1.52 AU = 10% of visual range)
+        // Outer solar system: logarithmic scaling from Mars to Oort cloud (140 AU = 100% of visual range)
+        this.MARS_AU = 1.52;           // Inner/outer boundary (real AU)
+        this.OUTER_BOUNDARY_AU = 140.0; // Oort cloud outer edge (real AU)
+        this.INNER_VISUAL_FRACTION = 0.1;  // Mars at 10% of visual range
         
-        // Rocky planets: use true distance scaling
-        // Define rocky planets list
+        // Rocky planets list (for reference, but scaling is now unified)
         this.rockyPlanets = ['mercury', 'venus', 'earth', 'mars'];
         
-        // Calculate scale factor for rocky planets: convert km to visual units
-        // Use Mercury as reference: set it to 6 solar radii
-        const sunRadius = this.logScaleSunRadius(this.planetData.sun.radius_km);
-        const mercuryTargetDistance = 6 * sunRadius;
-        const mercuryTrueDistanceKm = this.planetData.mercury.orbit_km;
-        // Scale factor: visual units per km
-        this.rockyPlanetScaleFactor = mercuryTargetDistance / mercuryTrueDistanceKm;
+        // Gas giants list - for resource particle placement near planet instead of zone-wide
+        this.gasGiants = ['jupiter', 'saturn', 'uranus', 'neptune'];
     }
 
     logScaleRadius(radiusKm) {
@@ -110,48 +135,44 @@ class SolarSystem {
         return normalized * this.radiusScale;
     }
 
-    logScaleOrbit(orbitKm) {
-        // Get sun radius (must be calculated first)
-        const sunRadius = this.logScaleSunRadius(this.planetData.sun.radius_km);
-        
-        // Mercury should be at 6 solar radii
-        const mercuryBaseRadius = 6 * sunRadius;
-        
-        // Calculate log-proportional spacing from Mercury
-        // Use Mercury as the base (log10(mercuryOrbitKm))
-        const logMercuryOrbit = Math.log10(this.mercuryOrbitKm);
-        const logCurrentOrbit = Math.log10(orbitKm);
-        
-        // Calculate the log difference from Mercury
-        const logDiff = logCurrentOrbit - logMercuryOrbit;
-        
-        // Scale the log difference proportionally
-        // Find the range: from Mercury to Neptune (or max orbit)
-        const logMaxOrbit = Math.log10(this.maxOrbit);
-        const logRange = logMaxOrbit - logMercuryOrbit;
-        
-        // Map the log difference to visual space
-        // Mercury (logDiff = 0) -> 2 * sunRadius
-        // Neptune (logDiff = logRange) -> some max distance
-        // We want to maintain log proportionality
-        const maxVisualDistance = this.orbitScale; // Keep max at 10 units
-        const normalizedLogDiff = logRange > 0 ? logDiff / logRange : 0;
-        
-        // Scale from Mercury's base radius
-        const orbitRadius = mercuryBaseRadius + (normalizedLogDiff * (maxVisualDistance - mercuryBaseRadius));
-        
-        return orbitRadius;
+    /**
+     * Unified orbital scaling: linear for inner solar system, logarithmic for outer
+     * @param {number} au - Orbital distance in AU
+     * @returns {number} Visual orbit radius in 3D units
+     */
+    scaleAUToVisual(au) {
+        if (au <= this.MARS_AU) {
+            // Linear scaling: 0 to 10% of visual range
+            // Earth (1 AU) maps to (1/1.52) * 10% = 6.58% of visual range
+            return (au / this.MARS_AU) * this.INNER_VISUAL_FRACTION * this.orbitScale;
+        } else {
+            // Logarithmic scaling: 10% to 100% of visual range
+            const logNorm = (Math.log(au) - Math.log(this.MARS_AU)) / 
+                            (Math.log(this.OUTER_BOUNDARY_AU) - Math.log(this.MARS_AU));
+            return (this.INNER_VISUAL_FRACTION + (1 - this.INNER_VISUAL_FRACTION) * logNorm) * this.orbitScale;
+        }
     }
     
     /**
-     * Scale rocky planet orbit using true distance (linear scaling)
+     * Legacy method: Convert orbit_km to visual units (converts km to AU first)
      * @param {number} orbitKm - Orbital distance in km
      * @returns {number} Visual orbit radius in 3D units
+     * @deprecated Use scaleAUToVisual() directly with AU values
+     */
+    logScaleOrbit(orbitKm) {
+        const au = orbitKm / this.AU_KM;
+        return this.scaleAUToVisual(au);
+    }
+    
+    /**
+     * Legacy method: Scale rocky planet orbit (now uses unified scaling)
+     * @param {number} orbitKm - Orbital distance in km
+     * @returns {number} Visual orbit radius in 3D units
+     * @deprecated Use scaleAUToVisual() directly with AU values
      */
     scaleRockyPlanetOrbit(orbitKm) {
-        // Use linear scaling based on true distances
-        // Scale factor calculated in calculateScalingFactors()
-        return orbitKm * this.rockyPlanetScaleFactor;
+        const au = orbitKm / this.AU_KM;
+        return this.scaleAUToVisual(au);
     }
 
     logScaleSunRadius(radiusKm) {
@@ -432,6 +453,10 @@ class SolarSystem {
                 this.createAsteroidBelt(zone);
             } else if (zone.id === 'kuiper' || zone.id === 'kuiper_belt') {
                 this.createKuiperBelt(zone);
+                // Create Pluto as the main planet of the Kuiper belt zone
+                this.createPlanet(zone);
+                this.createOrbit(zone);
+                this.createMoons(zone);
             } else if (zone.id === 'oort_cloud') {
                 this.createOortCloud(zone);
             } else if (zone.id === 'dyson_sphere') {
@@ -538,8 +563,10 @@ class SolarSystem {
             const meanAnomaly = Math.random() * Math.PI * 2;
             
             // Convert to visual scale
-            const perihelionVisual = this.logScaleOrbit(perihelionKm);
-            const aphelionVisual = this.logScaleOrbit(aphelionKm);
+            const perihelionAU = perihelionKm / this.AU_KM;
+            const aphelionAU = aphelionKm / this.AU_KM;
+            const perihelionVisual = this.scaleAUToVisual(perihelionAU);
+            const aphelionVisual = this.scaleAUToVisual(aphelionAU);
             const semiMajorAxisVisual = (perihelionVisual + aphelionVisual) / 2;
             
             // Create comet sphere (small moon-sized)
@@ -702,12 +729,9 @@ class SolarSystem {
             // Use log-scaled real radius
             planetRadius = this.logScaleRadius(planetInfo.radius_km);
             
-            // Rocky planets use true distance scaling, others use log scaling
-            if (this.rockyPlanets && this.rockyPlanets.includes(zone.id)) {
-                orbitRadius = this.scaleRockyPlanetOrbit(planetInfo.orbit_km);
-            } else {
-                orbitRadius = this.logScaleOrbit(planetInfo.orbit_km);
-            }
+            // Use unified scaling (converts km to AU first)
+            const orbitAU = planetInfo.orbit_km / this.AU_KM;
+            orbitRadius = this.scaleAUToVisual(orbitAU);
         } else {
             // Fallback for zones without planet data (use AU-based scaling)
             planetRadius = this.logScaleRadius(6371); // Default to Earth size
@@ -1242,6 +1266,17 @@ class SolarSystem {
             neptune: [
                 { name: 'Triton', orbit_km: 354760, radius_km: 1353, color: '#E0E0E0', period_days: 5.88, inclination: 156.9 }, // Retrograde!
                 { name: 'Proteus', orbit_km: 117647, radius_km: 210, color: '#808080', period_days: 1.12, inclination: 0.08 }
+            ],
+            kuiper: [
+                // Pluto's moons - the Pluto-Charon system is unique (barycenter outside Pluto)
+                // Pluto radius = 1,188 km
+                // Charon is so large relative to Pluto that they're sometimes called a binary dwarf planet
+                { name: 'Charon', orbit_km: 19591, radius_km: 606, color: '#A0A0A0', period_days: 6.387, inclination: 0.08 },
+                // Small irregular moons discovered by Hubble
+                { name: 'Nix', orbit_km: 48694, radius_km: 25, color: '#C8C8C8', period_days: 24.85, inclination: 0.13 },
+                { name: 'Hydra', orbit_km: 64738, radius_km: 33, color: '#D0D0D0', period_days: 38.2, inclination: 0.24 },
+                { name: 'Kerberos', orbit_km: 57783, radius_km: 12, color: '#B8B8B8', period_days: 32.17, inclination: 0.39 },
+                { name: 'Styx', orbit_km: 42656, radius_km: 8, color: '#C0C0C0', period_days: 20.16, inclination: 0.81 }
             ]
         };
         
@@ -1252,7 +1287,8 @@ class SolarSystem {
             jupiter: 3.13 * Math.PI / 180,
             saturn: 26.73 * Math.PI / 180,  // Same as ring tilt
             uranus: 97.77 * Math.PI / 180,  // Same as ring tilt
-            neptune: 28.32 * Math.PI / 180
+            neptune: 28.32 * Math.PI / 180,
+            kuiper: 122.53 * Math.PI / 180  // Pluto's extreme axial tilt (rotates on its side like Uranus)
         };
 
         const planet = this.planets[zone.id];
@@ -1350,7 +1386,7 @@ class SolarSystem {
                 orbitalSpeed: orbitalSpeed,
                 planetTilt: planetTilt,
                 moonInclination: moonInclination,
-                orbitInEquatorialPlane: ['mars', 'jupiter', 'saturn', 'uranus'].includes(zone.id)
+                orbitInEquatorialPlane: ['mars', 'jupiter', 'saturn', 'uranus', 'kuiper'].includes(zone.id)
             };
             
             this.moons[zone.id].push(moonMesh);
@@ -1368,7 +1404,8 @@ class SolarSystem {
             jupiter: 4333,
             saturn: 10759,
             uranus: 30688,
-            neptune: 60182
+            neptune: 60182,
+            kuiper: 90560  // Pluto's orbital period: ~248 Earth years
         };
         return periods[zoneId] || 365;
     }
@@ -1381,16 +1418,12 @@ class SolarSystem {
         let orbitRadius;
         
         if (planetInfo && planetInfo.orbit_km) {
-            // Rocky planets use true distance scaling, others use log scaling
-            if (this.rockyPlanets && this.rockyPlanets.includes(zone.id)) {
-                orbitRadius = this.scaleRockyPlanetOrbit(planetInfo.orbit_km);
-            } else {
-                orbitRadius = this.logScaleOrbit(planetInfo.orbit_km);
-            }
+            // Use unified scaling (converts km to AU first)
+            const orbitAU = planetInfo.orbit_km / this.AU_KM;
+            orbitRadius = this.scaleAUToVisual(orbitAU);
         } else {
-            // Fallback: use AU-based scaling converted to log scale
-            const orbitKm = zone.radius_au * 149600000; // Convert AU to km
-            orbitRadius = this.logScaleOrbit(orbitKm);
+            // Fallback: use AU-based scaling
+            orbitRadius = this.scaleAUToVisual(zone.radius_au);
         }
         
         // Create orbit ring manually (circle)
@@ -1422,14 +1455,10 @@ class SolarSystem {
         // Dyson sphere orbit - golden color, positioned just inside Mercury
         const color = zone.color || '#FFD700';
         
-        // Dyson orbit is 0.1 AU inside Mercury's real orbit
-        // Mercury real: 0.39 AU, Dyson: 0.29 AU (real) = 0.87 AU (game scaled 3x)
-        // Position it just inside Mercury's visual orbit
-        const mercuryOrbitKm = this.planetData.mercury?.orbit_km || 173700000;
-        const mercuryOrbitRadius = this.scaleRockyPlanetOrbit(mercuryOrbitKm);
-        
-        // Dyson orbit is 75% of Mercury's orbit radius (places it visually inside Mercury)
-        const dysonOrbitRadius = mercuryOrbitRadius * 0.75;
+        // Dyson orbit is 0.29 AU (real value)
+        // Position it just inside Mercury's visual orbit (Mercury is at 0.39 AU)
+        const dysonAU = 0.29;
+        const dysonOrbitRadius = this.scaleAUToVisual(dysonAU);
         
         // Store dyson orbit radius for other systems to use
         this.dysonOrbitRadius = dysonOrbitRadius;
@@ -1465,10 +1494,11 @@ class SolarSystem {
     }
 
     createAsteroidBelt(zone) {
-        // Asteroid belt is between Mars and Jupiter
-        // Mars is a rocky planet, so use true distance scaling
-        const marsOrbit = this.scaleRockyPlanetOrbit(this.planetData.mars.orbit_km);
-        const jupiterOrbit = this.logScaleOrbit(this.planetData.jupiter.orbit_km);
+        // Asteroid belt is between Mars (1.52 AU) and Jupiter (5.2 AU)
+        const marsAU = this.planetData.mars.orbit_km / this.AU_KM;
+        const jupiterAU = this.planetData.jupiter.orbit_km / this.AU_KM;
+        const marsOrbit = this.scaleAUToVisual(marsAU);
+        const jupiterOrbit = this.scaleAUToVisual(jupiterAU);
         const innerRadius = marsOrbit * 1.1;
         const outerRadius = jupiterOrbit * 0.9;
         const color = zone.color || '#666666';
@@ -1651,13 +1681,13 @@ class SolarSystem {
     }
 
     createKuiperBelt(zone) {
-        // Kuiper belt spans from ~30 AU to ~55 AU, centered at 45 AU
-        const kuiperOrbitKm = this.planetData.kuiper.orbit_km; // 45 AU
-        const orbitRadius = this.logScaleOrbit(kuiperOrbitKm);
+        // Kuiper belt spans from ~30 AU to ~50 AU, centered at ~40 AU
+        const kuiperAU = this.planetData.kuiper.orbit_km / this.AU_KM; // ~40 AU
+        const orbitRadius = this.scaleAUToVisual(kuiperAU);
         
-        // Kuiper belt is a disk - use log-scaled inner/outer edges
-        const innerRadius = this.logScaleOrbit(90 * this.AU_KM);  // 90 AU inner edge (3x: 30 -> 90)
-        const outerRadius = this.logScaleOrbit(165 * this.AU_KM);  // 165 AU outer edge (3x: 55 -> 165)
+        // Kuiper belt is a disk - use scaled inner/outer edges
+        const innerRadius = this.scaleAUToVisual(30.0);  // 30 AU inner edge
+        const outerRadius = this.scaleAUToVisual(50.0);  // 50 AU outer edge
         
         // Create particle system for Kuiper belt
         const particleCount = 8000; // Significantly increased for more visible objects
@@ -1724,13 +1754,13 @@ class SolarSystem {
     }
 
     createOortCloud(zone) {
-        // Oort cloud centered at 100 AU, diameter of 80 AU (60 AU to 140 AU)
-        const oortOrbitKm = this.planetData.oort.orbit_km; // 100 AU
-        const orbitRadius = this.logScaleOrbit(oortOrbitKm);
+        // Oort cloud centered at ~140 AU (outer boundary)
+        const oortAU = this.planetData.oort.orbit_km / this.AU_KM; // ~140 AU
+        const orbitRadius = this.scaleAUToVisual(oortAU);
         
-        // Oort cloud spans 240 AU diameter - use log-scaled inner/outer edges
-        const innerRadius = this.logScaleOrbit(180 * this.AU_KM);   // 180 AU inner edge (3x: 60 -> 180)
-        const outerRadius = this.logScaleOrbit(420 * this.AU_KM);  // 420 AU outer edge (3x: 140 -> 420)
+        // Oort cloud spans from ~70 AU to 140 AU
+        const innerRadius = this.scaleAUToVisual(70.0);   // 70 AU inner edge
+        const outerRadius = this.scaleAUToVisual(140.0);   // 140 AU outer edge (matches OUTER_BOUNDARY_AU)
         
         // Create particle system for Oort cloud - more particles but sparser
         const particleCount = 15000; // Significantly increased for more visible comets
@@ -1779,69 +1809,70 @@ class SolarSystem {
         this.scene.add(this.oortCloud);
     }
     
+    
     /**
-     * Initialize resource particle visualization for all planets
-     * Creates a single particle system per planet for metal and slag
-     * Rocky planets form a flat accretion disc; gas giants form spherical clouds
+     * Initialize resource particle visualization for all mining zones
+     * Creates a single particle system per zone for metal and slag
+     * All zones form a continuous flat accretion disc
      */
     initResourceParticles() {
-        // Only create resource particles for planets (not belts)
-        const planetZones = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
+        // All zones that can have mined resources (exclude dyson_sphere)
+        const miningZones = ['mercury', 'venus', 'earth', 'mars', 'asteroid_belt', 
+                            'jupiter', 'saturn', 'uranus', 'neptune', 'kuiper', 'oort_cloud'];
         
-        // Calculate accretion disc ring boundaries for rocky planets
-        // Each planet gets a ring from halfway to previous neighbor to halfway to next neighbor
-        const rockyPlanetOrbits = {};
-        this.rockyPlanets.forEach(zoneId => {
-            const planetInfo = this.planetData[zoneId];
-            if (planetInfo) {
-                rockyPlanetOrbits[zoneId] = this.scaleRockyPlanetOrbit(planetInfo.orbit_km);
-            }
-        });
+        // Build zone bounds from orbital data config
+        const zoneBounds = {};
+        if (this.orbitalData && this.orbitalData.orbital_zones) {
+            this.orbitalData.orbital_zones.forEach(zone => {
+                if (zone.radius_au_start !== undefined && zone.radius_au_end !== undefined) {
+                    zoneBounds[zone.id] = {
+                        inner: this.scaleAUToVisual(zone.radius_au_start),
+                        outer: this.scaleAUToVisual(zone.radius_au_end),
+                        innerAU: zone.radius_au_start,
+                        outerAU: zone.radius_au_end
+                    };
+                }
+            });
+        }
         
-        // Calculate ring boundaries for continuous accretion disc
-        // Order: dyson -> mercury -> venus -> earth -> mars -> asteroid_belt
-        const dysonOrbit = this.dysonOrbitRadius || (rockyPlanetOrbits.mercury * 0.75);
-        const asteroidBeltInner = rockyPlanetOrbits.mars * 1.3; // Inner edge of asteroid belt
+        // Store zone bounds for reference
+        this.zoneBounds = zoneBounds;
         
-        const accretionRingBounds = {
-            mercury: {
-                inner: dysonOrbit * 1.05, // Just outside Dyson
-                outer: (rockyPlanetOrbits.mercury + rockyPlanetOrbits.venus) / 2
-            },
-            venus: {
-                inner: (rockyPlanetOrbits.mercury + rockyPlanetOrbits.venus) / 2,
-                outer: (rockyPlanetOrbits.venus + rockyPlanetOrbits.earth) / 2
-            },
-            earth: {
-                inner: (rockyPlanetOrbits.venus + rockyPlanetOrbits.earth) / 2,
-                outer: (rockyPlanetOrbits.earth + rockyPlanetOrbits.mars) / 2
-            },
-            mars: {
-                inner: (rockyPlanetOrbits.earth + rockyPlanetOrbits.mars) / 2,
-                outer: asteroidBeltInner
-            }
-        };
-        
-        planetZones.forEach(zoneId => {
+        miningZones.forEach(zoneId => {
+            // Get zone config from orbital data
+            const zoneConfig = this.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+            if (!zoneConfig) return;
+            
+            // Get planet/body for this zone (may not exist for belts)
             const planet = this.planets[zoneId];
             const planetInfo = this.planetData[zoneId];
-            if (!planet || !planetInfo) return;
             
-            const planetRadius = this.logScaleRadius(planetInfo.radius_km);
-            const isRocky = this.rockyPlanets.includes(zoneId);
+            // Calculate orbit radius based on zone type
+            const isRocky = this.rockyPlanets?.includes(zoneId);
+            let orbitRadius;
+            let planetRadius;
             
-            // Get orbit radius for this planet
-            const orbitRadius = isRocky 
-                ? this.scaleRockyPlanetOrbit(planetInfo.orbit_km)
-                : this.logScaleOrbit(planetInfo.orbit_km);
+            if (planetInfo && planetInfo.orbit_km) {
+                // Use unified scaling (converts km to AU first)
+                const orbitAU = planetInfo.orbit_km / this.AU_KM;
+                orbitRadius = this.scaleAUToVisual(orbitAU);
+                planetRadius = this.logScaleRadius(planetInfo.radius_km);
+            } else {
+                // For belts without planets, use zone center
+                orbitRadius = this.scaleAUToVisual(zoneConfig.radius_au);
+                planetRadius = 0.05; // Default small radius for belt zones
+            }
             
-            // Create resource particle system
+            // Get zone bounds for this zone (all zones now use accretion disc mode)
+            const bounds = zoneBounds[zoneId];
+            
+            // Create resource particle system - all zones use accretion disc mode
             const particleSystem = this.createResourceParticleSystem(
                 zoneId, 
                 planetRadius, 
-                isRocky,
+                true, // All zones use accretion disc mode
                 orbitRadius,
-                isRocky ? accretionRingBounds[zoneId] : null
+                bounds || null
             );
             
             // Store reference
@@ -1849,28 +1880,31 @@ class SolarSystem {
             
             // Initialize particle data arrays
             this.resourceParticleData[zoneId] = {
-                metal: [],  // Active metal particles
-                slag: []    // Active slag particles
+                metal: [],     // Active metal particles
+                slag: [],      // Active slag particles
+                methalox: []   // Active methalox particles
             };
             
             // Initialize previous resource tracking
             this.previousResources[zoneId] = {
                 metal: 0,
-                slag: 0
+                slag: 0,
+                methalox: 0
             };
             
             // Add to scene
             this.scene.add(particleSystem);
         });
         
-        console.log(`SolarSystem: Created resource particles for ${Object.keys(this.resourceParticles).length} planets`);
+        console.log(`SolarSystem: Created resource particles for ${Object.keys(this.resourceParticles).length} zones`);
     }
     
     /**
      * Create resource particle system for a planet
+     * All zones use accretion disc mode (flat disc orbiting sun) - unified appearance for all planet types
      * @param {string} zoneId - Planet zone ID
      * @param {number} planetRadius - Visual radius of the planet
-     * @param {boolean} isAccretionDisc - True for rocky planets (flat disc), false for gas giants (spherical)
+     * @param {boolean} isAccretionDisc - Always true (all zones use flat disc mode)
      * @param {number} orbitRadius - Planet's orbital radius
      * @param {Object} ringBounds - {inner, outer} for accretion disc mode
      * @returns {THREE.Points} Particle system
@@ -1879,26 +1913,57 @@ class SolarSystem {
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(this.maxResourceParticles * 3);
         const colors = new Float32Array(this.maxResourceParticles * 3);
+        const sizes = new Float32Array(this.maxResourceParticles); // Size per vertex
         
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
         geometry.setDrawRange(0, 0); // Start with no visible particles
         
-        const material = new THREE.PointsMaterial({
-            size: isAccretionDisc ? 0.03 : 0.025, // Slightly larger for accretion disc visibility
-            sizeAttenuation: true,
-            vertexColors: true,
+        // Use ShaderMaterial for variable size per vertex
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                pointTexture: { value: null } // Can add texture later if needed
+            },
+            vertexShader: `
+                attribute float size;
+                attribute vec3 color;
+                varying vec3 vColor;
+                varying float vSize;
+                
+                void main() {
+                    vColor = color;
+                    vSize = size;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = size * (300.0 / -mvPosition.z);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D pointTexture;
+                varying vec3 vColor;
+                varying float vSize;
+                
+                void main() {
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float dist = length(coord);
+                    if (dist > 0.5) discard;
+                    
+                    float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+                    gl_FragColor = vec4(vColor, alpha * 0.85);
+                }
+            `,
             transparent: true,
-            opacity: 0.85,
             depthWrite: false,
-            depthTest: true
+            depthTest: true,
+            blending: THREE.NormalBlending
         });
         
         const points = new THREE.Points(geometry, material);
         points.renderOrder = isAccretionDisc ? 85 : 90; // Accretion disc behind planet clouds
         points.frustumCulled = false;
         
-        // Store orbital parameters for spawning new particles
+        // Store orbital parameters and size array reference
         if (isAccretionDisc && ringBounds) {
             // Accretion disc mode: particles orbit sun in a flat ring
             points.userData = {
@@ -1908,20 +1973,135 @@ class SolarSystem {
                 orbitRadius: orbitRadius,
                 ringInner: ringBounds.inner,
                 ringOuter: ringBounds.outer,
-                verticalSpread: 0.15 // Very thin disc
+                verticalSpread: 0.15, // Very thin disc
+                sizes: sizes // Store reference to size array
             };
         } else {
-            // Spherical cloud mode: particles orbit planet
+            // Spherical cloud mode: particles orbit planet (shouldn't be used, but kept for safety)
             points.userData = {
                 zoneId: zoneId,
                 planetRadius: planetRadius,
                 isAccretionDisc: false,
                 minRadius: planetRadius * 1.5,
-                maxRadius: planetRadius * 7.0
+                maxRadius: planetRadius * 7.0,
+                sizes: sizes // Store reference to size array
             };
         }
         
         return points;
+    }
+    
+    /**
+     * Determine particle size class based on mining rate
+     * Higher mining rates produce larger particles
+     * @param {number} miningRateKgPerDay - Mining/production rate in kg/day
+     * @returns {string} Size class: 'small', 'medium', 'large', or 'xlarge'
+     */
+    determineParticleSizeFromRate(miningRateKgPerDay) {
+        if (!miningRateKgPerDay || miningRateKgPerDay <= 0) {
+            return 'small'; // Default to small for very low/no rates
+        }
+        
+        // Use logarithmic scaling to determine size based on rate
+        // Thresholds: small < 1e9, medium < 1e12, large < 1e15, xlarge >= 1e15 kg/day
+        const logRate = Math.log10(miningRateKgPerDay);
+        
+        if (logRate >= 15) {
+            // Very high rate: mostly xlarge, some large
+            return Math.random() < 0.7 ? 'xlarge' : 'large';
+        } else if (logRate >= 12) {
+            // High rate: mix of large and medium
+            return Math.random() < 0.6 ? 'large' : 'medium';
+        } else if (logRate >= 9) {
+            // Medium rate: mix of medium and small
+            return Math.random() < 0.5 ? 'medium' : 'small';
+        } else {
+            // Low rate: mostly small
+            return 'small';
+        }
+    }
+    
+    /**
+     * Calculate target particle count based on mass and limits
+     * Particles are spawned with sizes determined by mining rate
+     * @param {number} massKg - Mass in kg (slag or metal)
+     * @param {string} resourceType - 'metal' or 'slag' to determine limits
+     * @param {number} maxDotsPerZone - Ignored, kept for API compatibility
+     * @returns {Object} {small: n, medium: n, large: n, xlarge: n} dot counts
+     */
+    calculateDotDistribution(massKg, resourceType = 'metal', maxDotsPerZone = null) {
+        if (massKg <= 0) {
+            return { small: 0, medium: 0, large: 0, xlarge: 0 };
+        }
+        
+        // Get max particles for this resource type
+        const maxParticles = this.maxParticlesByType[resourceType] || this.maxParticlesByType.metal;
+        
+        // Calculate how many particles we need based on mass
+        // Use a weighted average approach: calculate ideal particle count if all were small
+        // Then distribute across sizes respecting limits
+        const idealSmallCount = massKg / this.resourceSizes.small.mass;
+        
+        // If we can represent everything with small particles under limit, do that
+        if (idealSmallCount <= maxParticles.small) {
+            return {
+                small: Math.floor(idealSmallCount),
+                medium: 0,
+                large: 0,
+                xlarge: 0
+            };
+        }
+        
+        // Otherwise, fill up to limits starting with small, then larger sizes
+        let remaining = massKg;
+        let small = 0;
+        let medium = 0;
+        let large = 0;
+        let xlarge = 0;
+        
+        // Fill small up to limit
+        const maxSmall = maxParticles.small;
+        const smallMass = maxSmall * this.resourceSizes.small.mass;
+        if (remaining >= smallMass) {
+            small = maxSmall;
+            remaining -= smallMass;
+        } else {
+            small = Math.floor(remaining / this.resourceSizes.small.mass);
+            return { small, medium: 0, large: 0, xlarge: 0 };
+        }
+        
+        // Fill medium up to limit
+        const maxMedium = maxParticles.medium;
+        const mediumMass = maxMedium * this.resourceSizes.medium.mass;
+        if (remaining >= mediumMass) {
+            medium = maxMedium;
+            remaining -= mediumMass;
+        } else {
+            medium = Math.floor(remaining / this.resourceSizes.medium.mass);
+            return { small, medium, large: 0, xlarge: 0 };
+        }
+        
+        // Fill large up to limit
+        const maxLarge = maxParticles.large;
+        const largeMass = maxLarge * this.resourceSizes.large.mass;
+        if (remaining >= largeMass) {
+            large = maxLarge;
+            remaining -= largeMass;
+        } else {
+            large = Math.floor(remaining / this.resourceSizes.large.mass);
+            return { small, medium, large, xlarge: 0 };
+        }
+        
+        // Fill xlarge up to limit
+        const maxXlarge = maxParticles.xlarge;
+        const xlargeMass = maxXlarge * this.resourceSizes.xlarge.mass;
+        if (remaining >= xlargeMass) {
+            xlarge = maxXlarge;
+        } else {
+            xlarge = Math.floor(remaining / this.resourceSizes.xlarge.mass);
+        }
+        
+        return { small, medium, large, xlarge };
     }
     
     /**
@@ -1931,6 +2111,7 @@ class SolarSystem {
      * @param {number} massKg - Mass in kg (slag or metal)
      * @param {number} maxDots - Maximum number of dots for this resource type
      * @returns {number} Number of dots to display
+     * @deprecated Use calculateDotDistribution() instead
      */
     calculateResourceDots(massKg, maxDots) {
         if (massKg <= 0) return 0;
@@ -1952,87 +2133,95 @@ class SolarSystem {
     
     /**
      * Spawn a new resource particle from mining
-     * Particles spawn in a cloud around the planet and orbit sun at reduced speed (80%)
-     * This causes the planet to "sweep out" a trailing cloud of mined material
-     * For rocky planets: flat accretion disc orbiting sun
-     * For gas giants: spherical cloud orbiting planet
+     * Particles spawn at the planet position and drift outward to their target orbital position
+     * in the zone's orbital band near the planet, forming a trailing debris cloud
      * @param {string} zoneId - Planet zone ID
      * @param {string} type - 'metal' or 'slag'
+     * @param {string} sizeClass - 'small', 'medium', 'large', or 'xlarge'
      * @returns {Object} New particle data
      */
-    spawnResourceParticle(zoneId, type) {
+    spawnResourceParticle(zoneId, type, sizeClass = 'small') {
         const particleSystem = this.resourceParticles[zoneId];
         if (!particleSystem) return null;
         
         const userData = particleSystem.userData;
         const planet = this.planets[zoneId];
-        if (!planet) return null;
         
-        if (userData.isAccretionDisc) {
-            // Accretion disc mode: particle spawns near planet and orbits sun at reduced speed
-            // Get planet's current orbital angle
-            const planetAngle = planet.userData?.orbitalAngle || 0;
+        // Get planet's current orbital angle (or random for belt zones)
+        const planetAngle = planet?.userData?.orbitalAngle || (Math.random() * Math.PI * 2);
+        const planetRadius = userData.planetRadius;
+        
+        // Get planet's orbital speed (particles inherit this initially)
+        const planetOrbitalSpeed = planet?.userData?.orbitalSpeed || 0.008;
+        
+        // Start position: at the planet/body location
+        const spawnDistance = userData.orbitRadius;
+        const spawnAngle = planetAngle;
+        
+        // Check if this is a gas giant - particles should deposit within a few planetary radii
+        const isGasGiant = this.gasGiants?.includes(zoneId);
+        
+        let targetDistance, targetAngle;
+        
+        if (isGasGiant) {
+            // Gas giants: particles deposit within a few planetary radii of the planet
+            // Random distance within 2-5 planetary radii of the planet's orbital radius
+            const radiusSpread = planetRadius * (2 + Math.random() * 3); // 2-5 planetary radii
+            const sign = Math.random() < 0.5 ? -1 : 1;
+            targetDistance = userData.orbitRadius + sign * radiusSpread;
             
-            // Spawn in a cloud around the planet's current position
-            // Spread is 10x the planet's visual radius to create a larger trailing ring behind the planet
-            const planetRadius = userData.planetRadius;
-            
-            // Angular spread: 10x planet radius as arc length at orbital distance
-            // arc = angle * radius, so angle = arc / radius = (10 * planetRadius) / orbitRadius
-            const angleSpread = (10 * planetRadius) / userData.orbitRadius;
-            const spawnAngle = planetAngle + (Math.random() - 0.5) * angleSpread * 2; // Full diameter spread
-            
-            // Radial spread: 10x planet radius inward/outward
-            const radialSpread = planetRadius * 10;
-            const orbitDistance = userData.orbitRadius + (Math.random() - 0.5) * radialSpread * 2;
-            
-            // Vertical spread: kept small for flat ring appearance
-            const yOffset = (Math.random() - 0.5) * planetRadius * 0.5;
-            
-            // Orbital speed based on Kepler's law, but REDUCED to 80%
-            // This makes the planet move faster than the debris, leaving a trailing cloud
-            const earthOrbitRadius = this.scaleRockyPlanetOrbit(this.planetData.earth.orbit_km);
-            const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / orbitDistance);
-            // Reduce to 80% of Kepler speed + small random variation
-            const orbitalSpeed = keplerSpeed * 0.80 * (0.97 + Math.random() * 0.06);
-            
-            return {
-                type: type,
-                isAccretionDisc: true,
-                // Orbital parameters (orbiting sun at fixed position)
-                orbitAngle: spawnAngle,      // Starting angle (where it spawned)
-                orbitDistance: orbitDistance, // Fixed orbital distance
-                yOffset: yOffset,
-                orbitalSpeed: orbitalSpeed,   // 80% of Kepler speed
-                // Spawn state
-                spawnTime: this.time,
-                drifting: false // No drift animation for mining particles
-            };
+            // Angular spread based on a few planetary radii worth of arc length
+            const angularSpread = (4 * planetRadius) / targetDistance;
+            targetAngle = planetAngle + (Math.random() - 0.5) * 2 * angularSpread;
         } else {
-            // Spherical cloud mode: particle orbits planet
-            // Random target orbit parameters
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos(2 * Math.random() - 1);
-            const t = Math.random();
-            const targetRadius = userData.minRadius + (userData.maxRadius - userData.minRadius) * (1 - Math.pow(1 - t, 2));
+            // Rocky planets and belts: evenly distributed within zone's orbital band
+            // Random orbital radius within zone bounds
+            const ringInner = userData.ringInner || (userData.orbitRadius * 0.8);
+            const ringOuter = userData.ringOuter || (userData.orbitRadius * 1.2);
+            targetDistance = ringInner + Math.random() * (ringOuter - ringInner);
             
-            // Particle starts at planet position (inside the probe cloud)
-            const spawnOffset = this.particleSpawnRadius * userData.planetRadius;
-            
-            return {
-                type: type,
-                isAccretionDisc: false,
-                // Target orbital parameters
-                theta: theta,
-                phi: phi,
-                targetRadius: targetRadius,
-                orbitalSpeed: 0.08 + Math.random() * 0.15, // Orbit speed around planet
-                // Spawn/drift state
-                spawnTime: this.time,
-                currentRadius: spawnOffset,
-                drifting: true
-            };
+            // Target angle: near the planet with variance of ~5 planetary radii
+            // Calculate angular spread: arc length = angle * radius, so angle = arc / radius
+            // Spread = 5 * planetRadius as arc length at the target orbital distance
+            const angularSpread = (5 * planetRadius) / targetDistance;
+            // Random angle within +/- angularSpread of the planet's current position
+            targetAngle = planetAngle + (Math.random() - 0.5) * 2 * angularSpread;
         }
+        
+        // Small vertical offset for disc thickness
+        const yOffset = (Math.random() - 0.5) * 0.15;
+        
+        // Orbital speed based on Kepler's law at target distance
+        const earthAU = this.planetData.earth.orbit_km / this.AU_KM;
+        const earthOrbitRadius = this.scaleAUToVisual(earthAU);
+        const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / targetDistance);
+        // Reduce to 80% of Kepler speed + small random variation
+        // This makes particles orbit slower than the planet, leaving a trailing cloud
+        const orbitalSpeed = keplerSpeed * 0.80 * (0.97 + Math.random() * 0.06);
+        
+        // Drift duration scales with distance traveled (further = longer drift)
+        // Base duration is longer for a slow, gentle drift into orbit
+        const distanceRatio = Math.abs(targetDistance - spawnDistance) / earthOrbitRadius;
+        const driftDuration = 60.0 + distanceRatio * 60.0; // 45-69+ seconds for very slow drift
+        
+        return {
+            type: type,
+            sizeClass: sizeClass, // 'small', 'medium', 'large', or 'xlarge'
+            // Spawn position (at planet)
+            spawnAngle: spawnAngle,
+            spawnDistance: spawnDistance,
+            // Target position (in zone's orbital band, near planet)
+            targetAngle: targetAngle,
+            targetDistance: targetDistance,
+            yOffset: yOffset,
+            orbitalSpeed: orbitalSpeed,
+            // Planet's orbital speed at spawn time (particles inherit this and blend to their own speed)
+            planetOrbitalSpeed: planetOrbitalSpeed,
+            // Animation state
+            spawnTime: this.time,
+            drifting: true,
+            driftDuration: driftDuration
+        };
     }
     
     /**
@@ -2050,10 +2239,9 @@ class SolarSystem {
         
         const userData = particleSystem.userData;
         const planet = this.planets[fromZoneId];
-        if (!planet) return null;
         
-        // Get planet's current orbital angle for spawn position
-        const planetAngle = planet.userData?.orbitalAngle || 0;
+        // Get planet's current orbital angle for spawn position (or random for belt zones)
+        const planetAngle = planet?.userData?.orbitalAngle || (Math.random() * Math.PI * 2);
         const planetOrbitRadius = userData.orbitRadius;
         
         // Random target angle in the target orbit
@@ -2063,14 +2251,14 @@ class SolarSystem {
         const yOffset = (Math.random() - 0.5) * 0.1;
         
         // Orbital speed at target (Kepler's law)
-        const earthOrbitRadius = this.scaleRockyPlanetOrbit(this.planetData.earth.orbit_km);
+        const earthAU = this.planetData.earth.orbit_km / this.AU_KM;
+        const earthOrbitRadius = this.scaleAUToVisual(earthAU);
         const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / targetOrbitRadius);
         const orbitalSpeed = keplerSpeed * (0.95 + Math.random() * 0.1);
         
         return {
             type: type,
-            isAccretionDisc: true,
-            isMassDriver: true, // Flag for special handling
+            sizeClass: 'medium', // Mass driver particles use medium size by default
             // Target orbital parameters (at Dyson sphere)
             targetAngle: targetAngle,
             targetDistance: targetOrbitRadius,
@@ -2081,75 +2269,298 @@ class SolarSystem {
             spawnAngle: planetAngle,
             spawnDistance: planetOrbitRadius,
             drifting: true, // Uses drift animation to simulate Hohmann transfer
-            transferDuration: 5.0 // Longer duration for dramatic effect
+            driftDuration: 5.0 // Longer duration for dramatic effect
         };
     }
     
     /**
+     * Count particles by size class in an array
+     * @param {Array} particles - Array of particle objects
+     * @returns {Object} {small: n, medium: n, large: n, xlarge: n}
+     */
+    countParticlesBySize(particles) {
+        const counts = { small: 0, medium: 0, large: 0, xlarge: 0 };
+        particles.forEach(p => {
+            const sizeClass = p.sizeClass || 'small';
+            if (counts.hasOwnProperty(sizeClass)) {
+                counts[sizeClass]++;
+            }
+        });
+        return counts;
+    }
+    
+    /**
      * Update resource particle visualization based on game state
-     * Spawns new particles when resources increase, removes when depleted
+     * Gradually spawns particles over time based on mining rate (not all at once)
+     * Particles correspond to actual mass - each particle represents a specific mass
      * @param {Object} gameState - Current game state with zone data
      */
     updateResourceParticles(gameState) {
         if (!gameState || !gameState.zones) return;
         
         const zones = gameState.zones;
-        const maxMetalDots = Math.floor(this.maxResourceParticles * 0.4); // 40% for metal
-        const maxSlagDots = Math.floor(this.maxResourceParticles * 0.6);  // 60% for slag
+        const derived = gameState.derived || {};
+        const zoneDerived = derived.zones || {};
+        const currentTime = gameState.time || 0; // Game time in days
         
         Object.keys(this.resourceParticles).forEach(zoneId => {
             const particleSystem = this.resourceParticles[zoneId];
             const particleData = this.resourceParticleData[zoneId];
             const zone = zones[zoneId];
+            const zoneData = zoneDerived[zoneId] || {};
             
             if (!particleSystem || !particleData || !zone) return;
             
             // Get current resource amounts
             const currentMetal = zone.stored_metal || 0;
             const currentSlag = zone.slag_mass || 0;
+            const currentMethalox = zone.methalox || 0;
             
-            // Calculate target dot counts
-            const targetMetalDots = this.calculateResourceDots(currentMetal, maxMetalDots);
-            const targetSlagDots = this.calculateResourceDots(currentSlag, maxSlagDots);
+            // Get previous resource amounts
+            const prev = this.previousResources[zoneId] || { metal: 0, slag: 0, methalox: 0 };
+            const prevMetal = prev.metal || 0;
+            const prevSlag = prev.slag || 0;
+            const prevMethalox = prev.methalox || 0;
             
-            // Get previous resource tracking
-            const prev = this.previousResources[zoneId] || { metal: 0, slag: 0 };
-            const prevMetalDots = this.calculateResourceDots(prev.metal, maxMetalDots);
-            const prevSlagDots = this.calculateResourceDots(prev.slag, maxSlagDots);
+            // Get production rates for this zone (kg/day)
+            const metalMiningRate = zoneData.metal_mined_rate || 0;
+            const slagMiningRate = zoneData.slag_produced_rate || 0;
+            const methaloxProductionRate = zoneData.methalox_production_rate || 0;
             
-            // Handle metal particles
-            const metalDiff = targetMetalDots - particleData.metal.length;
-            if (metalDiff > 0) {
-                // Spawn new metal particles
-                for (let i = 0; i < metalDiff; i++) {
-                    const particle = this.spawnResourceParticle(zoneId, 'metal');
-                    if (particle) particleData.metal.push(particle);
-                }
-            } else if (metalDiff < 0) {
-                // Remove metal particles (oldest first - those that have drifted furthest)
-                particleData.metal.sort((a, b) => a.spawnTime - b.spawnTime);
-                particleData.metal.splice(0, -metalDiff);
+            // Initialize pending mass tracking
+            if (!this.pendingMass[zoneId]) {
+                this.pendingMass[zoneId] = { metal: 0, slag: 0, methalox: 0 };
+            }
+            if (!this.lastUpdateTime[zoneId]) {
+                this.lastUpdateTime[zoneId] = currentTime;
             }
             
-            // Handle slag particles
-            const slagDiff = targetSlagDots - particleData.slag.length;
-            if (slagDiff > 0) {
-                // Spawn new slag particles
-                for (let i = 0; i < slagDiff; i++) {
-                    const particle = this.spawnResourceParticle(zoneId, 'slag');
-                    if (particle) particleData.slag.push(particle);
+            const pending = this.pendingMass[zoneId];
+            const lastTime = this.lastUpdateTime[zoneId];
+            const deltaTime = Math.max(0, currentTime - lastTime); // Days elapsed
+            
+            // Calculate mass changes since last update
+            const metalIncrease = currentMetal - prevMetal;
+            const slagIncrease = currentSlag - prevSlag;
+            const methaloxIncrease = currentMethalox - prevMethalox;
+            
+            // Add new mass to pending (mass that needs to become particles)
+            // Only add if resources actually increased
+            if (metalIncrease > 0) {
+                pending.metal += metalIncrease;
+            }
+            if (slagIncrease > 0) {
+                pending.slag += slagIncrease;
+            }
+            if (methaloxIncrease > 0) {
+                pending.methalox += methaloxIncrease;
+            }
+            
+            // Get max particles for this resource type
+            const maxMetalParticles = this.maxParticlesByType.metal;
+            const maxSlagParticles = this.maxParticlesByType.slag;
+            const maxMethaloxParticles = this.maxParticlesByType.methalox;
+            
+            // Helper function to gradually spawn particles from pending mass
+            // Uses time-based rate limiting to prevent bursts
+            const spawnParticlesGradually = (particles, pendingMass, miningRate, resourceType, maxParticles) => {
+                if (pendingMass <= 0) return pendingMass;
+                
+                // Determine particle size based on mining rate
+                const sizeClass = this.determineParticleSizeFromRate(miningRate);
+                const particleMass = this.resourceSizes[sizeClass].mass;
+                
+                // Calculate spawn rate: at low mining rates, spawn less frequently
+                // Base spawn interval: how often to check for spawning (in days)
+                // Higher mining rate = more frequent spawns, but still gradual
+                const minSpawnInterval = 0.001; // Minimum 0.001 days (~1.4 minutes) between spawn checks
+                const maxSpawnInterval = 0.1;   // Maximum 0.1 days (~2.4 hours) between spawn checks
+                
+                // Scale spawn interval inversely with mining rate (higher rate = shorter interval)
+                // Use log scale to handle wide range of rates
+                let spawnInterval = maxSpawnInterval;
+                if (miningRate > 0) {
+                    const logRate = Math.log10(Math.max(1, miningRate));
+                    // Map logRate (0-20+) to interval (maxSpawnInterval to minSpawnInterval)
+                    const normalizedRate = Math.min(1, logRate / 15); // Normalize to 0-1
+                    spawnInterval = maxSpawnInterval - (maxSpawnInterval - minSpawnInterval) * normalizedRate;
                 }
-            } else if (slagDiff < 0) {
-                // Remove slag particles (oldest first)
-                particleData.slag.sort((a, b) => a.spawnTime - b.spawnTime);
-                particleData.slag.splice(0, -slagDiff);
+                
+                // Check if enough time has passed since last spawn
+                const lastSpawnKey = `${zoneId}_${resourceType}_lastSpawn`;
+                if (!this.lastSpawnTime) this.lastSpawnTime = {};
+                const lastSpawn = this.lastSpawnTime[lastSpawnKey] || 0;
+                
+                // Only spawn if enough time has passed (rate limiting)
+                if (deltaTime < spawnInterval && lastSpawn > 0) {
+                    return pendingMass; // Not time to spawn yet
+                }
+                
+                // Calculate how many particles we can spawn based on pending mass
+                const currentCounts = this.countParticlesBySize(particles);
+                const currentOfSize = currentCounts[sizeClass] || 0;
+                const maxOfSize = maxParticles[sizeClass] || 0;
+                
+                // Check if we can spawn particles of this size
+                if (currentOfSize >= maxOfSize) {
+                    // At max for this size, try smaller sizes
+                    const sizeOrder = ['small', 'medium', 'large', 'xlarge'];
+                    const sizeIndex = sizeOrder.indexOf(sizeClass);
+                    for (let i = sizeIndex - 1; i >= 0; i--) {
+                        const trySize = sizeOrder[i];
+                        const tryMax = maxParticles[trySize] || 0;
+                        const tryCurrent = currentCounts[trySize] || 0;
+                        const tryMass = this.resourceSizes[trySize].mass;
+                        
+                        if (tryCurrent < tryMax && pendingMass >= tryMass) {
+                            // Spawn one particle of this smaller size
+                            const particle = this.spawnResourceParticle(zoneId, resourceType, trySize);
+                            if (particle) {
+                                particles.push(particle);
+                                this.lastSpawnTime[lastSpawnKey] = currentTime;
+                                return pendingMass - tryMass; // Return remaining pending mass
+                            }
+                        }
+                    }
+                    // Can't spawn any particles (all sizes at max)
+                    return pendingMass;
+                }
+                
+                // Spawn particles if we have enough pending mass
+                // Limit to 1-3 particles per spawn to keep it gradual
+                const maxParticlesPerSpawn = Math.min(3, Math.ceil(miningRate / 1e9)); // More at higher rates, but capped
+                if (pendingMass >= particleMass) {
+                    const numParticles = Math.min(
+                        Math.floor(pendingMass / particleMass),
+                        maxOfSize - currentOfSize,
+                        maxParticlesPerSpawn // Rate limit per spawn
+                    );
+                    
+                    for (let i = 0; i < numParticles; i++) {
+                        const particle = this.spawnResourceParticle(zoneId, resourceType, sizeClass);
+                        if (particle) {
+                            particles.push(particle);
+                            pendingMass -= particleMass;
+                        }
+                    }
+                    
+                    if (numParticles > 0) {
+                        this.lastSpawnTime[lastSpawnKey] = currentTime;
+                    }
+                }
+                
+                return pendingMass;
+            };
+            
+            // Helper function to remove particles when mass decreases
+            const removeParticlesForDecrease = (particles, massDecrease) => {
+                if (massDecrease >= 0) return;
+                
+                const toRemoveMass = Math.abs(massDecrease);
+                let remainingToRemove = toRemoveMass;
+                
+                // Remove largest particles first: xlarge -> large -> medium -> small
+                const sizeOrder = ['xlarge', 'large', 'medium', 'small'];
+                
+                for (const sizeClass of sizeOrder) {
+                    if (remainingToRemove <= 0) break;
+                    
+                    const particleMass = this.resourceSizes[sizeClass].mass;
+                    const particlesOfSize = particles.filter(p => (p.sizeClass || 'small') === sizeClass);
+                    
+                    if (particlesOfSize.length === 0) continue;
+                    
+                    // Sort by spawn time (oldest first)
+                    particlesOfSize.sort((a, b) => a.spawnTime - b.spawnTime);
+                    
+                    // Remove particles until we've accounted for the mass decrease
+                    while (remainingToRemove > 0 && particlesOfSize.length > 0) {
+                        const index = particles.indexOf(particlesOfSize[0]);
+                        if (index >= 0) {
+                            particles.splice(index, 1);
+                            particlesOfSize.shift();
+                            remainingToRemove -= particleMass;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            };
+            
+            // Gradually spawn metal particles from pending mass
+            pending.metal = spawnParticlesGradually(
+                particleData.metal, 
+                pending.metal, 
+                metalMiningRate, 
+                'metal', 
+                maxMetalParticles
+            );
+            
+            // Gradually spawn slag particles from pending mass
+            pending.slag = spawnParticlesGradually(
+                particleData.slag, 
+                pending.slag, 
+                slagMiningRate, 
+                'slag', 
+                maxSlagParticles
+            );
+            
+            // Gradually spawn methalox particles from pending mass
+            pending.methalox = spawnParticlesGradually(
+                particleData.methalox, 
+                pending.methalox, 
+                methaloxProductionRate, 
+                'methalox', 
+                maxMethaloxParticles
+            );
+            
+            // Handle resource decreases (consumption)
+            if (metalIncrease < 0) {
+                removeParticlesForDecrease(particleData.metal, metalIncrease);
+                // Also reduce pending if we consumed more than we had in particles
+                const totalParticleMass = particleData.metal.reduce((sum, p) => {
+                    const sizeClass = p.sizeClass || 'small';
+                    return sum + this.resourceSizes[sizeClass].mass;
+                }, 0);
+                if (totalParticleMass < currentMetal) {
+                    // We consumed more than particles represent, reduce pending
+                    pending.metal = Math.max(0, pending.metal + metalIncrease);
+                }
+            }
+            
+            if (slagIncrease < 0) {
+                removeParticlesForDecrease(particleData.slag, slagIncrease);
+                // Also reduce pending if we consumed more than we had in particles
+                const totalParticleMass = particleData.slag.reduce((sum, p) => {
+                    const sizeClass = p.sizeClass || 'small';
+                    return sum + this.resourceSizes[sizeClass].mass;
+                }, 0);
+                if (totalParticleMass < currentSlag) {
+                    // We consumed more than particles represent, reduce pending
+                    pending.slag = Math.max(0, pending.slag + slagIncrease);
+                }
+            }
+            
+            if (methaloxIncrease < 0) {
+                removeParticlesForDecrease(particleData.methalox, methaloxIncrease);
+                // Also reduce pending if we consumed more than we had in particles
+                const totalParticleMass = particleData.methalox.reduce((sum, p) => {
+                    const sizeClass = p.sizeClass || 'small';
+                    return sum + this.resourceSizes[sizeClass].mass;
+                }, 0);
+                if (totalParticleMass < currentMethalox) {
+                    // We consumed more than particles represent, reduce pending
+                    pending.methalox = Math.max(0, pending.methalox + methaloxIncrease);
+                }
             }
             
             // Update previous tracking
             this.previousResources[zoneId] = {
                 metal: currentMetal,
-                slag: currentSlag
+                slag: currentSlag,
+                methalox: currentMethalox
             };
+            this.lastUpdateTime[zoneId] = currentTime;
             
             // Rebuild the particle buffer with all active particles
             this.rebuildResourceParticleBuffer(zoneId);
@@ -2158,113 +2569,102 @@ class SolarSystem {
     
     /**
      * Rebuild the particle buffer for a zone with current active particles
-     * Handles both accretion disc (rocky planets) and spherical cloud (gas giants)
-     * @param {string} zoneId - Planet zone ID
+     * All zones now use accretion disc mode for a continuous disc effect
+     * Particles drift from their spawn position (at planet/body) to their target orbital position
+     * @param {string} zoneId - Zone ID
      */
     rebuildResourceParticleBuffer(zoneId) {
         const particleSystem = this.resourceParticles[zoneId];
         const particleData = this.resourceParticleData[zoneId];
-        const planet = this.planets[zoneId];
         
-        if (!particleSystem || !particleData || !planet) return;
+        if (!particleSystem || !particleData) return;
         
-        const allParticles = [...particleData.metal, ...particleData.slag];
+        const allParticles = [...particleData.metal, ...particleData.slag, ...particleData.methalox];
         const positions = particleSystem.geometry.attributes.position.array;
         const colors = particleSystem.geometry.attributes.color.array;
-        const userData = particleSystem.userData;
+        const sizeAttr = particleSystem.geometry.attributes.size;
+        const sizes = sizeAttr ? sizeAttr.array : null;
         
         for (let i = 0; i < allParticles.length && i < this.maxResourceParticles; i++) {
             const p = allParticles[i];
-            let x, y, z;
+            const timeSinceSpawn = this.time - p.spawnTime;
+            let currentAngle, currentDistance;
             
-            if (p.isAccretionDisc) {
-                // Accretion disc mode: particle orbits sun in flat ring
-                const timeSinceSpawn = this.time - p.spawnTime;
-                let currentAngle, currentDistance;
+            if (p.drifting) {
+                // Particle is drifting from spawn position (at planet) to target orbital position
+                const driftDuration = p.driftDuration || this.particleDriftDuration;
+                const driftProgress = Math.min(1, timeSinceSpawn / driftDuration);
+                // Ease-out cubic for smooth deceleration into orbit
+                const eased = 1 - Math.pow(1 - driftProgress, 3);
                 
-                if (p.isMassDriver && p.drifting) {
-                    // Mass driver mode: shoots out from planet along Hohmann transfer
-                    const transferDuration = p.transferDuration || this.particleDriftDuration;
-                    const driftProgress = Math.min(1, timeSinceSpawn / transferDuration);
-                    const eased = 1 - Math.pow(1 - driftProgress, 3);
-                    
-                    // Interpolate from spawn position to target orbit
-                    const baseAngle = p.spawnAngle + (p.targetAngle - p.spawnAngle) * eased;
-                    const orbitalOffset = timeSinceSpawn * p.orbitalSpeed;
-                    currentAngle = baseAngle + orbitalOffset;
-                    currentDistance = p.spawnDistance + (p.targetDistance - p.spawnDistance) * eased;
-                    
-                    if (driftProgress >= 1) {
-                        p.drifting = false;
-                    }
-                } else if (p.drifting) {
-                    // Legacy drifting particle (should not occur for new mining particles)
-                    const driftProgress = Math.min(1, timeSinceSpawn / this.particleDriftDuration);
-                    const eased = 1 - Math.pow(1 - driftProgress, 3);
-                    const orbitalOffset = timeSinceSpawn * p.orbitalSpeed;
-                    
-                    const baseAngle = p.spawnAngle + (p.targetAngle - p.spawnAngle) * eased;
-                    currentAngle = baseAngle + orbitalOffset;
-                    currentDistance = p.spawnDistance + (p.targetDistance - p.spawnDistance) * eased;
-                    
-                    if (driftProgress >= 1) {
-                        p.drifting = false;
-                    }
-                } else {
-                    // Mining particle: spawned in place, orbits at reduced speed
-                    // Uses orbitAngle (spawn position) + accumulated orbital motion
-                    const orbitalOffset = timeSinceSpawn * p.orbitalSpeed;
-                    currentAngle = p.orbitAngle + orbitalOffset;
-                    currentDistance = p.orbitDistance;
+                // Interpolate angle and distance from spawn to target
+                // Use shortest angular path
+                let angleDiff = p.targetAngle - p.spawnAngle;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                
+                const baseAngle = p.spawnAngle + angleDiff * eased;
+                // Blend orbital speed from planet's speed to particle's target speed
+                // This makes particles inherit planet velocity and gradually slow down
+                const planetSpeed = p.planetOrbitalSpeed || p.orbitalSpeed;
+                const blendedSpeed = planetSpeed * (1 - eased) + p.orbitalSpeed * eased;
+                const orbitalOffset = timeSinceSpawn * blendedSpeed;
+                currentAngle = baseAngle + orbitalOffset;
+                currentDistance = p.spawnDistance + (p.targetDistance - p.spawnDistance) * eased;
+                
+                if (driftProgress >= 1) {
+                    p.drifting = false;
+                    // Store final position for orbiting and the time when drift ended
+                    p.orbitAngle = currentAngle;
+                    p.orbitDistance = p.targetDistance;
+                    p.driftEndTime = this.time; // Track when drift ended for continuous orbital motion
                 }
-                
-                // Calculate position in ecliptic plane (orbiting sun at origin)
-                x = Math.cos(currentAngle) * currentDistance;
-                y = p.yOffset; // Small vertical offset for disc thickness
-                z = Math.sin(currentAngle) * currentDistance;
             } else {
-                // Spherical cloud mode: particle orbits planet
-                let radius;
-                if (p.drifting) {
-                    const driftProgress = Math.min(1, (this.time - p.spawnTime) / this.particleDriftDuration);
-                    const eased = 1 - Math.pow(1 - driftProgress, 3);
-                    radius = p.currentRadius + (p.targetRadius - p.currentRadius) * eased;
-                    
-                    if (driftProgress >= 1) {
-                        p.drifting = false;
-                        p.currentRadius = p.targetRadius;
-                    }
-                } else {
-                    radius = p.targetRadius;
-                }
-                
-                // Use theta that includes orbital motion since spawn (not absolute time)
-                const timeSinceSpawn = this.time - p.spawnTime;
-                const theta = p.theta + timeSinceSpawn * p.orbitalSpeed;
-                const phi = p.phi;
-                
-                // Calculate world position relative to planet
-                x = radius * Math.sin(phi) * Math.cos(theta) + planet.position.x;
-                y = radius * Math.cos(phi) + planet.position.y;
-                z = radius * Math.sin(phi) * Math.sin(theta) + planet.position.z;
+                // Particle has settled into orbit - continues orbiting at target distance
+                // Only add orbital motion for time AFTER drift ended (avoid double-counting)
+                const timeSinceDriftEnd = this.time - (p.driftEndTime || p.spawnTime);
+                const orbitalOffset = Math.max(0, timeSinceDriftEnd) * p.orbitalSpeed;
+                currentAngle = (p.orbitAngle || p.targetAngle) + orbitalOffset;
+                currentDistance = p.orbitDistance || p.targetDistance;
             }
+            
+            // Calculate position in ecliptic plane (orbiting sun at origin)
+            const x = Math.cos(currentAngle) * currentDistance;
+            const y = p.yOffset; // Small vertical offset for disc thickness
+            const z = Math.sin(currentAngle) * currentDistance;
             
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
             positions[i * 3 + 2] = z;
             
             // Set color based on type
-            const color = p.type === 'metal' ? this.resourceColors.metal : this.resourceColors.slag;
+            let color;
+            if (p.type === 'metal') {
+                color = this.resourceColors.metal;
+            } else if (p.type === 'methalox') {
+                color = this.resourceColors.methalox;
+            } else {
+                color = this.resourceColors.slag;
+            }
             // Add slight variation based on index
             const variation = 0.12;
             const varSeed = (i * 0.618) % 1;
             colors[i * 3] = Math.max(0, Math.min(1, color.r + (varSeed - 0.5) * variation));
             colors[i * 3 + 1] = Math.max(0, Math.min(1, color.g + (varSeed - 0.5) * variation));
             colors[i * 3 + 2] = Math.max(0, Math.min(1, color.b + (varSeed - 0.5) * variation));
+            
+            // Set size based on sizeClass
+            if (sizes) {
+                const sizeClass = p.sizeClass || 'small';
+                sizes[i] = this.resourceSizes[sizeClass]?.size || this.resourceSizes.small.size;
+            }
         }
         
         particleSystem.geometry.attributes.position.needsUpdate = true;
         particleSystem.geometry.attributes.color.needsUpdate = true;
+        if (particleSystem.geometry.attributes.size) {
+            particleSystem.geometry.attributes.size.needsUpdate = true;
+        }
         particleSystem.geometry.setDrawRange(0, Math.min(allParticles.length, this.maxResourceParticles));
     }
 

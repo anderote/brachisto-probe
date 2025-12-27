@@ -4,9 +4,13 @@ class PurchasePanel {
         this.container = document.getElementById(containerId);
         this.buildings = null;
         this.orbitalZones = null;
+        this.economicRules = null;
         this.hotkeys = {};
         this.selectedZone = null; // No zone selected by default
         this.collapsedCategories = new Set(); // Track collapsed categories
+        
+        // Cached energy values from economic rules (with fallbacks)
+        this.STRUCTURE_BASE_ENERGY_COST = 250000;  // 250 kW, updated from economic rules
         
         // Performance optimization: Cache DOM elements
         this.cachedElements = {
@@ -31,18 +35,31 @@ class PurchasePanel {
 
     async loadData() {
         try {
-            // Load buildings
-            const buildingsResponse = await fetch('/game_data/buildings.json');
+            // Load buildings and economic rules in parallel
+            const [buildingsResponse, economicRulesResponse] = await Promise.all([
+                fetch('/game_data/buildings.json'),
+                fetch('/game_data/economic_rules.json')
+            ]);
+            
             const buildingsData = await buildingsResponse.json();
             const rawBuildings = buildingsData.buildings || buildingsData;
+            
+            // Load economic rules
+            try {
+                this.economicRules = await economicRulesResponse.json();
+                this.STRUCTURE_BASE_ENERGY_COST = this.economicRules?.structures?.base_energy_cost_w ?? 250000;
+            } catch (e) {
+                console.warn('Failed to load economic rules:', e);
+                this.economicRules = null;
+            }
             
             // Convert to flat list with specific ordering
             if (rawBuildings && typeof rawBuildings === 'object' && !Array.isArray(rawBuildings)) {
                 // Check if it's the new format (has building IDs as keys)
                 const buildingKeys = Object.keys(rawBuildings);
                 if (buildingKeys.length > 0 && rawBuildings[buildingKeys[0]] && rawBuildings[buildingKeys[0]].id) {
-                    // Define the order: power_station, data_center, mass_driver
-                    const order = ['power_station', 'data_center', 'mass_driver'];
+                    // Define the order: methalox_refinery first, then power_station, data_center, mass_driver
+                    const order = ['methalox_refinery', 'power_station', 'data_center', 'mass_driver'];
                     
                     // Store buildings in a flat array with the specified order
                     this.buildings = [];
@@ -274,7 +291,8 @@ class PurchasePanel {
             const structuresByZone = this.gameState?.structures_by_zone || {};
             const zoneStructures = this.selectedZone ? (structuresByZone[this.selectedZone] || {}) : {};
             const currentCount = zoneStructures[buildingId] || 0;
-            const geometricFactor = Math.pow(currentCount, 2.1);
+            const geometricScalingExponent = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+            const geometricFactor = Math.pow(currentCount, geometricScalingExponent);
             
             // Get upgrade factors from game state
             const upgradeFactors = this.gameState?.upgrade_factors || {};
@@ -295,8 +313,7 @@ class PurchasePanel {
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
                 statsHtml += `<div class="building-stat-line">${probesDisplay} probes/day${countLabel}</div>`;
                 if (building.energy_cost_multiplier) {
-                    const baseEnergyCost = Config.PROBE_ENERGY_CONSUMPTION || 100000; // W per probe
-                    const energyCost = baseEnergyCost * building.energy_cost_multiplier;
+                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
                     const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
                                          energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
                                          `${energyCost.toFixed(0)} W`;
@@ -316,8 +333,7 @@ class PurchasePanel {
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
                 statsHtml += `<div class="building-stat-line">${metalDisplay} kg/day${countLabel}</div>`;
                 if (building.energy_cost_multiplier) {
-                    const baseEnergyCost = Config.PROBE_ENERGY_CONSUMPTION || 100000; // W per probe
-                    const energyCost = baseEnergyCost * building.energy_cost_multiplier;
+                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
                     const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
                                          energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
                                          `${energyCost.toFixed(0)} W`;
@@ -349,8 +365,7 @@ class PurchasePanel {
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
                 statsHtml += `<div class="building-stat-line">${computeDisplay}${countLabel}</div>`;
                 if (building.energy_cost_multiplier) {
-                    const baseEnergyCost = Config.PROBE_ENERGY_CONSUMPTION || 100000; // W per probe
-                    const energyCost = baseEnergyCost * building.energy_cost_multiplier;
+                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
                     const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
                                          energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
                                          `${energyCost.toFixed(0)} W`;
@@ -387,6 +402,48 @@ class PurchasePanel {
                 }
                 if (building.base_delta_v) {
                     statsHtml += `<div class="building-stat-line">Delta-V: ${building.base_delta_v.toFixed(0)} m/s</div>`;
+                }
+                statsHtml += '</div>';
+            } else if (building.production_rate_kg_per_day) {
+                // Methalox refinery - uses LINEAR scaling (not geometric)
+                // Display what the next refinery will add (base rate per refinery)
+                // and optionally show total production if some are already built
+                const baseRate = building.production_rate_kg_per_day;
+                // Methalox refineries don't use geometric scaling or performance upgrades
+                // Each refinery produces exactly baseRate kg/day
+                const nextRefineryRate = baseRate;
+                const totalRate = baseRate * (currentCount + 1); // After building the next one
+                const currentTotalRate = baseRate * currentCount;
+                
+                // Get zone limit for methalox refineries
+                const zoneLimit = building.max_per_zone?.[this.selectedZone] || 0;
+                const atLimit = zoneLimit > 0 && currentCount >= zoneLimit;
+                
+                statsHtml = '<div class="building-stats">';
+                if (currentCount > 0) {
+                    // Show current total and what the next one adds
+                    const currentDisplay = currentTotalRate >= 1e6 ? `${(currentTotalRate/1e6).toFixed(1)}M` : 
+                                          currentTotalRate >= 1e3 ? `${(currentTotalRate/1e3).toFixed(1)}k` : 
+                                          currentTotalRate.toFixed(0);
+                    const limitDisplay = zoneLimit > 0 ? ` / ${zoneLimit} max` : '';
+                    statsHtml += `<div class="building-stat-line">${currentDisplay} kg/day total (${currentCount}${limitDisplay})</div>`;
+                    if (!atLimit) {
+                        statsHtml += `<div class="building-stat-line">+${nextRefineryRate} kg/day each</div>`;
+                    } else {
+                        statsHtml += `<div class="building-stat-line" style="color: #ff6b6b;">Zone limit reached</div>`;
+                    }
+                } else {
+                    // No refineries yet, show what the first one produces
+                    const limitDisplay = zoneLimit > 0 ? ` (max ${zoneLimit} in zone)` : '';
+                    statsHtml += `<div class="building-stat-line">${nextRefineryRate} kg/day methalox${limitDisplay}</div>`;
+                }
+                if (building.energy_cost_multiplier) {
+                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
+                    const energyDisplay = energyCost >= 1e9 ? `${(energyCost/1e9).toFixed(1)} GW` : 
+                                         energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
+                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
+                                         `${energyCost.toFixed(0)} W`;
+                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
                 }
                 statsHtml += '</div>';
             }
@@ -580,25 +637,38 @@ class PurchasePanel {
     }
     
     getBuildingCost(building, buildingId = null) {
+        let baseCost = 0;
+        
         // New format: calculate from mass_multiplier
         if (building.mass_multiplier !== undefined) {
             const baseProbeMass = Config.PROBE_MASS || 100; // kg
-            const baseCost = baseProbeMass * building.mass_multiplier;
-            
-            // Apply exponential scaling if zone and building ID are provided
-            if (this.selectedZone && buildingId && this.gameState) {
-                const structuresByZone = this.gameState.structures_by_zone || {};
-                const zoneStructures = structuresByZone[this.selectedZone] || {};
-                const currentCount = zoneStructures[buildingId] || 0;
-                // Next building will cost baseCost * (currentCount + 1)^2.1
-                const scalingFactor = Math.pow(currentCount + 1, 2.1);
-                return baseCost * scalingFactor;
-            }
-            
+            baseCost = baseProbeMass * building.mass_multiplier;
+        } else if (building.mass_kg !== undefined) {
+            // Direct mass specification fallback
+            baseCost = building.mass_kg;
+        } else {
+            // Legacy format: use base_cost_metal
+            baseCost = building.base_cost_metal || 0;
+        }
+        
+        // Methalox refineries use flat cost (no geometric scaling)
+        // They have zone limits instead of exponential cost scaling
+        if (buildingId === 'methalox_refinery') {
             return baseCost;
         }
-        // Legacy format: use base_cost_metal
-        return building.base_cost_metal || 0;
+        
+        // Apply exponential scaling if zone and building ID are provided
+        if (this.selectedZone && buildingId && this.gameState && baseCost > 0) {
+            const structuresByZone = this.gameState.structures_by_zone || {};
+            const zoneStructures = structuresByZone[this.selectedZone] || {};
+            const currentCount = zoneStructures[buildingId] || 0;
+            // Next building will cost baseCost * (currentCount + 1)^exponent
+            const geometricScalingExponent = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+            const scalingFactor = Math.pow(currentCount + 1, geometricScalingExponent);
+            return baseCost * scalingFactor;
+        }
+        
+        return baseCost;
     }
 
     async purchaseItem(category, buildingId) {
@@ -892,7 +962,10 @@ class PurchasePanel {
                 const buildRateUpgradeFactor = techUpgradeFactors.probe_build || 1.0;
                 
                 // Base build rate: 20 kg/day per probe (from ProductionCalculator.BASE_BUILDING_RATE)
+                // Include replication rate bonus from starting skill points
                 const BASE_BUILDING_RATE = 20.0; // kg/day per probe
+                const replicationRateBonus = gameState.skill_bonuses?.replication_rate_bonus || 0;
+                const effectiveBuildRate = BASE_BUILDING_RATE + replicationRateBonus;
                 
                 // Calculate build rate per zone
                 const buildRateByZone = {};
@@ -913,7 +986,8 @@ class PurchasePanel {
                     const structureBuildingProbes = totalProbes * constructAllocation;
                     
                     // Calculate base build rate with upgrade factors (same as structure system)
-                    const baseBuildRateKgPerDay = structureBuildingProbes * BASE_BUILDING_RATE * buildRateUpgradeFactor;
+                    // Use effectiveBuildRate which includes skill bonus
+                    const baseBuildRateKgPerDay = structureBuildingProbes * effectiveBuildRate * buildRateUpgradeFactor;
                     
                     // Apply energy throttle (same as structure system does)
                     const effectiveBuildRateKgPerDay = baseBuildRateKgPerDay * energyThrottle;
@@ -948,12 +1022,6 @@ class PurchasePanel {
                 this.cachedElements.buildingProgressContainers = Array.from(this.container.querySelectorAll('.building-progress-container'));
                 this.cachedElements.lastCacheTime = Date.now();
             }
-            // Get structure start times for time progress tracking
-            const structureStartTimes = gameState.structure_construction_start_times || {};
-            const currentTime = gameState.time || 0;
-            
-            // Minimum build time for structures (3 days, 1000 for mass_driver)
-            const getMinBuildTime = (buildingId) => buildingId === 'mass_driver' ? 1000 : 3;
             
             this.cachedElements.buildingProgressContainers.forEach(container => {
                 const buildingId = container.id.replace('progress-', '');
@@ -964,15 +1032,11 @@ class PurchasePanel {
                 let metalProgress = 0;
                 let buildRatePerBuilding = 0;
                 let timeToComplete = Infinity;
-                let timeProgressPercent = 0;
-                let startTime = null;
-                const minBuildTime = getMinBuildTime(buildingId);
                 
                 if (this.selectedZone) {
                     // Show progress for selected zone
                     const enabledKey = `${this.selectedZone}::${buildingId}`;
                     metalProgress = structureProgress[enabledKey] || 0;
-                    startTime = structureStartTimes[enabledKey];
                     
                     // Get zone metal availability for throttling calculation
                     const zones = gameState.zones || {};
@@ -996,74 +1060,40 @@ class PurchasePanel {
                         }
                     }
                     
-                    // Calculate time progress (elapsed time / minimum build time)
-                    if (startTime !== null && startTime !== undefined) {
-                        const elapsedTime = currentTime - startTime;
-                        timeProgressPercent = Math.min(100, (elapsedTime / minBuildTime) * 100);
-                    }
-                    
-                    // Calculate time to complete (whichever is greater: remaining metal time or remaining min time)
+                    // Calculate time to complete based on metal progress
                     const remainingToBuild = costMetal - metalProgress;
-                    const metalTimeRemaining = (buildRatePerBuilding > 0 && remainingToBuild > 0) 
+                    timeToComplete = (buildRatePerBuilding > 0 && remainingToBuild > 0) 
                         ? remainingToBuild / buildRatePerBuilding 
                         : (remainingToBuild <= 0 ? 0 : Infinity);
-                    const timeRemaining = (startTime !== null && startTime !== undefined)
-                        ? Math.max(0, minBuildTime - (currentTime - startTime))
-                        : minBuildTime;
-                    
-                    // Time to complete is the max of the two (both need to be met)
-                    timeToComplete = Math.max(metalTimeRemaining, timeRemaining);
                 } else {
                     // No zone selected - show total progress across all zones
                     metalProgress = Object.entries(structureProgress)
                         .filter(([key]) => key.endsWith(`::${buildingId}`))
                         .reduce((sum, [, val]) => sum + val, 0);
                     
-                    // Get earliest start time for this building type
-                    const relevantStartTimes = Object.entries(structureStartTimes)
-                        .filter(([key]) => key.endsWith(`::${buildingId}`))
-                        .map(([, time]) => time);
-                    if (relevantStartTimes.length > 0) {
-                        startTime = Math.min(...relevantStartTimes);
-                        const elapsedTime = currentTime - startTime;
-                        timeProgressPercent = Math.min(100, (elapsedTime / minBuildTime) * 100);
-                    }
-                    
                     // Calculate total build rate across all zones for this building
                     let totalBuildRate = 0;
-                    let totalEnabled = 0;
                     for (const [zoneId, enabledKeys] of Object.entries(enabledBuildingsByZone)) {
                         if (enabledKeys.some(key => key.endsWith(`::${buildingId}`))) {
                             const zoneBuildRate = buildRateByZone[zoneId] || 0;
                             const numEnabledInZone = enabledKeys.length;
                             if (numEnabledInZone > 0) {
                                 totalBuildRate += zoneBuildRate / numEnabledInZone;
-                                totalEnabled++;
                             }
                         }
                     }
                     buildRatePerBuilding = totalBuildRate;
                     
-                    // Calculate time to complete
+                    // Calculate time to complete based on metal progress
                     const remainingToBuild = costMetal - metalProgress;
-                    const metalTimeRemaining = (buildRatePerBuilding > 0 && remainingToBuild > 0) 
+                    timeToComplete = (buildRatePerBuilding > 0 && remainingToBuild > 0) 
                         ? remainingToBuild / buildRatePerBuilding 
                         : (remainingToBuild <= 0 ? 0 : Infinity);
-                    const timeRemaining = (startTime !== null && startTime !== undefined)
-                        ? Math.max(0, minBuildTime - (currentTime - startTime))
-                        : minBuildTime;
-                    
-                    timeToComplete = Math.max(metalTimeRemaining, timeRemaining);
                 }
                 
-                // Calculate metal progress percentage
+                // Calculate metal progress percentage (this is now the only progress metric)
                 const metalProgressPercent = costMetal > 0 ? (metalProgress / costMetal) * 100 : 0;
-                
-                // Overall progress is the minimum of metal progress and time progress
-                // (both need to reach 100% for completion)
-                const overallProgressPercent = (startTime !== null && startTime !== undefined)
-                    ? Math.min(metalProgressPercent, timeProgressPercent)
-                    : metalProgressPercent;
+                const overallProgressPercent = metalProgressPercent;
                 
                 const progressPercentEl = document.getElementById(`progress-percent-${buildingId}`);
                 const progressTimeEl = document.getElementById(`progress-time-${buildingId}`);
@@ -1078,19 +1108,10 @@ class PurchasePanel {
                 }
                 
                 if (progressPercentEl) {
-                    // Show which constraint is limiting (metal or time)
-                    if (startTime !== null && startTime !== undefined && metalProgressPercent >= 100 && timeProgressPercent < 100) {
-                        // Metal done, waiting for time
-                        progressPercentEl.textContent = `${timeProgressPercent.toFixed(1)}% (time)`;
-                    } else if (startTime !== null && startTime !== undefined && timeProgressPercent >= 100 && metalProgressPercent < 100) {
-                        // Time done, waiting for metal
-                        progressPercentEl.textContent = `${metalProgressPercent.toFixed(1)}% (metal)`;
-                    } else {
-                        progressPercentEl.textContent = `${overallProgressPercent.toFixed(1)}%`;
-                    }
+                    progressPercentEl.textContent = `${overallProgressPercent.toFixed(1)}%`;
                 }
                 if (progressTimeEl) {
-                    if (timeToComplete === 0 || (metalProgressPercent >= 100 && timeProgressPercent >= 100)) {
+                    if (timeToComplete === 0 || metalProgressPercent >= 100) {
                         progressTimeEl.textContent = 'Complete';
                     } else if (timeToComplete === Infinity || !isFinite(timeToComplete)) {
                         progressTimeEl.textContent = '—';

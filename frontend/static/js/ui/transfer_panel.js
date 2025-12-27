@@ -157,6 +157,48 @@ class TransferPanel {
         this.setupEventListeners();
     }
 
+    renderSpawnedTransfer(batch, resourceType) {
+        // Calculate progress for individual spawned transfer
+        const progress = this.calculateBatchProgress(batch);
+        const progressPct = Math.min(100, Math.max(0, progress * 100));
+        
+        let amountText = '';
+        if (resourceType === 'metal') {
+            amountText = this.formatMass(batch.mass_kg || 0);
+        } else {
+            amountText = `${this.formatNumber(batch.count || 0)} probes`;
+        }
+        
+        let html = `<div class="transfer-spawned-item">`;
+        html += `<div class="transfer-spawned-info">`;
+        html += `<span class="transfer-spawned-amount">${amountText}</span>`;
+        html += `</div>`;
+        html += `<div class="transfer-spawned-progress">`;
+        html += `<div class="transfer-progress-bar-mini" style="width: ${progressPct.toFixed(0)}%"></div>`;
+        html += `<span class="transfer-progress-text-mini">${progressPct.toFixed(0)}%</span>`;
+        html += `</div>`;
+        html += `</div>`;
+        
+        return html;
+    }
+    
+    calculateBatchProgress(batch) {
+        if (!this.gameState) return 0;
+        
+        const currentTime = this.gameState.time || 0;
+        const departureTime = batch.departure_time || 0;
+        const arrivalTime = batch.arrival_time || currentTime;
+        
+        if (arrivalTime <= departureTime) return 1;
+        if (currentTime <= departureTime) return 0;
+        if (currentTime >= arrivalTime) return 1;
+        
+        const elapsed = currentTime - departureTime;
+        const total = arrivalTime - departureTime;
+        
+        return Math.max(0, Math.min(1, elapsed / total));
+    }
+
     renderTransferItem(transfer) {
         const fromName = this.getZoneName(transfer.from);
         const toName = this.getZoneName(transfer.to);
@@ -218,6 +260,24 @@ class TransferPanel {
                 html += `<div class="transfer-detail">Rate: ${ratePct.toFixed(1)}% of probe production</div>`;
             }
             html += `</div>`;
+            
+            // Show spawned individual transfers (in-transit batches)
+            if (transfer.in_transit && transfer.in_transit.length > 0) {
+                html += `<div class="transfer-spawned-list">`;
+                html += `<div class="transfer-spawned-header">${transfer.in_transit.length} shipment${transfer.in_transit.length > 1 ? 's' : ''} in transit:</div>`;
+                
+                // Show up to 5 most recent shipments
+                const recentBatches = transfer.in_transit.slice(-5);
+                for (const batch of recentBatches) {
+                    html += this.renderSpawnedTransfer(batch, resourceType);
+                }
+                
+                // Show count if more than 5
+                if (transfer.in_transit.length > 5) {
+                    html += `<div class="transfer-spawned-more">+ ${transfer.in_transit.length - 5} more shipments</div>`;
+                }
+                html += `</div>`;
+            }
             
             if (transfer.status === 'active') {
                 html += `<div class="transfer-item-actions">`;
@@ -372,6 +432,8 @@ class TransferPanel {
             hash = ((hash << 5) - hash) + (transfer.status === 'completed' ? 1 : 0);
             hash = ((hash << 5) - hash) + (transfer.paused ? 1 : 0);
             hash = ((hash << 5) - hash) + (transfer.resource_type === 'metal' ? 2 : 1);
+            // Include in_transit count for continuous transfers
+            hash = ((hash << 5) - hash) + (transfer.in_transit ? transfer.in_transit.length : 0);
         }
         const transfersHash = hash.toString() + '_' + activeTransfers.length;
         
@@ -401,6 +463,8 @@ class TransferPanel {
                 // Store departure and arrival times for progress calculation
                 existing.departure_time = activeTransfer.departure_time !== undefined ? activeTransfer.departure_time : existing.departure_time;
                 existing.arrival_time = activeTransfer.arrival_time !== undefined ? activeTransfer.arrival_time : existing.arrival_time;
+                // Sync in-transit batches for continuous transfers
+                existing.in_transit = activeTransfer.in_transit || [];
                 if (activeTransfer.type === 'one-time') {
                     existing.status = activeTransfer.status === 'completed' ? 'completed' : 
                                      activeTransfer.status === 'paused' ? 'paused' : 'in-progress';
@@ -422,6 +486,7 @@ class TransferPanel {
                     metal_rate_percentage: activeTransfer.metal_rate_percentage,
                     departure_time: activeTransfer.departure_time || 0,
                     arrival_time: activeTransfer.arrival_time || 0,
+                    in_transit: activeTransfer.in_transit || [],
                     status: activeTransfer.type === 'one-time' ? 
                            (activeTransfer.status === 'completed' ? 'completed' : 
                             activeTransfer.status === 'paused' ? 'paused' : 'in-progress') :

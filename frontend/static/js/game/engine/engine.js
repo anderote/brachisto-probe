@@ -71,8 +71,12 @@ class GameEngine {
         // Load economic rules for balancing
         this.economicRules = await this.loadEconomicRules();
         
+        // Load transfer delta-v data
+        const transferDeltaV = await this.dataLoader.loadTransferDeltaV();
+        
         // Initialize calculators with data
         this.orbitalMechanics.initialize(this.orbitalZones);
+        this.orbitalMechanics.initializeTransferData(transferDeltaV);
         this.skillsCalculator.initialize(this.researchTrees);
         this.researchCalculator.initialize(this.researchTrees);
         
@@ -93,8 +97,8 @@ class GameEngine {
                 this.techTree.initializeFromFlat(this.researchTrees);
             }
             
-            // Load existing research state from game state
-            this.techTree.loadFromState(this.state);
+            // Load existing research state from game state (initial load)
+            this.techTree.loadFromState(this.state, true);
         }
         
         // Initialize composite skills calculator (needs orbitalMechanics)
@@ -123,6 +127,9 @@ class GameEngine {
         
         // Initialize probes if not already done
         this.initializeProbes();
+        
+        // Initialize starting structures if configured
+        this.initializeStructures();
         
         this.initialized = true;
     }
@@ -187,6 +194,7 @@ class GameEngine {
                     probe_mass: 0,                           // Mass of all probes in zone
                     structure_mass: 0,                       // Mass of all structures in zone
                     slag_mass: 0,                            // Mass of slag in zone
+                    methalox: 0,                             // Mass of methalox fuel in zone
                     depleted: false                          // True when mass_remaining <= 0
                 };
             } else {
@@ -267,6 +275,16 @@ class GameEngine {
             this.state.zones = zones;
         }
         
+        // Apply initial zone resources (e.g., methalox) from config
+        const initialZoneResources = this.config.initial_zone_resources || {};
+        if (zones[defaultZoneId]) {
+            // Only apply if not already set (to support saved games)
+            if (initialZoneResources.methalox && (zones[defaultZoneId].methalox === undefined || zones[defaultZoneId].methalox === 0)) {
+                zones[defaultZoneId].methalox = initialZoneResources.methalox;
+            }
+            this.state.zones = zones;
+        }
+        
         // Initialize Dyson zone with 0 probes and 0 metal (player must build them)
         const dysonZoneId = 'dyson_sphere';
         if (!probesByZone[dysonZoneId]) {
@@ -280,6 +298,7 @@ class GameEngine {
                 probe_mass: 0,
                 structure_mass: 0,
                 slag_mass: 0,
+                methalox: 0,
                 depleted: false
             };
         } else if (zones[dysonZoneId].stored_metal === undefined) {
@@ -302,11 +321,11 @@ class GameEngine {
                     };
                 } else {
                     probeAllocationsByZone[zoneId] = {
-                        harvest: 0.5625,     // Slider 75 (sqrt(0.5625)*100 = 75)
-                        replicate: 1.0,      // Slider 100 (sqrt(1.0)*100 = 100)
+                        harvest: 1.0,        // Slider 100 (sqrt(1.0)*100 = 100)
+                        replicate: 0.01,     // Slider 10 (sqrt(0.01)*100 = 10)
                         construct: 0.01,     // Slider 10 (sqrt(0.01)*100 = 10)
                         recycle: 0.01,       // Slider 10 (sqrt(0.01)*100 = 10)
-                        recycle_probes: 0,   // 0% recycle probes
+                        recycle_probes: 0,   // Slider 0
                         dyson: 0
                     };
                 }
@@ -315,6 +334,48 @@ class GameEngine {
         
         this.state.probes_by_zone = probesByZone;
         this.state.probe_allocations_by_zone = probeAllocationsByZone;
+    }
+    
+    /**
+     * Initialize starting structures in state
+     * Reads from config.initial_structures: { zoneId: { buildingId: count, ... }, ... }
+     */
+    initializeStructures() {
+        const initialStructures = this.config.initial_structures;
+        if (!initialStructures) return;
+        
+        const structuresByZone = this.state.structures_by_zone || {};
+        const zones = this.state.zones || {};
+        
+        for (const [zoneId, structures] of Object.entries(initialStructures)) {
+            // Initialize zone structures if not exists
+            if (!structuresByZone[zoneId]) {
+                structuresByZone[zoneId] = {};
+            }
+            
+            // Ensure zone is initialized
+            this.ensureZoneInitialized(zoneId);
+            
+            // Add each structure
+            for (const [buildingId, count] of Object.entries(structures)) {
+                // Only add if not already set (to support saved games)
+                if (!structuresByZone[zoneId][buildingId] || structuresByZone[zoneId][buildingId] === 0) {
+                    structuresByZone[zoneId][buildingId] = count;
+                    
+                    // Update zone structure_mass
+                    const building = this.findBuilding(buildingId);
+                    if (building && zones[zoneId]) {
+                        const PROBE_MASS = 100; // Base probe mass in kg
+                        const massMultiplier = building.mass_multiplier || 1;
+                        const structureMass = PROBE_MASS * massMultiplier * count;
+                        zones[zoneId].structure_mass = (zones[zoneId].structure_mass || 0) + structureMass;
+                    }
+                }
+            }
+        }
+        
+        this.state.structures_by_zone = structuresByZone;
+        this.state.zones = zones;
     }
     
     /**
@@ -355,6 +416,10 @@ class GameEngine {
             // Fallback to old SkillsCalculator
             skills = this.skillsCalculator.calculateSkills(this.state.research || {}, this.state.time);
         }
+        
+        // Apply starting skill point bonuses to category skills
+        skills = this.applySkillBonuses(skills, this.state.skill_bonuses);
+        
         this.state.skills = skills;
         
         // 2. Get alpha factors from economic rules (with Config fallback)
@@ -370,12 +435,16 @@ class GameEngine {
             this.updateResearchWithTechTree(deltaTime, skills);
             // Recalculate skills after research update to ensure they reflect latest research state
             skills = this.techTree.getLegacySkills();
+            // Apply starting skill point bonuses again after recalculation
+            skills = this.applySkillBonuses(skills, this.state.skill_bonuses);
             this.state.skills = skills;
             this.state.tech_tree = this.techTree.exportToState();
         } else {
             this.state = this.researchCalculator.updateResearch(this.state, deltaTime, skills);
             // Recalculate skills after research update
             skills = this.skillsCalculator.calculateSkills(this.state.research || {}, this.state.time);
+            // Apply starting skill point bonuses again after recalculation
+            skills = this.applySkillBonuses(skills, this.state.skill_bonuses);
             this.state.skills = skills;
         }
         
@@ -495,6 +564,14 @@ class GameEngine {
             energyThrottle
         );
         
+        // 6.5. Process methalox production from refineries
+        this.state = this.structureSystem.processMethaloxProduction(
+            this.state,
+            deltaTime,
+            skills,
+            this.buildings
+        );
+        
         // 7. Process probe operations (mining, building, replication)
         const probeIterationStart = profiler ? profiler.startTiming('probe_iteration') : null;
         for (const zoneId in this.state.probes_by_zone || {}) {
@@ -539,10 +616,72 @@ class GameEngine {
         // 13. Calculate derived values (per-zone economics, then totals)
         this.calculateDerivedValues(skills, dysonPower, energyBalance);
         
+        // 14. Update cumulative stats and sample history
+        this.updateCumulativeStats(deltaTime, energyBalance);
+        
         if (profiler && tickStart !== null) {
             profiler.endTiming('tick', tickStart);
             profiler.recordTickTime(performance.now() - tickStart);
         }
+    }
+    
+    /**
+     * Apply starting skill point bonuses to skills
+     * Bonuses multiply all skills in their respective categories
+     * @param {Object} skills - Skills object from TechTree or SkillsCalculator
+     * @param {Object} bonuses - Skill bonuses from state (compute_bonus, energy_bonus, dexterity_bonus)
+     * @returns {Object} Skills with bonuses applied
+     */
+    applySkillBonuses(skills, bonuses) {
+        if (!bonuses) return skills;
+        
+        const computeBonus = bonuses.compute_bonus || 1.0;
+        const energyBonus = bonuses.energy_bonus || 1.0;
+        const dexterityBonus = bonuses.dexterity_bonus || 1.0;
+        
+        // No bonuses to apply
+        if (computeBonus === 1.0 && energyBonus === 1.0 && dexterityBonus === 1.0) {
+            return skills;
+        }
+        
+        // Clone skills to avoid mutation
+        const modifiedSkills = { ...skills };
+        
+        // Intelligence (compute) skills
+        const intelligenceSkills = ['gpu', 'interconnect', 'io_bandwidth', 'cpu', 'learning', 'research_rate', 'sensors'];
+        intelligenceSkills.forEach(skill => {
+            if (modifiedSkills[skill] !== undefined) {
+                modifiedSkills[skill] *= computeBonus;
+            }
+        });
+        
+        // Energy skills
+        const energySkills = ['solar_pv', 'energy_converter', 'battery_density', 'energy_transport', 'heat_pump', 'radiator', 'energy_collection', 'energy_storage'];
+        energySkills.forEach(skill => {
+            if (modifiedSkills[skill] !== undefined) {
+                modifiedSkills[skill] *= energyBonus;
+            }
+        });
+        
+        // Dexterity skills
+        const dexteritySkills = ['strength', 'dyson_construction', 'locomotion', 'materials', 'production', 'propulsion', 'recycling', 'manipulation', 'thrust', 'robotic'];
+        dexteritySkills.forEach(skill => {
+            if (modifiedSkills[skill] !== undefined) {
+                modifiedSkills[skill] *= dexterityBonus;
+            }
+        });
+        
+        // Also apply compute bonus to the computer sub-object if it exists
+        if (modifiedSkills.computer && computeBonus !== 1.0) {
+            modifiedSkills.computer = { ...modifiedSkills.computer };
+            ['processing', 'gpu', 'memory', 'interface', 'interconnect', 'transmission', 'total'].forEach(sub => {
+                if (modifiedSkills.computer[sub] !== undefined) {
+                    modifiedSkills.computer[sub] *= computeBonus;
+                }
+            });
+        }
+        
+        return modifiedSkills;
     }
     
     /**
@@ -672,43 +811,8 @@ class GameEngine {
             }
         }
         
-        // Handle computer_systems subcategories
-        if (category === 'intelligence' && this.researchTrees) {
-            const computerSystems = this.researchTrees['computer_systems'];
-            if (computerSystems && computerSystems.subcategories) {
-                for (const [subcatId, subcatData] of Object.entries(computerSystems.subcategories)) {
-                    if (!subcatData.tiers) continue;
-                    
-                    for (const tier of subcatData.tiers) {
-                        const tierKey = subcatId + '_' + tier.id;
-                        const tierProgress = this.techTree.getTierProgress('computer_systems', tierKey);
-                        
-                        if (!tierProgress.completed) {
-                            if (enabled) {
-                                const tierIndex = subcatData.tiers.findIndex(t => t.id === tier.id);
-                                let canEnable = true;
-                                
-                                if (tierIndex > 0) {
-                                    const prevTier = subcatData.tiers[tierIndex - 1];
-                                    const prevTierKey = subcatId + '_' + prevTier.id;
-                                    const prevProgress = this.techTree.getTierProgress('computer_systems', prevTierKey);
-                                    if (!prevProgress.completed) {
-                                        canEnable = false;
-                                    }
-                                }
-                                
-                                if (canEnable) {
-                                    this.techTree.enableTier('computer_systems', tierKey);
-                                    break;
-                                }
-                            } else {
-                                this.techTree.disableTier('computer_systems', tierKey);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Computer trees are now top-level (computer_processing, computer_gpu, etc.)
+        // They are handled in the main loop above since they have category 'computing'
         
         // Update state
         this.state.tech_tree = this.techTree.exportToState();
@@ -797,11 +901,12 @@ class GameEngine {
             
             if (totalProbes > 0 && replicateAllocation > 0) {
                 // Uses pre-calculated upgrade factors from state
-                // Applies zone crowding penalty
+                // Applies zone crowding penalty and probe count scaling penalty
                 const buildingRate = this.productionCalculator.calculateBuildingRate(
                     totalProbes * replicateAllocation, 
                     this.state,
-                    zoneId
+                    zoneId,
+                    totalProbes
                 );
                 rates.probe_production += buildingRate / 100;  // Convert kg/day to probes/day (100kg per probe)
             }
@@ -871,8 +976,6 @@ class GameEngine {
             
             // Probe counts (single probe type 'probe')
             const probeCount = zoneProbes['probe'] || 0;
-            
-            // Debug logging (remove after verification)
             
             // Read mass values from zone state (they're tracked there)
             const probeMass = zone.probe_mass || 0;
@@ -975,11 +1078,12 @@ class GameEngine {
             let zoneProbeProductionRate = 0;
             if (probesReplicating > 0) {
                 // Uses pre-calculated upgrade factors from state
-                // Applies zone crowding penalty
+                // Applies zone crowding penalty and probe count scaling penalty
                 const buildingRate = this.productionCalculator.calculateBuildingRate(
                     probesReplicating, 
                     this.state,
-                    zoneId
+                    zoneId,
+                    probeCount
                 );
                 zoneProbeProductionRate = buildingRate / 100;  // Convert kg/day to probes/day (100kg per probe)
             }
@@ -994,6 +1098,14 @@ class GameEngine {
             // Calculate zone crowding efficiency (diminishing returns based on probe mass)
             const zoneCrowdingEfficiency = this.productionCalculator.calculateZoneCrowdingPenalty(
                 zoneId,
+                this.state
+            );
+            
+            // Calculate methalox production rate for this zone
+            const methaloxProductionRate = this.productionCalculator.calculateMethaloxProduction(
+                structuresByZone,
+                zoneId,
+                this.buildings,
                 this.state
             );
             
@@ -1015,6 +1127,7 @@ class GameEngine {
                 metal_refined_rate: metalRefinedRate,
                 slag_produced_rate: slagProducedRate,
                 metal_consumed_rate: metalConsumedRate,
+                methalox_production_rate: methaloxProductionRate, // Methalox production rate (kg/day)
                 energy_produced: zoneEnergyProduction,
                 energy_consumed: energyConsumed,
                 energy_net: energyNet,
@@ -1109,11 +1222,97 @@ class GameEngine {
         derived.totals.intelligence_produced = this.state.intelligence || 0;
         derived.totals.energy_throttle = energyThrottle;
         
+        // Mass drivers are completely offline when net energy is negative
+        // (other activities just get throttled, but mass drivers turn off)
+        derived.totals.mass_drivers_operational = derived.totals.energy_net >= 0;
+        
         // Count probes in transit using TransferSystem method
         derived.totals.probes_transit = this.transferSystem.calculateTransitProbes(this.state);
         
         // Store in state
         this.state.derived = derived;
+    }
+    
+    /**
+     * Update cumulative statistics and sample history for plotting
+     * @param {number} deltaTime - Time delta in days
+     * @param {Object} energyBalance - Energy balance info
+     */
+    updateCumulativeStats(deltaTime, energyBalance) {
+        // Initialize cumulative_stats if not present
+        if (!this.state.cumulative_stats) {
+            this.state.cumulative_stats = {
+                metal_spent: 0,
+                energy_spent: 0,
+                flops_spent: 0,
+                probes_built: 0,
+                structures_built: 0,
+                dyson_mass_added: 0
+            };
+        }
+        
+        // Initialize stats_history if not present
+        if (!this.state.stats_history) {
+            this.state.stats_history = [];
+            this.state.stats_history_last_sample = 0;
+        }
+        
+        const stats = this.state.cumulative_stats;
+        const derived = this.state.derived || {};
+        const totals = derived.totals || {};
+        
+        // Track metal consumption (from building rate)
+        const metalConsumedRate = totals.metal_consumed_rate || 0;  // kg/day
+        stats.metal_spent += metalConsumedRate * deltaTime;
+        
+        // Track energy consumption (convert W to J: W * days * 86400 s/day)
+        const energyConsumed = energyBalance.consumption || 0;  // Watts
+        stats.energy_spent += energyConsumed * deltaTime * 86400;  // Joules
+        
+        // Track FLOPS spent on research (intelligence is FLOPS/s, deltaTime is days)
+        const intelligenceRate = this.state.intelligence || 0;  // FLOPS/s
+        stats.flops_spent += intelligenceRate * deltaTime * 86400;  // Total FLOPS
+        
+        // Track probes built (from probe production rate)
+        const probeProductionRate = this.state.rates?.probe_production || 0;  // probes/day
+        stats.probes_built += probeProductionRate * deltaTime;
+        
+        // Track Dyson mass added
+        const dysonBuildRate = this.state.rates?.dyson_construction || 0;  // kg/day
+        stats.dyson_mass_added += dysonBuildRate * deltaTime;
+        
+        // Sample history periodically (every 0.1 days = ~2.4 hours game time)
+        const SAMPLE_INTERVAL = 0.1;  // days
+        const currentTime = this.state.time || 0;
+        
+        if (currentTime - this.state.stats_history_last_sample >= SAMPLE_INTERVAL) {
+            // Add a new data point
+            this.state.stats_history.push({
+                time: currentTime,
+                metal_spent: stats.metal_spent,
+                energy_spent: stats.energy_spent,
+                flops_spent: stats.flops_spent,
+                probes_built: stats.probes_built,
+                probes_total: totals.probe_count || 0,
+                dyson_mass: this.state.dyson_sphere?.mass || 0
+            });
+            
+            this.state.stats_history_last_sample = currentTime;
+            
+            // Keep history size bounded (max ~1000 points = 100 days of game time)
+            const MAX_HISTORY_SIZE = 1000;
+            if (this.state.stats_history.length > MAX_HISTORY_SIZE) {
+                // Downsample: keep every other point in the older half
+                const midpoint = Math.floor(this.state.stats_history.length / 2);
+                const olderHalf = this.state.stats_history.slice(0, midpoint);
+                const newerHalf = this.state.stats_history.slice(midpoint);
+                
+                // Keep every other point from older half
+                const downsampledOlder = olderHalf.filter((_, i) => i % 2 === 0);
+                
+                this.state.stats_history = [...downsampledOlder, ...newerHalf];
+            }
+        }
     }
     
     /**
@@ -1323,7 +1522,7 @@ class GameEngine {
      * Allocate probes
      */
     allocateProbes(actionData) {
-        const { zone_id, allocations } = actionData;
+        const { zone_id, allocations, mass_limits } = actionData;
         
         if (!this.state.probe_allocations_by_zone) {
             this.state.probe_allocations_by_zone = {};
@@ -1337,7 +1536,39 @@ class GameEngine {
             this.state.probe_allocations_by_zone[zone_id][key] = Math.max(0, Math.min(1, allocations[key]));
         }
         
+        // Store mass limits for the zone (used by systems to limit production)
+        if (mass_limits) {
+            if (!this.state.zone_mass_limits) {
+                this.state.zone_mass_limits = {};
+            }
+            if (!this.state.zone_mass_limits[zone_id]) {
+                this.state.zone_mass_limits[zone_id] = {};
+            }
+            for (const key in mass_limits) {
+                this.state.zone_mass_limits[zone_id][key] = Math.max(0, Math.min(1, mass_limits[key]));
+            }
+        }
+        
         return { success: true };
+    }
+    
+    /**
+     * Calculate total zone mass (all mass in the zone)
+     * @param {string} zoneId - Zone identifier
+     * @returns {number} Total mass in kg
+     */
+    calculateTotalZoneMass(zoneId) {
+        const zone = this.state.zones?.[zoneId];
+        if (!zone) return 0;
+        
+        // Total mass = unmined mass + stored metal + probe mass + structure mass + slag mass
+        const massRemaining = zone.mass_remaining || 0;
+        const storedMetal = zone.stored_metal || 0;
+        const probeMass = zone.probe_mass || 0;
+        const structureMass = zone.structure_mass || 0;
+        const slagMass = zone.slag_mass || 0;
+        
+        return massRemaining + storedMetal + probeMass + structureMass + slagMass;
     }
     
     /**

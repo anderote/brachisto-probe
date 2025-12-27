@@ -131,19 +131,21 @@ class CommandPanel {
         };
         
         if (isDysonZone) {
-            // Dyson zone: 5 independent priority sliders (Dyson replaces Mine)
+            // Dyson zone: 6 independent priority sliders (Dyson replaces Mine)
             html += createPrioritySlider('dyson', 'Dyson');
             html += createPrioritySlider('replicate', 'Replicate');
             html += createPrioritySlider('construct', 'Construct');
-            html += createPrioritySlider('recycle', 'Recycle');
+            html += createPrioritySlider('recycle', 'Recycle Slag');
             html += createPrioritySlider('recycle_probes', 'Recycle Probes');
+            html += createPrioritySlider('idle', 'Idle');
         } else {
-            // Regular zones: 5 independent priority sliders
+            // Regular zones: 6 independent priority sliders
             html += createPrioritySlider('mine', 'Mine');
             html += createPrioritySlider('replicate', 'Replicate');
             html += createPrioritySlider('construct', 'Construct');
-            html += createPrioritySlider('recycle', 'Recycle');
+            html += createPrioritySlider('recycle', 'Recycle Slag');
             html += createPrioritySlider('recycle_probes', 'Recycle Probes');
+            html += createPrioritySlider('idle', 'Idle');
         }
         
         sliderContainer.innerHTML = html;
@@ -212,19 +214,21 @@ class CommandPanel {
         };
         
         if (isDysonZone) {
-            // Dyson zone: sync all 5 priority sliders
+            // Dyson zone: sync all 6 priority sliders (includes idle)
             syncSlider('dyson', policy.dyson_priority || 0);
             syncSlider('replicate', policy.replicate_priority || 0);
             syncSlider('construct', policy.construct_priority || 0);
             syncSlider('recycle', policy.recycle_priority || 0);
             syncSlider('recycle_probes', policy.recycle_probes_priority || 0);
+            syncSlider('idle', policy.idle_priority || 0);
         } else {
-            // Regular zones: sync all 5 priority sliders
+            // Regular zones: sync all 6 priority sliders (includes idle)
             syncSlider('mine', policy.mine_priority || 0);
             syncSlider('replicate', policy.replicate_priority || 0);
             syncSlider('construct', policy.construct_priority || 0);
             syncSlider('recycle', policy.recycle_priority || 0);
             syncSlider('recycle_probes', policy.recycle_probes_priority || 0);
+            syncSlider('idle', policy.idle_priority || 0);
         }
     }
 
@@ -237,10 +241,10 @@ class CommandPanel {
     }
 
     setupSliderListeners(isDysonZone) {
-        // Define the slider IDs based on zone type
+        // Define the slider IDs based on zone type (includes idle slider)
         const sliderIds = isDysonZone 
-            ? ['dyson', 'replicate', 'construct', 'recycle', 'recycle_probes']
-            : ['mine', 'replicate', 'construct', 'recycle', 'recycle_probes'];
+            ? ['dyson', 'replicate', 'construct', 'recycle', 'recycle_probes', 'idle']
+            : ['mine', 'replicate', 'construct', 'recycle', 'recycle_probes', 'idle'];
         
         // Remove old event listeners by cloning and replacing elements
         const removeOldListeners = (elementId) => {
@@ -297,8 +301,9 @@ class CommandPanel {
                 });
             }
         }
+        
     }
-
+    
     renderAllocations(zoneId) {
         const allocationsContainer = document.getElementById('command-allocations-container');
         if (!allocationsContainer || !this.gameState) return;
@@ -361,7 +366,7 @@ class CommandPanel {
                 html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Replicate:</span><span class="probe-summary-breakdown-value">${formatProbeCount(replicateCount)}</span></div>`;
             }
             if (recycleCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle Slag:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleCount)}</span></div>`;
             }
             if (recycleProbesCount > 0) {
                 html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle Probes:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleProbesCount)}</span></div>`;
@@ -377,7 +382,7 @@ class CommandPanel {
                 html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Replicate:</span><span class="probe-summary-breakdown-value">${formatProbeCount(replicateCount)}</span></div>`;
             }
             if (recycleCount > 0) {
-                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleCount)}</span></div>`;
+                html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle Slag:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleCount)}</span></div>`;
             }
             if (recycleProbesCount > 0) {
                 html += `<div class="probe-summary-breakdown-item"><span class="probe-summary-breakdown-label">Recycle Probes:</span><span class="probe-summary-breakdown-value">${formatProbeCount(recycleProbesCount)}</span></div>`;
@@ -386,7 +391,7 @@ class CommandPanel {
         
         // Show idle probes if any
         if (idleCount > 0.001) {
-            html += `<div class="probe-summary-breakdown-item" style="color: rgba(255,255,255,0.5);"><span class="probe-summary-breakdown-label">Idle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(idleCount)}</span></div>`;
+            html += `<div class="probe-summary-breakdown-item" style="color: rgba(255,150,100,0.7);"><span class="probe-summary-breakdown-label">Idle:</span><span class="probe-summary-breakdown-value">${formatProbeCount(idleCount)}</span></div>`;
         }
         
         if (totalProbes === 0) {
@@ -605,8 +610,9 @@ class CommandPanel {
     
     /**
      * Convert slider priority values to probe allocations using formula:
-     * p = v^2 / (v1^2 + v2^2 + v3^2 + v4^2)
-     * where v1, v2, v3, v4 are the slider values (0-1)
+     * p = v^2 / (v1 + v2 + v3 + v4 + v5 + v6)
+     * where v1-v6 are the slider values (0-1), including idle
+     * Idle probes do not consume energy or perform tasks
      */
     async updateProbeAllocationsFromSliders() {
         if (!this.selectedZone || typeof window.gameEngine === 'undefined' || !window.gameEngine) {
@@ -621,7 +627,7 @@ class CommandPanel {
             
             // Read current slider values directly from DOM (most up-to-date)
             // Slider values are 0-100, convert to 0-1 for calculation
-            let v1, v2, v3, v4, v5;
+            let v1, v2, v3, v4, v5, v6;
             
             if (isDysonZone) {
                 // Dyson zone: v1 = dyson priority (replaces mine)
@@ -630,12 +636,14 @@ class CommandPanel {
                 const constructSlider = document.getElementById('construct-slider');
                 const recycleSlider = document.getElementById('recycle-slider');
                 const recycleProbesSlider = document.getElementById('recycle_probes-slider');
+                const idleSlider = document.getElementById('idle-slider');
                 
                 v1 = (parseInt(dysonSlider?.value) || 0) / 100;
                 v2 = (parseInt(replicateSlider?.value) || 0) / 100;
                 v3 = (parseInt(constructSlider?.value) || 0) / 100;
                 v4 = (parseInt(recycleSlider?.value) || 0) / 100;
                 v5 = (parseInt(recycleProbesSlider?.value) || 0) / 100;
+                v6 = (parseInt(idleSlider?.value) || 0) / 100;
             } else {
                 // Regular zone: v1 = mine priority
                 const mineSlider = document.getElementById('mine-slider');
@@ -643,12 +651,14 @@ class CommandPanel {
                 const constructSlider = document.getElementById('construct-slider');
                 const recycleSlider = document.getElementById('recycle-slider');
                 const recycleProbesSlider = document.getElementById('recycle_probes-slider');
+                const idleSlider = document.getElementById('idle-slider');
                 
                 v1 = (parseInt(mineSlider?.value) || 0) / 100;
                 v2 = (parseInt(replicateSlider?.value) || 0) / 100;
                 v3 = (parseInt(constructSlider?.value) || 0) / 100;
                 v4 = (parseInt(recycleSlider?.value) || 0) / 100;
                 v5 = (parseInt(recycleProbesSlider?.value) || 0) / 100;
+                v6 = (parseInt(idleSlider?.value) || 0) / 100;
             }
             
             // Apply deadzone: values <= 0.05 become 0
@@ -657,6 +667,7 @@ class CommandPanel {
             if (v3 <= 0.05) v3 = 0;
             if (v4 <= 0.05) v4 = 0;
             if (v5 <= 0.05) v5 = 0;
+            if (v6 <= 0.05) v6 = 0;
             
             // Update zonePolicies cache
             if (!this.zonePolicies[this.selectedZone]) {
@@ -671,14 +682,16 @@ class CommandPanel {
             this.zonePolicies[this.selectedZone].construct_priority = v3 * 100;
             this.zonePolicies[this.selectedZone].recycle_priority = v4 * 100;
             this.zonePolicies[this.selectedZone].recycle_probes_priority = v5 * 100;
+            this.zonePolicies[this.selectedZone].idle_priority = v6 * 100;
             
-            // Calculate allocations using formula: p = v^2 / (v1 + v2 + v3 + v4 + v5)
+            // Calculate allocations using formula: p = v^2 / (v1 + v2 + v3 + v4 + v5 + v6)
             const v1Sq = v1 * v1;
             const v2Sq = v2 * v2;
             const v3Sq = v3 * v3;
             const v4Sq = v4 * v4;
             const v5Sq = v5 * v5;
-            const sum = v1 + v2 + v3 + v4 + v5;
+            const v6Sq = v6 * v6;
+            const sum = v1 + v2 + v3 + v4 + v5 + v6;
             
             let allocations = {};
             
@@ -690,6 +703,7 @@ class CommandPanel {
                         construct: v3Sq / sum,
                         recycle: v4Sq / sum,
                         recycle_probes: v5Sq / sum,
+                        idle: v6Sq / sum,
                         harvest: 0
                     };
                 } else {
@@ -699,22 +713,29 @@ class CommandPanel {
                         construct: v3Sq / sum,
                         recycle: v4Sq / sum,
                         recycle_probes: v5Sq / sum,
+                        idle: v6Sq / sum,
                         dyson: 0
                     };
                 }
             } else {
-                // All sliders at 0, set default allocation
-                if (isDysonZone) {
-                    allocations = { dyson: 1, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, harvest: 0 };
-                } else {
-                    allocations = { harvest: 1, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, dyson: 0 };
-                }
+                // All sliders at 0, set default allocation (all idle)
+                allocations = { dyson: 0, harvest: 0, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, idle: 1 };
             }
+            
+            // Calculate mass limits from slider values (0-1)
+            // These limits define the maximum percentage of zone mass for each activity
+            // For recycle_probes: the limit means probes should not exceed (1 - limit) of zone mass
+            const massLimits = {
+                replicate: v2,      // Max probe mass = replicate slider % of zone mass
+                construct: v3,      // Max structure mass = construct slider % of zone mass
+                recycle_probes: v5  // Recycle until probes are <= (1 - slider%) of zone mass
+            };
             
             // Send to worker via performAction
             await window.gameEngine.performAction('allocate_probes', {
                 zone_id: this.selectedZone,
-                allocations: allocations
+                allocations: allocations,
+                mass_limits: massLimits
             });
         } catch (error) {
             console.error('Failed to update probe allocations:', error);

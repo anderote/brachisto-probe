@@ -179,6 +179,30 @@ class FormatUtils {
         if (kg >= 1e3) return (kg / 1e3).toFixed(2) + ' kg';
         return kg.toFixed(2) + ' g';
     }
+    
+    /**
+     * Format energy value with appropriate SI prefix
+     * @param {number} watts - Energy in watts
+     * @returns {string} Formatted energy string (e.g., "1.50 MW")
+     */
+    static formatEnergy(watts) {
+        if (watts === 0 || watts === null || watts === undefined || isNaN(watts)) {
+            return '0 W';
+        }
+        
+        const absWatts = Math.abs(watts);
+        const sign = watts < 0 ? '-' : '';
+        
+        if (absWatts >= 1e24) return sign + (absWatts / 1e24).toFixed(2) + ' YW';
+        if (absWatts >= 1e21) return sign + (absWatts / 1e21).toFixed(2) + ' ZW';
+        if (absWatts >= 1e18) return sign + (absWatts / 1e18).toFixed(2) + ' EW';
+        if (absWatts >= 1e15) return sign + (absWatts / 1e15).toFixed(2) + ' PW';
+        if (absWatts >= 1e12) return sign + (absWatts / 1e12).toFixed(2) + ' TW';
+        if (absWatts >= 1e9) return sign + (absWatts / 1e9).toFixed(2) + ' GW';
+        if (absWatts >= 1e6) return sign + (absWatts / 1e6).toFixed(2) + ' MW';
+        if (absWatts >= 1e3) return sign + (absWatts / 1e3).toFixed(2) + ' kW';
+        return sign + absWatts.toFixed(2) + ' W';
+    }
 }
 
 // Export for use in other modules

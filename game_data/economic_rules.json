@@ -5,12 +5,22 @@
     "mass_kg": 100,
     "base_mining_rate_kg_per_day": 100,
     "base_build_rate_kg_per_day": 20,
-    "base_energy_consumption_w": 250000
+    "base_energy_production_w": 250000,
+    "base_energy_cost_mining_w": 250000,
+    "base_energy_cost_recycle_slag_w": 250000,
+    "base_compute_pflops": 100,
+    "base_compute_description": "Each probe has 100 PFLOPs of onboard compute, upgradeable through intelligence research"
+  },
+  
+  "probe_transfer": {
+    "base_delta_v_km_s": 7.5,
+    "description": "Starting probe delta-v capacity. Limits which orbits probes can self-transfer to."
   },
   
   "structures": {
     "base_probe_mass_kg": 100,
-    "geometric_scaling_exponent": 2.1
+    "geometric_scaling_exponent": 3.2,
+    "base_energy_cost_w": 250000
   },
   
   "dyson_sphere": {
@@ -25,7 +35,7 @@
   },
   
   "alpha_factors": {
-    "description": "Alpha factors control how much benefit research provides. Higher = more benefit.",
+    "description": "DEPRECATED: No longer used. Previously controlled geometric mean exponent. Now using weighted sum: factor = 1 + Σ(weight_i * (skill_i - 1))",
     "structure_performance": 0.8,
     "probe_performance": 0.75,
     "dyson_performance": 0.55,
@@ -33,38 +43,53 @@
   },
   
   "skill_coefficients": {
-    "description": "Coefficients for combining skills into upgrade factors. Uses geometric mean formula: F = G^alpha where G = (c1*s1 * c2*s2 * ...)^(1/n)",
+    "description": "Coefficients for combining skills into upgrade factors. Uses weighted sum formula: factor = 1 + Σ(weight_i * (skill_i - 1)). Weights are relative - higher weight means that skill contributes more to the final factor.",
     
     "probe_mining": {
-      "description": "Skills affecting probe mining rate",
+      "description": "Skills affecting probe mining rate (kg/day)",
       "manipulation": 1.0,
-      "strength": 0.6,
-      "sensors": 0.4,
-      "locomotion": 0.3
+      "strength": 0.8,
+      "sensors": 0.6,
+      "locomotion": 0.4,
+      "production": 0.5,
+      "materials": 0.4,
+      "cpu": 0.3,
+      "energy_transport": 0.2
     },
     
     "probe_building": {
-      "description": "Skills affecting probe build/replication rate",
+      "description": "Skills affecting probe build/replication rate (kg/day)",
       "production": 1.0,
       "manipulation": 1.0,
-      "strength": 0.4,
-      "materials": 0.2
+      "strength": 0.5,
+      "materials": 0.6,
+      "sensors": 0.4,
+      "locomotion": 0.3,
+      "cpu": 0.4,
+      "gpu": 0.3,
+      "energy_converter": 0.2
     },
     
     "structure_mining": {
       "description": "Skills affecting structure mining rate",
       "manipulation": 1.0,
       "strength": 1.0,
-      "locomotion": 0.4,
-      "materials": 0.2
+      "locomotion": 0.5,
+      "materials": 0.4,
+      "sensors": 0.5,
+      "production": 0.4,
+      "cpu": 0.3
     },
     
     "structure_building": {
       "description": "Skills affecting structure build rate",
       "production": 1.0,
       "manipulation": 1.0,
-      "materials": 0.4,
-      "strength": 0.2
+      "materials": 0.6,
+      "strength": 0.4,
+      "sensors": 0.3,
+      "cpu": 0.3,
+      "gpu": 0.2
     },
     
     "energy_generation": {
@@ -75,11 +100,36 @@
     },
     
     "compute": {
-      "description": "Skills affecting compute/intelligence production",
+      "description": "Skills affecting orbital data center compute capacity",
       "cpu": 1.0,
       "gpu": 1.0,
       "interconnect": 1.0,
-      "io_bandwidth": 1.0
+      "io_bandwidth": 0.8,
+      "learning": 0.6,
+      "research_rate": 0.4,
+      "sensors": 0.3
+    },
+    
+    "probe_compute": {
+      "description": "Skills affecting per-probe onboard compute capacity (base 100 PFLOPs)",
+      "cpu": 1.0,
+      "gpu": 1.0,
+      "interconnect": 0.7,
+      "io_bandwidth": 0.5,
+      "learning": 0.5,
+      "sensors": 0.3
+    },
+    
+    "dyson_compute": {
+      "description": "Skills affecting Dyson sphere compute capacity",
+      "cpu": 1.0,
+      "gpu": 1.0,
+      "interconnect": 1.0,
+      "io_bandwidth": 0.8,
+      "learning": 0.7,
+      "research_rate": 0.5,
+      "dyson_construction": 0.4,
+      "radiator": 0.3
     },
     
     "dyson_construction": {
@@ -96,27 +146,7 @@
       "dyson_construction": 1.0,
       "radiator": 0.4
     },
-    
-    "delta_v_reduction": {
-      "description": "Reduces delta-v fuel requirement for transfers",
-      "propulsion": 1.0,
-      "thrust": 0.3,
-      "materials": 0.2
-    },
-    
-    "transfer_speed": {
-      "description": "Reduces transfer travel time",
-      "propulsion": 0.5,
-      "thrust": 1.0,
-      "locomotion": 0.3
-    },
-    
-    "mass_driver_capacity": {
-      "description": "Metal kg/day launch capacity",
-      "strength": 1.0,
-      "energy_transport": 0.8,
-      "locomotion": 0.4
-    },
+  
     
     "metal_extraction": {
       "description": "Ore to metal conversion efficiency",
@@ -139,17 +169,45 @@
     },
     
     "salvage_efficiency": {
-      "description": "Metal recovery from scrapping",
+      "description": "Metal recovery percentage from scrapping structures",
       "recycling": 1.0,
-      "manipulation": 0.6,
-      "materials": 0.4
+      "manipulation": 0.7,
+      "materials": 0.5,
+      "sensors": 0.5,
+      "heat_pump": 0.4,
+      "production": 0.3
+    },
+    
+    "salvage_speed": {
+      "description": "Speed of salvage/scrapping operations (kg/day)",
+      "recycling": 0.8,
+      "manipulation": 1.0,
+      "strength": 0.7,
+      "locomotion": 0.5,
+      "production": 0.6,
+      "cpu": 0.3
     },
     
     "slag_recycling": {
-      "description": "Metal recovery from slag",
+      "description": "Metal recovery from slag processing",
       "recycling": 1.0,
-      "heat_pump": 0.5,
-      "materials": 0.3
+      "heat_pump": 0.7,
+      "materials": 0.5,
+      "sensors": 0.4,
+      "manipulation": 0.5,
+      "energy_converter": 0.4,
+      "production": 0.3
+    },
+    
+    "slag_recycling_speed": {
+      "description": "Speed of slag recycling operations (kg/day)",
+      "recycling": 0.8,
+      "manipulation": 0.8,
+      "strength": 0.6,
+      "heat_pump": 0.6,
+      "production": 0.7,
+      "energy_transport": 0.4,
+      "cpu": 0.3
     },
     
     "research_speed": {
@@ -170,6 +228,69 @@
     "probe_energy_consumption": {
       "description": "Skills reducing probe energy consumption",
       "energy_transport": 1.0,
+      "robotics": 0.5,
+      "radiator": 0.6,
+      "heat_pump": 0.4
+    },
+    
+    "probe_delta_v_capacity": {
+      "description": "Probe delta-v capacity for orbital transfers",
+      "propulsion": 1.2,
+      "materials": 0.5,
+      "thrust": 0.6,
+      "energy": 0.5,
+      "robotics": 0.5
+    },
+    
+    "mass_driver_muzzle_velocity": {
+      "description": "Mass driver muzzle velocity (delta-v capacity in km/s)",
+      "energy_converter": 1.0,
+      "propulsion": 0.9,
+      "thrust": 0.5,
+      "materials": 0.6,
+      "energy_storage": 1.0,
+      "thermal_management": 0.4,
+      "strength": 0.5,
+      "sensors": 0.4,
+      "cpu": 0.3,
+      "production": 0.3
+    },
+    
+    "mass_driver_power": {
+      "description": "Mass driver power capacity (MW)",
+      "solar_pv": 1.0,
+      "energy_transport": 0.9,
+      "energy_storage": 1.0,
+      "thermal_management": 0.5,
+      "robotics": 0.4,
+      "energy_converter": 0.7,
+      "strength": 0.4,
+      "cpu": 0.3,
+      "gpu": 0.2
+    },
+    
+    "mass_driver_efficiency": {
+      "description": "Mass driver energy efficiency (% of input energy converted to kinetic)",
+      "energy_converter": 1.0,
+      "energy_transport": 0.8,
+      "energy_storage": 0.8,
+      "thermal_management": 0.5,
+      "radiator": 0.8,
+      "heat_pump": 0.5,
+      "sensors": 0.3,
+      "cpu": 0.3
+    },
+    
+    "methalox_production": {
+      "description": "Skills affecting methalox refinery output rate",
+      "production": 1.0,
+      "heat_pump": 0.7,
+      "materials": 0.5
+    },
+    
+    "methalox_energy_cost": {
+      "description": "Skills reducing methalox refinery power consumption",
+      "energy_converter": 1.0,
       "radiator": 0.6,
       "heat_pump": 0.4
     }
@@ -179,6 +300,13 @@
     "description": "Zone crowding penalty parameters. At 1% probe mass ratio: no penalty. At 90%: 2% efficiency.",
     "threshold_ratio": 0.01,
     "decay_rate": 4.395
+  },
+  
+  "probe_count_scaling": {
+    "description": "Diminishing returns for probe count within each zone. Each doubling of probe count reduces efficiency. Formula: efficiency = (1 - penalty_per_doubling)^log2(probe_count). Compute upgrades reduce the penalty from base to min.",
+    "base_penalty_per_doubling": 0.005,
+    "min_penalty_per_doubling": 0.001,
+    "compute_skill_threshold": 6.19
   },
   
   "time": {

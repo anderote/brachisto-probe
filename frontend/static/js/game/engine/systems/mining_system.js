@@ -95,7 +95,8 @@ class MiningSystem {
             const miningProbes = totalProbes * harvestAllocation;
             // Mining rate is MASS extraction rate (kg/day), not metal
             // Uses pre-calculated upgrade factors from state
-            const probeMassMiningRate = this.productionCalculator.calculateMiningRate(miningProbes, zoneId, newState);
+            // Pass totalProbes for probe count scaling penalty
+            const probeMassMiningRate = this.productionCalculator.calculateMiningRate(miningProbes, zoneId, newState, totalProbes);
             
             // Structure mining (also returns mass rate)
             // Uses pre-calculated upgrade factors from state

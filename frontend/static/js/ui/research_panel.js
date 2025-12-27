@@ -112,10 +112,13 @@ class ResearchPanel {
             return 'dexterity';
         }
         
-        // Intelligence category (computer systems subcategories, research rate)
-        if (treeId === 'computer_systems' || treeId === 'research_rate_efficiency' ||
+        // Intelligence category (computer systems trees, research rate, sensors)
+        // Computer trees are now top-level: computer_processing, computer_gpu, computer_interconnect, computer_interface
+        if (treeId.startsWith('computer_') || treeId === 'research_rate_efficiency' ||
+            treeId === 'sensor_systems' ||
             name.includes('computer') || name.includes('research') || 
-            name.includes('compute') || category === 'computing' || category === 'research') {
+            name.includes('compute') || name.includes('sensor') ||
+            category === 'computing' || category === 'research' || category === 'intelligence') {
             return 'intelligence';
         }
         
@@ -183,7 +186,9 @@ class ResearchPanel {
         this._researchCardHandler = (e) => {
             // Find the closest research card element
             const researchCard = e.target.closest('.research-card');
-            if (!researchCard) return;
+            if (!researchCard) {
+                return;
+            }
             
             // Don't trigger if clicking on disabled cards
             if (researchCard.classList.contains('disabled')) {
@@ -210,7 +215,6 @@ class ResearchPanel {
             }
             
             // Clicking on the card both toggles research AND expands/collapses
-            console.log('[ResearchPanel] Research card clicked:', { treeId, tierId, subcatId });
             this.toggleResearchAndExpand(treeId, tierId, subcatId);
         };
         
@@ -262,20 +266,7 @@ class ResearchPanel {
         let anyEnabled = false;
         
         for (const [treeId, treeData] of trees) {
-            if (treeId === 'computer_systems' && treeData.subcategories) {
-                Object.entries(treeData.subcategories).forEach(([subcatId, subcatData]) => {
-                    if (subcatData.tiers) {
-                        subcatData.tiers.forEach(tier => {
-                            const tierKey = subcatId + '_' + tier.id;
-                            const progress = this.getTierProgress('computer_systems', tierKey);
-                            if (progress.enabled !== undefined) {
-                                if (progress.enabled) anyEnabled = true;
-                                else allEnabled = false;
-                            }
-                        });
-                    }
-                });
-            } else if (treeData.tiers) {
+            if (treeData.tiers) {
                 treeData.tiers.forEach(tier => {
                     const progress = this.getTierProgress(treeId, tier.id);
                     if (progress.enabled !== undefined) {
@@ -293,25 +284,16 @@ class ResearchPanel {
         html += '<div class="collapsible-category-header' + (isCollapsed ? ' collapsed' : '') + '" onclick="researchPanel.toggleCategoryCollapse(\'' + categoryId + '\')">';
         html += '<span class="collapsible-category-title">' + categoryName + '</span>';
         html += '<div style="display: flex; align-items: center; gap: 8px;">';
-        html += '<label class="category-toggle" onclick="event.stopPropagation();" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 9px;">';
-        html += '<input type="checkbox" class="category-toggle-checkbox" data-category="' + categoryId + '" ';
-        html += (categoryEnabled ? 'checked' : '') + ' onchange="researchPanel.toggleCategory(\'' + categoryId + '\', this.checked)">';
-        html += '<span class="category-toggle-label">Enable All</span>';
-        html += '</label>';
+        html += '<button class="category-toggle-btn enable-btn" onclick="event.stopPropagation(); researchPanel.toggleCategory(\'' + categoryId + '\', true);" style="font-size: 9px; padding: 2px 6px; cursor: pointer; background: rgba(74, 158, 255, 0.2); border: 1px solid rgba(74, 158, 255, 0.4); color: rgba(74, 158, 255, 0.9); border-radius: 3px;">Enable All</button>';
+        html += '<button class="category-toggle-btn disable-btn" onclick="event.stopPropagation(); researchPanel.toggleCategory(\'' + categoryId + '\', false);" style="font-size: 9px; padding: 2px 6px; cursor: pointer; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.4); color: rgba(255, 100, 100, 0.9); border-radius: 3px;">Disable All</button>';
         html += '<span class="collapsible-category-toggle">' + (isCollapsed ? '▶' : '▼') + '</span>';
         html += '</div>';
         html += '</div>';
         html += '<div class="collapsible-category-content' + (isCollapsed ? ' collapsed' : '') + '">';
         
         trees.forEach(([treeId, treeData]) => {
-            // Handle computer_systems subcategories specially - render each subcategory directly
-            if (treeId === 'computer_systems' && treeData.subcategories) {
-                Object.entries(treeData.subcategories).forEach(([subcatId, subcatData]) => {
-                    html += this.renderIntelligenceSubcategory(subcatId, subcatData, treeId);
-                });
-            } else {
-                html += this.renderResearchTree(treeId, treeData);
-            }
+            // All trees are now top-level (no more subcategory handling needed)
+            html += this.renderResearchTree(treeId, treeData);
         });
         
         html += '</div></div>';
@@ -327,203 +309,6 @@ class ResearchPanel {
         this.render();
     }
     
-    renderIntelligenceSubcategory(subcatId, subcatData, parentTreeId) {
-        // Render a computer systems subcategory directly as a research tree (Processing, Memory, Interface, Transmission)
-        const treeKey = parentTreeId + '_' + subcatId; // Use parentTreeId_subcatId as the key
-        const isExpanded = this.expandedTrees.has(treeKey);
-        
-        // Find next tier that can be researched
-        let nextTier = null;
-        let nextTierEnabled = false;
-        if (subcatData.tiers) {
-            const tiers = subcatData.tiers;
-            for (let idx = 0; idx < tiers.length; idx++) {
-                const tier = tiers[idx];
-                const tierKey = subcatId + '_' + tier.id;
-                const progress = this.getTierProgress(parentTreeId, tierKey);
-                const completed = progress.tranches_completed || 0;
-                const maxTranches = tier.tranches || 10;
-                if (completed < maxTranches) {
-                    // Check if previous tier is complete
-                    let canResearch = true;
-                    if (idx > 0) {
-                        const prevTier = tiers[idx - 1];
-                        const prevTierKey = subcatId + '_' + prevTier.id;
-                        const prevProgress = this.getTierProgress(parentTreeId, prevTierKey);
-                        const prevCompleted = prevProgress.tranches_completed || 0;
-                        if (prevCompleted < (prevTier.tranches || 10)) {
-                            canResearch = false;
-                        }
-                    }
-                    if (canResearch) {
-                        nextTier = tier;
-                        nextTierEnabled = progress.enabled || false;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // Calculate progress for this subcategory
-        let totalTranches = 0;
-        let completedTranches = 0;
-        if (subcatData.tiers) {
-            subcatData.tiers.forEach(tier => {
-                const tierKey = subcatId + '_' + tier.id;
-                const progress = this.getTierProgress(parentTreeId, tierKey);
-                const maxTranches = tier.tranches || 10;
-                totalTranches += maxTranches;
-                completedTranches += (progress.tranches_completed || 0);
-            });
-        }
-        const progressPercent = totalTranches > 0 ? (completedTranches / totalTranches) * 100 : 0;
-        const isComplete = completedTranches >= totalTranches;
-        
-        // Get current tier progress for display
-        let currentTierProgressPercent = 0;
-        let allocatedFLOPS = 0;
-        let timeToComplete = Infinity;
-        
-        if (nextTier && nextTierEnabled) {
-            const tierKey = subcatId + '_' + nextTier.id;
-            const tierProgress = this.getTierProgress(parentTreeId, tierKey);
-            const completed = tierProgress.tranches_completed || 0;
-            const maxTranches = nextTier.tranches || 10;
-            currentTierProgressPercent = (completed / maxTranches) * 100;
-            
-            // Get allocated FLOPS
-            if (this.gameState && this.gameState.research_allocation_info) {
-                const treeAlloc = this.gameState.research_allocation_info[parentTreeId];
-                if (treeAlloc && treeAlloc[tierKey] !== undefined) {
-                    allocatedFLOPS = treeAlloc[tierKey];
-                }
-            }
-            
-            // Calculate time to complete
-            if (allocatedFLOPS > 0 && nextTier.tranche_cost_intelligence) {
-                const remainingTranches = maxTranches - completed;
-                const flopsPerTranche = nextTier.tranche_cost_intelligence;
-                const remainingFLOPS = remainingTranches * flopsPerTranche;
-                timeToComplete = remainingFLOPS / (allocatedFLOPS * 86400);
-            }
-        }
-        
-        const enabledClass = nextTierEnabled ? 'research-enabled' : '';
-        const expandedClass = isExpanded || nextTierEnabled ? 'research-expanded' : '';
-        const clickableClass = nextTier ? 'building-card-clickable' : '';
-        
-        // Get tier description from metadata - search in all categories for computer-related trees
-        let tierDescription = null;
-        if (nextTier && this.researchMetadata) {
-            // Look for matching tree in metadata (computer_gpu, computer_processing, etc.)
-            const metadataTreeId = 'computer_' + subcatId;
-            tierDescription = this.getTierDescription(metadataTreeId, nextTier.id);
-        }
-        
-        let html = `<div class="probe-summary-item building-card research-card ${clickableClass} ${enabledClass} ${expandedClass}" 
-                     id="research-${treeKey}" 
-                     data-tree-id="${parentTreeId}"
-                     data-subcat-id="${subcatId}"
-                     data-tier-id="${nextTier ? (subcatId + '_' + nextTier.id) : ''}"
-                     style="cursor: ${nextTier ? 'pointer' : 'default'};">
-            <div class="probe-summary-label" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>${subcatData.name}</span>
-                <span style="font-size: 9px; color: ${nextTierEnabled ? 'rgba(100, 200, 100, 0.9)' : 'rgba(255, 255, 255, 0.4)'};">
-                    ${isComplete ? '✓ Complete' : (nextTierEnabled ? '● Active' : `${progressPercent.toFixed(0)}%`)}
-                </span>
-            </div>`;
-        
-        // Show expanded content when researching or manually expanded
-        if (isExpanded || nextTierEnabled) {
-            // Current tier info
-            if (nextTier) {
-                html += `<div style="font-size: 10px; color: rgba(255, 255, 255, 0.7); margin-top: 6px; margin-bottom: 4px;">
-                    <strong>Researching:</strong> ${nextTier.name}
-                </div>`;
-                
-                // Show tier description from metadata
-                if (tierDescription) {
-                    html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 6px; line-height: 1.3;">${tierDescription}</div>`;
-                }
-            } else {
-                html += `<div style="font-size: 9px; color: rgba(74, 158, 255, 0.8); margin-top: 4px;">All research complete</div>`;
-            }
-            
-            // Progress breakdown
-            html += `<div class="probe-summary-breakdown" style="margin-top: 5px;">
-                <div class="probe-summary-breakdown-item">
-                    <span class="probe-summary-breakdown-label">Progress:</span>
-                    <span class="probe-summary-breakdown-count">${completedTranches} / ${totalTranches} tranches</span>
-                </div>`;
-            
-            if (nextTier && nextTierEnabled && allocatedFLOPS > 0) {
-                html += `<div class="probe-summary-breakdown-item">
-                    <span class="probe-summary-breakdown-label">FLOPS:</span>
-                    <span class="probe-summary-breakdown-count">${this.formatFLOPS(allocatedFLOPS)}/s</span>
-                </div>`;
-            }
-            
-            html += `</div>`;
-            
-            // Progress bar for current tier
-            if (nextTier && nextTierEnabled) {
-                html += `<div class="building-progress-container" id="progress-${treeKey}" style="margin-top: 8px; padding: 6px; background: rgba(0, 0, 0, 0.2); border-radius: 3px;">
-                    <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
-                        <div id="progress-bar-${treeKey}" style="height: 100%; width: ${Math.min(100, Math.max(0, currentTierProgressPercent))}%; background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(74, 158, 255, 1)); transition: width 0.3s ease;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span class="probe-summary-breakdown-count" id="progress-percent-${treeKey}" style="font-size: 10px;">${currentTierProgressPercent.toFixed(1)}%</span>
-                        <span class="probe-summary-breakdown-count" id="progress-time-${treeKey}" style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">${timeToComplete === Infinity ? '—' : FormatUtils.formatTime(timeToComplete)}</span>
-                    </div>
-                </div>`;
-            }
-        }
-
-        html += '</div>';
-        return html;
-    }
-    
-    getCurrentTierForSubcategory(parentTreeId, subcatId) {
-        // Find the current tier in a subcategory
-        const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
-        if (!this.gameState || !researchState) return null;
-        
-        const treeState = researchState[parentTreeId];
-        if (!treeState) return null;
-
-        const treeData = this.researchData[parentTreeId];
-        if (!treeData || !treeData.subcategories) return null;
-        
-        const subcatData = treeData.subcategories[subcatId];
-        if (!subcatData || !subcatData.tiers) return null;
-
-        // Find the first tier with enabled flag (active research)
-        for (const tier of subcatData.tiers) {
-            const tierKey = subcatId + '_' + tier.id;
-            const tierState = treeState[tierKey] || treeState[tier.id];
-            const isEnabled = tierState?.enabled || false;
-            
-            if (isEnabled) {
-                return tier;
-            }
-        }
-
-        // No active research - find first incomplete tier
-        for (const tier of subcatData.tiers) {
-            const tierKey = subcatId + '_' + tier.id;
-            const tierState = treeState[tierKey] || treeState[tier.id];
-            const completed = tierState?.tranches_completed || 0;
-            const totalTranches = tier.tranches || 10;
-            
-            if (completed < totalTranches) {
-                return tier;
-            }
-        }
-
-        return null;
-    }
-    
-    
     getCurrentTier(treeId, tierId = null) {
         // Updated to handle both regular tiers and subcategory tiers
         const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
@@ -535,23 +320,8 @@ class ResearchPanel {
         const treeData = this.researchData[treeId];
         if (!treeData) return null;
         
-        // If tierId is provided, find that specific tier (for subcategories)
+        // If tierId is provided, find that specific tier
         if (tierId) {
-            // Handle subcategories (computer systems)
-            if (treeData.subcategories) {
-                for (const [subcatId, subcatData] of Object.entries(treeData.subcategories)) {
-                    if (subcatData.tiers) {
-                        for (const tier of subcatData.tiers) {
-                            const tierKey = subcatId + '_' + tier.id;
-                            if (tierKey === tierId || tier.id === tierId) {
-                                return tier;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Regular tiers
             if (treeData.tiers) {
                 for (const tier of treeData.tiers) {
                     if (tier.id === tierId) {
@@ -563,41 +333,6 @@ class ResearchPanel {
         }
         
         // Find the next available tier (first incomplete tier that can be researched)
-        // Handle subcategories (computer systems)
-        if (treeData.subcategories) {
-            for (const [subcatId, subcatData] of Object.entries(treeData.subcategories)) {
-                if (subcatData.tiers) {
-                    for (let idx = 0; idx < subcatData.tiers.length; idx++) {
-                        const tier = subcatData.tiers[idx];
-                        const tierKey = subcatId + '_' + tier.id;
-                        const tierState = treeState[tierKey] || treeState[tier.id];
-                        const completed = tierState?.tranches_completed || 0;
-                        const maxTranches = tier.tranches || 10;
-                        
-                        // Check if this tier is incomplete and can be researched (previous tier complete if not first)
-                        if (completed < maxTranches) {
-                            let canResearch = true;
-                            if (idx > 0) {
-                                const prevTier = subcatData.tiers[idx - 1];
-                                const prevTierKey = subcatId + '_' + prevTier.id;
-                                const prevState = treeState[prevTierKey] || treeState[prevTier.id];
-                                const prevCompleted = prevState?.tranches_completed || 0;
-                                const prevMax = prevTier.tranches || 10;
-                                if (prevCompleted < prevMax) {
-                                    canResearch = false;
-                                }
-                            }
-                            if (canResearch) {
-                                return tier;
-                            }
-                        }
-                    }
-                }
-            }
-            return null;
-        }
-        
-        // Regular tiers - find first incomplete tier that can be researched
         if (!treeData.tiers) return null;
 
         for (let idx = 0; idx < treeData.tiers.length; idx++) {
@@ -644,6 +379,7 @@ class ResearchPanel {
         
         // Find the next tier that can be researched (first incomplete tier)
         let nextTier = null;
+        let nextTierIndex = 0;
         let nextTierEnabled = false;
         for (let idx = 0; idx < tiers.length; idx++) {
             const tier = tiers[idx];
@@ -663,6 +399,7 @@ class ResearchPanel {
                 }
                 if (canResearch) {
                     nextTier = tier;
+                    nextTierIndex = idx;
                     nextTierEnabled = progress.enabled || false;
                     break;
                 }
@@ -688,9 +425,10 @@ class ResearchPanel {
         
         if (nextTier && nextTierEnabled) {
             const tierProgress = this.getTierProgress(treeId, nextTier.id);
-            const completed = tierProgress.tranches_completed || 0;
             const maxTranches = nextTier.tranches || 10;
-            currentTierProgressPercent = (completed / maxTranches) * 100;
+            
+            // Use smooth progress calculation for sub-tranche granularity
+            currentTierProgressPercent = this.calculateSmoothProgressPercent(tierProgress, nextTier, nextTierIndex);
             
             // Get allocated FLOPS
             if (this.gameState && this.gameState.research_allocation_info) {
@@ -700,12 +438,17 @@ class ResearchPanel {
                 }
             }
             
-            // Calculate time to complete
-            if (allocatedFLOPS > 0 && nextTier.tranche_cost_intelligence) {
-                const remainingTranches = maxTranches - completed;
-                const flopsPerTranche = nextTier.tranche_cost_intelligence;
-                const remainingFLOPS = remainingTranches * flopsPerTranche;
-                timeToComplete = remainingFLOPS / (allocatedFLOPS * 86400);
+            // Calculate time to complete using smooth progress
+            if (allocatedFLOPS > 0) {
+                const totalCost = this.calculateTierCostFLOPS(nextTier, nextTierIndex);
+                const currentProgress = tierProgress.progress || 0;
+                const remainingFLOPS = totalCost - currentProgress;
+                // allocatedFLOPS is FLOPS/day, remainingFLOPS is FLOPS (accumulated as FLOPS * days)
+                if (remainingFLOPS > 0) {
+                    timeToComplete = remainingFLOPS / allocatedFLOPS;
+                } else {
+                    timeToComplete = 0;
+                }
             }
         }
 
@@ -721,11 +464,14 @@ class ResearchPanel {
                      data-tree-id="${treeId}"
                      data-tier-id="${nextTier ? nextTier.id : ''}"
                      style="cursor: ${nextTier ? 'pointer' : 'default'};">
-            <div class="probe-summary-label" style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="probe-summary-label research-card-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>${treeData.name}</span>
-                <span style="font-size: 9px; color: ${nextTierEnabled ? 'rgba(100, 200, 100, 0.9)' : 'rgba(255, 255, 255, 0.4)'};">
-                    ${isComplete ? '✓ Complete' : (nextTierEnabled ? '● Active' : `${progressPercent.toFixed(0)}%`)}
-                </span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    ${nextTier && nextTierEnabled ? `<span class="research-toggle-hint" style="font-size: 8px; color: rgba(255, 255, 255, 0.3);">click to disable</span>` : ''}
+                    <span style="font-size: 9px; color: ${nextTierEnabled ? 'rgba(100, 200, 100, 0.9)' : 'rgba(255, 255, 255, 0.4)'};">
+                        ${isComplete ? '✓ Complete' : (nextTierEnabled ? '● Active' : `${progressPercent.toFixed(0)}%`)}
+                    </span>
+                </div>
             </div>`;
         
         // Show expanded content when researching or manually expanded
@@ -977,20 +723,79 @@ class ResearchPanel {
         const researchState = this.gameState?.tech_tree?.research_state || this.gameState?.research;
         
         if (!this.gameState || !researchState) {
-            return { tranches_completed: 0, enabled: false };
+            return { tranches_completed: 0, enabled: false, progress: 0 };
         }
         
         const treeState = researchState[treeId];
         if (!treeState) {
-            return { tranches_completed: 0, enabled: false };
+            return { tranches_completed: 0, enabled: false, progress: 0 };
         }
 
-        // Check if tierId is a subcategory tier (format: "subcatId_tierId")
-        if (tierId.includes('_')) {
-            return treeState[tierId] || { tranches_completed: 0, enabled: false };
+        return treeState[tierId] || { tranches_completed: 0, enabled: false, progress: 0 };
+    }
+    
+    /**
+     * Calculate tier cost in FLOPS (matching TechTree.addResearchProgress logic)
+     * @param {Object} tierDef - Tier definition from research data
+     * @param {number} tierIndex - Index of the tier in its tree/subcategory
+     * @returns {number} Total tier cost in FLOPS
+     */
+    calculateTierCostFLOPS(tierDef, tierIndex = 0) {
+        const EFLOPS_TO_FLOPS = 1e18;
+        const totalTranches = tierDef.tranches || 10;
+        
+        let tierCostEFLOPSDays;
+        if (tierDef.tier_cost_eflops_days !== undefined) {
+            tierCostEFLOPSDays = tierDef.tier_cost_eflops_days;
+        } else if (tierDef.tranche_cost_intelligence !== undefined) {
+            // Legacy: convert per-tranche cost to total tier cost
+            const legacyCost = tierDef.tranche_cost_intelligence;
+            const legacyCostEFLOPSDays = legacyCost / (EFLOPS_TO_FLOPS * 86400);
+            // If it's less than 50 EFLOPS-days, it's probably per-tranche
+            if (legacyCostEFLOPSDays < 50) {
+                tierCostEFLOPSDays = legacyCostEFLOPSDays * totalTranches;
+            } else {
+                tierCostEFLOPSDays = legacyCostEFLOPSDays;
+            }
+        } else {
+            // Default: tier 1 costs 1000 EFLOPS-days, each subsequent tier costs 150x more
+            const baseCostEFLOPSDays = 1000;
+            // Each tier costs 150x more than the previous tier
+            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(150, tierIndex);
         }
-
-        return treeState[tierId] || { tranches_completed: 0, enabled: false };
+        
+        // Convert to FLOPS (same units as progress: FLOPS * days)
+        return tierCostEFLOPSDays * EFLOPS_TO_FLOPS;
+    }
+    
+    /**
+     * Calculate smooth progress percentage using the progress field
+     * This provides sub-tranche granularity for smooth progress bar updates
+     * @param {Object} tierProgress - Tier progress from getTierProgress
+     * @param {Object} tierDef - Tier definition
+     * @param {number} tierIndex - Index of the tier in its tree/subcategory
+     * @returns {number} Progress percentage (0-100)
+     */
+    calculateSmoothProgressPercent(tierProgress, tierDef, tierIndex = 0) {
+        const totalTranches = tierDef.tranches || 10;
+        const tranchesCompleted = tierProgress.tranches_completed || 0;
+        
+        // If tier is complete, return 100%
+        if (tranchesCompleted >= totalTranches) {
+            return 100;
+        }
+        
+        // If we have the continuous progress field, use it for smooth percentage
+        const progress = tierProgress.progress || 0;
+        if (progress > 0) {
+            const totalCost = this.calculateTierCostFLOPS(tierDef, tierIndex);
+            if (totalCost > 0) {
+                return Math.min(100, (progress / totalCost) * 100);
+            }
+        }
+        
+        // Fallback to tranche-based calculation
+        return (tranchesCompleted / totalTranches) * 100;
     }
     
     /**
@@ -1011,33 +816,8 @@ class ResearchPanel {
             const prevTree = prevResearch[treeId] || {};
             const newTree = newResearch[treeId] || {};
             
-            // Handle subcategories (computer_systems)
-            if (treeData.subcategories) {
-                for (const [subcatId, subcatData] of Object.entries(treeData.subcategories)) {
-                    if (!subcatData.tiers) continue;
-                    
-                    for (const tier of subcatData.tiers) {
-                        const tierKey = `${subcatId}_${tier.id}`;
-                        const prevTier = prevTree[tierKey] || {};
-                        const newTier = newTree[tierKey] || {};
-                        
-                        // Check if enabled state changed (tier auto-enabled or completed)
-                        if ((prevTier.enabled || false) !== (newTier.enabled || false)) {
-                            return true;
-                        }
-                        
-                        // Check if tier just completed
-                        const maxTranches = tier.tranches || 10;
-                        const prevComplete = (prevTier.tranches_completed || 0) >= maxTranches;
-                        const newComplete = (newTier.tranches_completed || 0) >= maxTranches;
-                        if (!prevComplete && newComplete) {
-                            return true;
-                        }
-                    }
-                }
-            }
-            // Handle regular trees
-            else if (treeData.tiers) {
+            // All trees are now regular (no subcategory handling needed)
+            if (treeData.tiers) {
                 for (const tier of treeData.tiers) {
                     const prevTier = prevTree[tier.id] || {};
                     const newTier = newTree[tier.id] || {};
@@ -1065,31 +845,15 @@ class ResearchPanel {
         // Toggle research tier enabled/disabled
         try {
             if (typeof gameEngine === 'undefined') {
-                console.error('gameEngine not available');
                 return;
             }
             
             if (!this.researchData) {
-                console.error('Research data not loaded');
                 return;
             }
             
-            // Determine the tree key (could be a subcategory tree)
-            let treeKey = treeId;
-            if (treeId === 'computer_systems' && tierId.includes('_')) {
-                const parts = tierId.split('_');
-                if (parts.length >= 2) {
-                    const treeData = this.researchData[treeId];
-                    if (treeData && treeData.subcategories) {
-                        for (const [subcatId, subcatData] of Object.entries(treeData.subcategories)) {
-                            if (tierId.startsWith(subcatId + '_')) {
-                                treeKey = treeId + '_' + subcatId;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            // Tree key is just the treeId (no more subcategory handling needed)
+            const treeKey = treeId;
             
             // Find the card element
             const cardId = `research-${treeKey}`;
@@ -1119,21 +883,19 @@ class ResearchPanel {
             });
             
             if (response.success) {
-                // Update game state if provided
-                if (response.game_state) {
-                    this.update(response.game_state);
-                } else {
-                    this.render(); // Re-render to update UI
+                // Get the latest game state from the engine
+                const latestState = gameEngine.getGameState ? gameEngine.getGameState() : null;
+                if (latestState) {
+                    this.gameState = latestState;
                 }
                 
                 // If enabling, expand the research item to show details
                 if (enabled) {
-                    // Expand if not already expanded
                     this.expandedTrees.add(treeKey);
-                    this.render();
-                } else {
-                    this.render();
                 }
+                
+                // Re-render with updated state
+                this.render();
             } else {
                 // Revert card state on failure
                 if (card) {
@@ -1158,12 +920,9 @@ class ResearchPanel {
             alert('Failed to toggle research: ' + (error.message || 'Unknown error'));
             
             // Revert card state on error
-            const treeKey = treeId === 'computer_systems' && tierId.includes('_') 
-                ? treeId + '_' + tierId.split('_')[0] 
-                : treeId;
-            const cardId = `research-${treeKey}`;
+            const cardId = `research-${treeId}`;
             const card = document.getElementById(cardId);
-            const statusIndicator = document.getElementById(`status-${treeKey}`);
+            const statusIndicator = document.getElementById(`status-${treeId}`);
             if (card) {
                 if (!enabled) {
                     card.classList.add('research-enabled');
@@ -1185,7 +944,6 @@ class ResearchPanel {
         // Toggle all research in a category
         try {
             if (typeof gameEngine === 'undefined') {
-                console.error('gameEngine not available');
                 return;
             }
             
@@ -1195,11 +953,10 @@ class ResearchPanel {
             });
             
             if (response.success) {
-                // Update game state if provided
-                if (response.game_state) {
-                    this.update(response.game_state);
-                } else {
-                    this.render(); // Re-render to update UI
+                // Get the latest game state from the engine
+                const latestState = gameEngine.getGameState ? gameEngine.getGameState() : null;
+                if (latestState) {
+                    this.gameState = latestState;
                 }
                 
                 // If enabling, expand all research items in the category
@@ -1218,21 +975,13 @@ class ResearchPanel {
                     
                     const trees = categorizedTrees[category] || [];
                     trees.forEach(([treeId, treeData]) => {
-                        if (treeId === 'computer_systems' && treeData.subcategories) {
-                            // Handle subcategories
-                            Object.entries(treeData.subcategories).forEach(([subcatId, subcatData]) => {
-                                const treeKey = treeId + '_' + subcatId;
-                                this.expandedTrees.add(treeKey);
-                            });
-                        } else {
-                            // Regular tree
-                            this.expandedTrees.add(treeId);
-                        }
+                        // All trees are now top-level
+                        this.expandedTrees.add(treeId);
                     });
-                    
-                    // Re-render to show expanded state
-                    this.render();
                 }
+                
+                // Re-render with updated state
+                this.render();
             }
         } catch (error) {
             console.error('Error toggling category:', error);
@@ -1258,21 +1007,6 @@ class ResearchPanel {
     }
     
     async beginResearch(treeId) {
-        // Check if this is a subcategory tree (format: computer_systems_processing)
-        if (treeId.startsWith('computer_systems_')) {
-            const subcatId = treeId.replace('computer_systems_', '');
-            // This is an intelligence subcategory
-            const currentTier = this.getCurrentTierForSubcategory('computer_systems', subcatId);
-            if (!currentTier) {
-                alert('All research in this category is complete!');
-                return;
-            }
-
-            // Expand/collapse the tree content
-            this.toggleTreeExpansion(treeId);
-            return;
-        }
-
         const currentTier = this.getCurrentTier(treeId, null);
         if (!currentTier) {
             alert('All research in this tree is complete!');
@@ -1355,11 +1089,12 @@ class ResearchPanel {
             
             // Update progress bars
             if (shouldBeEnabled && tierState.tranches_completed !== undefined) {
-                const tierDef = this.getTierDefinition(treeId, tierId, subcatId);
-                if (tierDef) {
-                    const completed = tierState.tranches_completed || 0;
-                    const maxTranches = tierDef.tranches || 10;
-                    const progressPercent = (completed / maxTranches) * 100;
+                const tierDefAndIndex = this.getTierDefinitionWithIndex(treeId, tierId, subcatId);
+                if (tierDefAndIndex) {
+                    const { tierDef, tierIndex } = tierDefAndIndex;
+                    
+                    // Use smooth progress calculation for sub-tranche granularity
+                    const progressPercent = this.calculateSmoothProgressPercent(tierState, tierDef, tierIndex);
                     
                     const progressBar = document.getElementById(`progress-bar-${card.id.replace('research-', '')}`);
                     const progressPercentEl = document.getElementById(`progress-percent-${card.id.replace('research-', '')}`);
@@ -1371,20 +1106,26 @@ class ResearchPanel {
                         progressPercentEl.textContent = `${progressPercent.toFixed(1)}%`;
                     }
                     
-                    // Update time estimate if we have FLOPS allocation
+                    // Update time estimate using smooth progress
                     if (gameState.research_allocation_info) {
                         const treeAlloc = gameState.research_allocation_info[treeId];
                         if (treeAlloc && treeAlloc[tierId] !== undefined) {
                             const allocatedFLOPS = treeAlloc[tierId];
-                            if (allocatedFLOPS > 0 && tierDef.tranche_cost_intelligence) {
-                                const remainingTranches = maxTranches - completed;
-                                const flopsPerTranche = tierDef.tranche_cost_intelligence;
-                                const remainingFLOPS = remainingTranches * flopsPerTranche;
-                                const timeToComplete = remainingFLOPS / (allocatedFLOPS * 86400);
+                            if (allocatedFLOPS > 0) {
+                                const totalCost = this.calculateTierCostFLOPS(tierDef, tierIndex);
+                                const currentProgress = tierState.progress || 0;
+                                const remainingFLOPS = totalCost - currentProgress;
+                                let timeToComplete = Infinity;
+                                
+                                if (remainingFLOPS > 0) {
+                                    timeToComplete = remainingFLOPS / allocatedFLOPS;
+                                } else {
+                                    timeToComplete = 0;
+                                }
                                 
                                 const progressTimeEl = document.getElementById(`progress-time-${card.id.replace('research-', '')}`);
                                 if (progressTimeEl) {
-                                    if (timeToComplete === 0 || remainingTranches === 0) {
+                                    if (timeToComplete === 0 || remainingFLOPS <= 0) {
                                         progressTimeEl.textContent = 'Complete';
                                     } else if (timeToComplete === Infinity || !isFinite(timeToComplete)) {
                                         progressTimeEl.textContent = '—';
@@ -1401,25 +1142,29 @@ class ResearchPanel {
     }
     
     getTierDefinition(treeId, tierId, subcatId) {
+        const result = this.getTierDefinitionWithIndex(treeId, tierId, subcatId);
+        return result ? result.tierDef : null;
+    }
+    
+    /**
+     * Get tier definition along with its index (for cost calculations)
+     * @param {string} treeId - Tree ID
+     * @param {string} tierId - Tier ID
+     * @param {string} subcatId - Unused, kept for compatibility
+     * @returns {Object|null} { tierDef, tierIndex } or null
+     */
+    getTierDefinitionWithIndex(treeId, tierId, subcatId) {
         if (!this.researchData) return null;
         
         const treeData = this.researchData[treeId];
         if (!treeData) return null;
         
-        // Handle subcategories (computer systems)
-        if (subcatId && treeData.subcategories) {
-            const subcatData = treeData.subcategories[subcatId];
-            if (subcatData && subcatData.tiers) {
-                // Extract tier ID from tierId (format: "subcatId_tierId")
-                const parts = tierId.split('_');
-                const actualTierId = parts.length > 1 ? parts.slice(1).join('_') : tierId;
-                return subcatData.tiers.find(t => t.id === actualTierId);
-            }
-        }
-        
-        // Regular tiers
+        // All trees are now regular (no subcategory handling needed)
         if (treeData.tiers) {
-            return treeData.tiers.find(t => t.id === tierId);
+            const tierIndex = treeData.tiers.findIndex(t => t.id === tierId);
+            if (tierIndex >= 0) {
+                return { tierDef: treeData.tiers[tierIndex], tierIndex };
+            }
         }
         
         return null;

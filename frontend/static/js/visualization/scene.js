@@ -13,11 +13,13 @@ class SceneManager {
         this.currentCometIndex = -1; // -1 means not tracking any comet
         this.currentTransferIndex = -1; // -1 means not tracking any transfer
         this.cometKeyPressed = false; // Track if 'c' key was just pressed (to avoid rapid cycling)
-        this.transferKeyPressed = false; // Track if 't' key was just pressed (to avoid rapid cycling)
+        this.transferKeyPressed = false; // Track if 'm' key was just pressed (to avoid rapid cycling)
         this.arrowLeftPressed = false; // Track arrow key state for comet/transfer navigation
         this.arrowRightPressed = false; // Track arrow key state for comet/transfer navigation
         this.tabKeyPressed = false; // Track if Tab key was just pressed (to avoid rapid toggling)
+        this.infoKeyPressed = false; // Track if 'i' key was just pressed (to avoid rapid toggling)
         this.orbitalLinesVisible = true; // Current visibility state of orbital lines
+        this.transferInfoVisible = true; // Current visibility state of transfer info overlay
         this.trackingMode = null; // 'comet', 'transfer', or null
         
         // Post-processing
@@ -139,7 +141,7 @@ class SceneManager {
         this.canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             const delta = e.deltaY > 0 ? 1 : -1;
-            this.cameraController.zoom(delta * 0.5);
+            this.cameraController.zoom(delta * 1.2);
         }, { passive: false });
 
         // Mouse drag for 3D rotation
@@ -284,14 +286,16 @@ class SceneManager {
             this.cometKeyPressed = false;
         }
         
-        // Handle 't' key to start tracking transfers (only if not already tracking transfers)
-        if ((this.keys['t'] || this.keys['T']) && !this.transferKeyPressed) {
+        // Handle 'm' key to cycle through transfers (start tracking or go to next)
+        if ((this.keys['m'] || this.keys['M']) && !this.transferKeyPressed) {
             this.transferKeyPressed = true;
-            // Only start tracking if not already tracking a transfer
-            if (this.trackingMode !== 'transfer') {
+            // If already tracking a transfer, go to next; otherwise start with first
+            if (this.trackingMode === 'transfer') {
+                this.cycleToNextTransfer();
+            } else {
                 this.startTransferTracking();
             }
-        } else if (!this.keys['t'] && !this.keys['T']) {
+        } else if (!this.keys['m'] && !this.keys['M']) {
             this.transferKeyPressed = false;
         }
         
@@ -303,6 +307,16 @@ class SceneManager {
             this.tabKeyPressed = false;
         }
         
+        // Handle 'i' key to toggle transfer info overlay visibility (only when tracking transfers)
+        if ((this.keys['i'] || this.keys['I']) && !this.infoKeyPressed) {
+            this.infoKeyPressed = true;
+            if (this.trackingMode === 'transfer') {
+                this.toggleTransferInfo();
+            }
+        } else if (!this.keys['i'] && !this.keys['I']) {
+            this.infoKeyPressed = false;
+        }
+        
         // Handle Escape key to stop tracking
         if (this.keys['Escape'] && this.trackingMode) {
             this.stopTracking();
@@ -310,6 +324,11 @@ class SceneManager {
         }
 
         this.cameraController.update(deltaTime);
+        
+        // Update transfer info overlay with real-time values
+        if (this.trackingMode === 'transfer') {
+            this.updateTransferInfoRealtime();
+        }
 
         // Update god rays light position based on sun's screen position
         if (this.godRaysPass) {
@@ -455,6 +474,11 @@ class SceneManager {
      * @param {Function} getPositionFn - Function that returns the current THREE.Vector3 position
      */
     startTracking(getPositionFn) {
+        // Hide transfer info when switching to non-transfer tracking (e.g., zone or comet)
+        if (this.trackingMode !== 'transfer') {
+            this.hideTransferInfo();
+        }
+        
         if (this.cameraController) {
             this.cameraController.startTracking(getPositionFn);
         }
@@ -470,6 +494,7 @@ class SceneManager {
         this.currentCometIndex = -1;
         this.currentTransferIndex = -1;
         this.trackingMode = null;
+        this.hideTransferInfo();
     }
     
     /**
@@ -508,6 +533,263 @@ class SceneManager {
     }
     
     /**
+     * Toggle visibility of transfer info overlay
+     */
+    toggleTransferInfo() {
+        this.transferInfoVisible = !this.transferInfoVisible;
+        
+        const overlay = document.getElementById('transfer-info-overlay');
+        if (overlay) {
+            if (this.transferInfoVisible && this.currentTrackedTransfer) {
+                overlay.style.display = 'block';
+            } else {
+                overlay.style.display = 'none';
+            }
+        }
+        
+        console.log(`Transfer info ${this.transferInfoVisible ? 'shown' : 'hidden'} (press I to toggle)`);
+    }
+    
+    /**
+     * Show transfer info overlay with details about the tracked transfer
+     * @param {Object} transferData - Transfer data from getActiveTransfers()
+     */
+    showTransferInfo(transferData) {
+        const overlay = document.getElementById('transfer-info-overlay');
+        if (!overlay) return;
+        
+        const viz = transferData.viz;
+        if (!viz) {
+            this.hideTransferInfo();
+            return;
+        }
+        
+        // Get zone names for display
+        const fromZoneName = this.formatZoneName(viz.fromZoneId);
+        const toZoneName = this.formatZoneName(viz.toZoneId);
+        
+        // Get resource type - try multiple sources
+        let resourceType = viz.resourceType || 'probe';
+        
+        // Fallback: try to get from game state transfer object
+        if (resourceType === 'probe' && gameState) {
+            const activeTransfers = gameState.active_transfers || [];
+            // Try to find transfer by ID (might be in transferId field for batches)
+            const transferId = transferData.id;
+            const transfer = activeTransfers.find(t => {
+                // Check if ID matches directly or if it's a batch ID
+                if (t.id === transferId) return true;
+                // For batch IDs, check if it starts with transfer ID
+                if (transferId.includes('_') && transferId.startsWith(t.id + '_')) return true;
+                return false;
+            });
+            
+            if (transfer && transfer.resource_type) {
+                resourceType = transfer.resource_type;
+            }
+        }
+        
+        const resourceLabel = resourceType.charAt(0).toUpperCase() + resourceType.slice(1) + 's';
+        
+        // Get current game time
+        const gameState = window.gameEngine?.getGameState();
+        const currentTime = gameState?.time || 0;
+        
+        // Calculate time to arrival
+        const arrivalTime = viz.arrivalTime || 0;
+        const timeToArrival = Math.max(0, arrivalTime - currentTime);
+        
+        // Calculate current velocity
+        const tripTime = arrivalTime - (viz.departureTime || 0);
+        const elapsed = currentTime - (viz.departureTime || 0);
+        let currentVelocity = viz.fromVelocity || 0;
+        if (this.transferViz && tripTime > 0) {
+            currentVelocity = this.transferViz.calculateCurrentVelocity(
+                viz.fromVelocity || 0,
+                viz.toVelocity || 0,
+                elapsed,
+                tripTime
+            );
+        }
+        
+        // Get total transfers count
+        const activeTransfers = this.getActiveTransfers();
+        const transferIndex = this.currentTransferIndex + 1;
+        const totalTransfers = activeTransfers.length;
+        
+        // Build transfer-specific info based on resource type
+        let transferTypeInfo = '';
+        
+        // Debug: log resource type
+        console.log('[TransferInfo] Resource type:', resourceType, 'viz.resourceType:', viz.resourceType);
+        
+        if (resourceType === 'probe') {
+            // Probe transfer info
+            const skills = gameState?.skills || {};
+            const probeMass = 100; // kg per probe
+            // Include probe delta-v bonus from starting skill points
+            const probeDvBonus = gameState?.skill_bonuses?.probe_dv_bonus || 0;
+            const probeDeltaV = window.gameEngine?.orbitalMechanics?.getProbeDeltaVCapacity?.(skills, probeDvBonus) || 1.0;
+            const requiredDeltaV = window.gameEngine?.orbitalMechanics?.getDeltaVKmS?.(viz.fromZoneId, viz.toZoneId, skills) || 0;
+            
+            // Get upgrade contributions
+            const economicRules = window.gameEngine?.dataLoader?.economicRules;
+            let upgradeContributions = [];
+            if (economicRules?.skill_coefficients?.probe_delta_v_capacity) {
+                const coefficients = economicRules.skill_coefficients.probe_delta_v_capacity;
+                for (const [skillName, coefficient] of Object.entries(coefficients)) {
+                    if (skillName === 'description') continue;
+                    const skillValue = skills[skillName] || 1.0;
+                    if (skillValue > 1.0) {
+                        upgradeContributions.push(`${skillName}: ${(coefficient * 100).toFixed(0)}%`);
+                    }
+                }
+            }
+            
+            transferTypeInfo = `
+                <div class="transfer-info-line" style="color: #4a9eff; font-weight: bold; margin-top: 8px;">PROBE HOHMANN TRANSFER</div>
+                <div class="transfer-info-line">Mass: ${probeMass} kg</div>
+                <div class="transfer-info-line">Delta-V: ${probeDeltaV.toFixed(2)} km/s (required: ${requiredDeltaV.toFixed(2)} km/s)</div>
+                ${upgradeContributions.length > 0 ? `<div class="transfer-info-line" style="color: rgba(255,255,255,0.6); font-size: 0.9em;">Upgrades: ${upgradeContributions.join(', ')}</div>` : ''}
+            `;
+        } else {
+            // Metal transfer info (default to metal if not probe)
+            const powerMW = window.gameEngine?.transferSystem?.getMassDriverPowerDraw?.(gameState, viz.fromZoneId) || 100;
+            const efficiency = window.gameEngine?.transferSystem?.getMassDriverEfficiency?.(gameState, viz.fromZoneId) || 0.4;
+            const muzzleVelocity = window.gameEngine?.transferSystem?.getMassDriverMuzzleVelocity?.(gameState, viz.fromZoneId) || 3.0;
+            const requiredDeltaV = window.gameEngine?.orbitalMechanics?.getDeltaVKmS?.(viz.fromZoneId, viz.toZoneId) || 0;
+            
+            transferTypeInfo = `
+                <div class="transfer-info-line" style="color: #4a9eff; font-weight: bold; margin-top: 8px;">LINEAR MASS DRIVER</div>
+                <div class="transfer-info-line">Power Capacity: ${powerMW.toFixed(0)} MW</div>
+                <div class="transfer-info-line">Efficiency: ${(efficiency * 100).toFixed(1)}%</div>
+                <div class="transfer-info-line">Delta-V: ${muzzleVelocity.toFixed(2)} km/s (required: ${requiredDeltaV.toFixed(2)} km/s)</div>
+            `;
+        }
+        
+        // Convert velocity from AU/day to km/s
+        // 1 AU = 149,597,870.7 km, 1 day = 86,400 seconds
+        // AU/day to km/s: multiply by 149,597,870.7 / 86,400 ≈ 1731.46
+        const AU_TO_KM = 149597870.7;
+        const SECONDS_PER_DAY = 86400;
+        const velocityKmS = currentVelocity * AU_TO_KM / SECONDS_PER_DAY;
+        
+        // Build the overlay content - simple terminal-style left-justified text
+        overlay.innerHTML = `
+            <div class="transfer-info-line">ID: ${transferData.id}</div>
+            <div class="transfer-info-line">Cargo: ${resourceLabel}</div>
+            <div class="transfer-info-line">Origin: ${fromZoneName}</div>
+            <div class="transfer-info-line">Destination: ${toZoneName}</div>
+            ${transferTypeInfo}
+            <div class="transfer-info-line">Speed: <span id="transfer-velocity">${velocityKmS.toFixed(2)}</span> km/s</div>
+            <div class="transfer-info-line">ETA: <span id="transfer-eta">${this.formatDays(timeToArrival)}</span></div>
+            <div class="transfer-info-nav">[${transferIndex}/${totalTransfers}] ← → cycle | I toggle info | ESC exit</div>
+        `;
+        
+        // Respect visibility toggle
+        overlay.style.display = this.transferInfoVisible ? 'block' : 'none';
+        
+        // Store reference for real-time updates
+        this.currentTrackedTransfer = transferData;
+    }
+    
+    /**
+     * Hide transfer info overlay
+     */
+    hideTransferInfo() {
+        const overlay = document.getElementById('transfer-info-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+        this.currentTrackedTransfer = null;
+    }
+    
+    /**
+     * Update transfer info overlay with real-time values (velocity, time to arrival)
+     * Called during animation loop when tracking a transfer
+     */
+    updateTransferInfoRealtime() {
+        if (!this.currentTrackedTransfer || this.trackingMode !== 'transfer') return;
+        if (!this.transferInfoVisible) return; // Don't update if hidden
+        
+        const viz = this.currentTrackedTransfer.viz;
+        if (!viz) return;
+        
+        // Get current game time
+        const gameState = window.gameEngine?.getGameState();
+        const currentTime = gameState?.time || 0;
+        
+        // Calculate time to arrival
+        const arrivalTime = viz.arrivalTime || 0;
+        const timeToArrival = Math.max(0, arrivalTime - currentTime);
+        
+        // Calculate current velocity
+        const tripTime = arrivalTime - (viz.departureTime || 0);
+        const elapsed = currentTime - (viz.departureTime || 0);
+        let currentVelocity = viz.fromVelocity || 0;
+        if (this.transferViz && tripTime > 0) {
+            currentVelocity = this.transferViz.calculateCurrentVelocity(
+                viz.fromVelocity || 0,
+                viz.toVelocity || 0,
+                elapsed,
+                tripTime
+            );
+        }
+        
+        // Convert velocity from AU/day to km/s
+        const AU_TO_KM = 149597870.7;
+        const SECONDS_PER_DAY = 86400;
+        const velocityKmS = currentVelocity * AU_TO_KM / SECONDS_PER_DAY;
+        
+        // Update just the dynamic elements
+        const velocityEl = document.getElementById('transfer-velocity');
+        const etaEl = document.getElementById('transfer-eta');
+        
+        if (velocityEl) {
+            velocityEl.textContent = velocityKmS.toFixed(2);
+        }
+        if (etaEl) {
+            etaEl.textContent = this.formatDays(timeToArrival);
+        }
+    }
+    
+    /**
+     * Format zone ID to display name
+     * @param {string} zoneId - Zone ID
+     * @returns {string} Formatted zone name
+     */
+    formatZoneName(zoneId) {
+        if (!zoneId) return 'Unknown';
+        
+        // Handle special cases
+        if (zoneId === 'dyson_sphere' || zoneId === 'dyson') {
+            return 'Dyson Sphere';
+        }
+        
+        // Capitalize first letter of each word
+        return zoneId.split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+    
+    /**
+     * Format days to a readable string
+     * @param {number} days - Time in days
+     * @returns {string} Formatted time string
+     */
+    formatDays(days) {
+        if (days < 1) {
+            const hours = days * 24;
+            return `${hours.toFixed(1)} hours`;
+        } else if (days < 365) {
+            return `${days.toFixed(1)} days`;
+        } else {
+            const years = days / 365;
+            return `${years.toFixed(2)} years`;
+        }
+    }
+
+    /**
      * Start tracking the first comet (called when 'c' is pressed and not already tracking)
      */
     startCometTracking() {
@@ -517,6 +799,7 @@ class SceneManager {
         
         // Reset transfer tracking if active
         this.currentTransferIndex = -1;
+        this.hideTransferInfo();
         
         // Start at first comet
         this.currentCometIndex = 0;
@@ -600,6 +883,7 @@ class SceneManager {
      */
     getActiveTransfers() {
         if (!this.transferViz) {
+            console.log('[getActiveTransfers] No transferViz reference');
             return [];
         }
         
@@ -607,6 +891,7 @@ class SceneManager {
         
         // Get one-time transfers
         if (this.transferViz.transfers) {
+            const oneTimeCount = this.transferViz.transfers.size;
             for (const [transferId, transferViz] of this.transferViz.transfers.entries()) {
                 if (transferViz.dot) {
                     activeTransfers.push({
@@ -616,10 +901,15 @@ class SceneManager {
                     });
                 }
             }
+            if (oneTimeCount > 0) {
+                console.log(`[getActiveTransfers] Found ${oneTimeCount} one-time transfer entries, ${activeTransfers.length} have dots`);
+            }
         }
         
         // Get continuous transfer batches
         if (this.transferViz.continuousBatches) {
+            const batchCount = this.transferViz.continuousBatches.size;
+            const prevCount = activeTransfers.length;
             for (const [batchId, batchViz] of this.transferViz.continuousBatches.entries()) {
                 if (batchViz.dot) {
                     activeTransfers.push({
@@ -628,6 +918,9 @@ class SceneManager {
                         viz: batchViz
                     });
                 }
+            }
+            if (batchCount > 0) {
+                console.log(`[getActiveTransfers] Found ${batchCount} continuous batch entries, ${activeTransfers.length - prevCount} have dots`);
             }
         }
         
@@ -670,6 +963,8 @@ class SceneManager {
     startTransferTracking() {
         const activeTransfers = this.getActiveTransfers();
         
+        console.log('[TransferTracking] Found', activeTransfers.length, 'active transfers');
+        
         if (activeTransfers.length === 0) {
             console.log('No active transfers to track');
             return;
@@ -683,13 +978,21 @@ class SceneManager {
         this.trackingMode = 'transfer';
         
         const transferData = activeTransfers[this.currentTransferIndex];
-        console.log(`Tracking transfer ${this.currentTransferIndex + 1}/${activeTransfers.length}: ${transferData.id}`);
+        console.log(`[TransferTracking] Tracking transfer ${this.currentTransferIndex + 1}/${activeTransfers.length}: ${transferData.id}`);
+        
+        // Debug: log the initial dot position
+        const initialPos = this.getTransferDotPosition(transferData);
+        console.log('[TransferTracking] Initial dot position:', initialPos ? `(${initialPos.x.toFixed(2)}, ${initialPos.y.toFixed(2)}, ${initialPos.z.toFixed(2)})` : 'null');
+        
+        // Show transfer info overlay
+        this.showTransferInfo(transferData);
         
         this.startTracking(() => {
             // Re-get active transfers each frame in case they change
             const currentTransfers = this.getActiveTransfers();
             if (this.currentTransferIndex >= 0 && this.currentTransferIndex < currentTransfers.length) {
-                return this.getTransferDotPosition(currentTransfers[this.currentTransferIndex]);
+                const pos = this.getTransferDotPosition(currentTransfers[this.currentTransferIndex]);
+                return pos;
             }
             return null;
         });
@@ -701,8 +1004,11 @@ class SceneManager {
     cycleToNextTransfer() {
         const activeTransfers = this.getActiveTransfers();
         
+        console.log('[CycleTransfer] Right arrow pressed, active transfers:', activeTransfers.length);
+        
         if (activeTransfers.length === 0) {
             // No transfers available, stop tracking
+            console.log('[CycleTransfer] No transfers available, stopping tracking');
             if (this.currentTransferIndex >= 0) {
                 this.stopTracking();
             }
@@ -713,7 +1019,10 @@ class SceneManager {
         this.currentTransferIndex = (this.currentTransferIndex + 1) % activeTransfers.length;
         
         const transferData = activeTransfers[this.currentTransferIndex];
-        console.log(`Tracking transfer ${this.currentTransferIndex + 1}/${activeTransfers.length}: ${transferData.id}`);
+        console.log(`[CycleTransfer] Tracking transfer ${this.currentTransferIndex + 1}/${activeTransfers.length}: ${transferData.id}`);
+        
+        // Update transfer info overlay
+        this.showTransferInfo(transferData);
         
         this.startTracking(() => {
             const currentTransfers = this.getActiveTransfers();
@@ -744,6 +1053,9 @@ class SceneManager {
         const transferData = activeTransfers[this.currentTransferIndex];
         console.log(`Tracking transfer ${this.currentTransferIndex + 1}/${activeTransfers.length}: ${transferData.id}`);
         
+        // Update transfer info overlay
+        this.showTransferInfo(transferData);
+        
         this.startTracking(() => {
             const currentTransfers = this.getActiveTransfers();
             if (this.currentTransferIndex >= 0 && this.currentTransferIndex < currentTransfers.length) {
@@ -766,7 +1078,7 @@ class CameraController {
     constructor(camera) {
         this.camera = camera;
         this.panSpeed = 0.5;
-        this.zoomSpeed = 0.5;
+        this.zoomSpeed = 1.2;
         this.rotationSpeed = 1.0;
         
         // Spherical coordinates for rotation
@@ -801,8 +1113,12 @@ class CameraController {
         
         // Immediately move to the target
         const pos = getPositionFn();
+        console.log('[CameraController] startTracking - initial position:', pos ? `(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})` : 'null');
         if (pos) {
             this.targetPanOffset.copy(pos);
+            console.log('[CameraController] targetPanOffset set to:', `(${this.targetPanOffset.x.toFixed(2)}, ${this.targetPanOffset.y.toFixed(2)}, ${this.targetPanOffset.z.toFixed(2)})`);
+        } else {
+            console.warn('[CameraController] No initial position provided - camera will not move');
         }
     }
     

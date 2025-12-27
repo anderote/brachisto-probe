@@ -10,97 +10,126 @@ class EnergyCalculator {
         this.orbitalMechanics = orbitalMechanics;
         this.economicRules = null;
         
-        // BASE energy costs per activity (watts per probe doing that activity)
-        // These are reduced by skills and research upgrades
-        // Only mining and slag recycling consume energy - other activities are "free"
+        // Default values (fallbacks if economic rules not loaded)
+        // These will be overwritten by initializeEconomicRules()
         this.BASE_ENERGY_COST_MINING = 500000;           // 500 kW per mining probe
         this.BASE_ENERGY_COST_RECYCLE_SLAG = 300000;     // 300 kW per slag recycling probe
-        
-        // BASE structure energy cost (for building operational power calculations)
         this.BASE_STRUCTURE_ENERGY_COST = 250000;        // 250 kW base for structure energy multipliers
-        
-        // BASE energy production per probe (watts)
-        this.BASE_ENERGY_PRODUCTION_PROBE = 100000;   // 100 kW per probe
+        this.BASE_ENERGY_PRODUCTION_PROBE = 100000;      // 100 kW per probe
+        this.GEOMETRIC_SCALING_EXPONENT = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
     }
     
     /**
-     * Initialize with economic rules (for skill coefficients)
+     * Initialize with economic rules (for skill coefficients and base values)
      * @param {Object} economicRules - Economic rules from data loader
      */
     initializeEconomicRules(economicRules) {
         this.economicRules = economicRules;
-    }
-    
-    /**
-     * Build skill values array from coefficients and skills
-     * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
-     * @param {Object} skills - Current skills from research
-     * @returns {Array<number>} Array of (coefficient * skill) values
-     */
-    buildSkillValues(coefficients, skills) {
-        if (!coefficients) return [1.0];
         
-        const values = [];
-        for (const [skillName, coefficient] of Object.entries(coefficients)) {
-            if (skillName === 'description') continue; // Skip description field
-            
-            // Map skill names to actual skill values
-            let skillValue = 1.0;
-            switch (skillName) {
-                case 'robotic':
-                    skillValue = skills.robotic || skills.manipulation || 1.0;
-                    break;
-                case 'computer':
-                    skillValue = skills.computer?.total || 1.0;
-                    break;
-                case 'solar_pv':
-                    skillValue = skills.solar_pv || skills.energy_collection || 1.0;
-                    break;
-                default:
-                    skillValue = skills[skillName] || 1.0;
-            }
-            
-            values.push(coefficient * skillValue);
+        // Load base values from economic rules (with fallbacks to defaults)
+        if (economicRules?.probe) {
+            this.BASE_ENERGY_PRODUCTION_PROBE = economicRules.probe.base_energy_production_w ?? this.BASE_ENERGY_PRODUCTION_PROBE;
+            this.BASE_ENERGY_COST_MINING = economicRules.probe.base_energy_cost_mining_w ?? this.BASE_ENERGY_COST_MINING;
+            this.BASE_ENERGY_COST_RECYCLE_SLAG = economicRules.probe.base_energy_cost_recycle_slag_w ?? this.BASE_ENERGY_COST_RECYCLE_SLAG;
         }
         
-        return values.length > 0 ? values : [1.0];
+        if (economicRules?.structures) {
+            this.BASE_STRUCTURE_ENERGY_COST = economicRules.structures.base_energy_cost_w ?? this.BASE_STRUCTURE_ENERGY_COST;
+            this.GEOMETRIC_SCALING_EXPONENT = economicRules.structures.geometric_scaling_exponent ?? this.GEOMETRIC_SCALING_EXPONENT;
+        }
     }
     
     /**
-     * Calculate tech tree upgrade factor using geometric mean
-     * Formula: F = G^alpha where G = (c1*s1 * c2*s2 * ... * cn*sn)^(1/n)
-     * @param {Array<number>} skillValues - Array of (skill * coefficient) values
-     * @param {number} alpha - Tech growth scale factor (default 0.75)
-     * @returns {number} Tech tree upgrade factor
+     * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * @param {string} skillName - Skill name from economic rules
+     * @returns {string} Canonical skill name
      */
-    calculateTechTreeUpgradeFactor(skillValues, alpha = 0.75) {
-        if (!skillValues || skillValues.length === 0) return 1.0;
+    resolveSkillAlias(skillName) {
+        // Map economic_rules skill names to SKILL_DEFINITIONS skill names
+        const aliasMap = {
+            'energy_storage': 'battery_density',
+            'thermal_management': 'radiator',
+            'robotics': 'manipulation',
+            'robotic': 'manipulation',
+            'energy': 'solar_pv',
+            'energy_collection': 'solar_pv',
+            'materials_science': 'materials'
+        };
+        return aliasMap[skillName] || skillName;
+    }
+
+    /**
+     * Build skill values with names for breakdown tracking
+     * Dynamically reads ALL skills from coefficients and resolves aliases
+     * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
+     * @param {Object} skills - Current skills from research
+     * @returns {Array<{name: string, value: number, weight: number}>} Array of skill info
+     */
+    buildSkillValues(coefficients, skills) {
+        if (!coefficients) return [];
         
-        // Filter out zero/negative values (safety check)
-        const validValues = skillValues.filter(v => v > 0);
-        if (validValues.length === 0) return 1.0;
+        const values = [];
+        for (const [rawSkillName, coefficient] of Object.entries(coefficients)) {
+            if (rawSkillName === 'description') continue; // Skip description field
+            
+            // Resolve skill alias to canonical name
+            const skillName = this.resolveSkillAlias(rawSkillName);
+            
+            // Get skill value (with fallbacks for common aliases)
+            let skillValue = skills[skillName] || 1.0;
+            
+            // Additional fallback handling for complex skill types
+            if (skillValue === 1.0 && skillName === 'manipulation') {
+                skillValue = skills.manipulation || skills.robotic || 1.0;
+            }
+            if (skillValue === 1.0 && skillName === 'solar_pv') {
+                skillValue = skills.solar_pv || skills.energy_collection || 1.0;
+            }
+            if (skillValue === 1.0 && rawSkillName === 'computer') {
+                skillValue = skills.computer?.total || 1.0;
+            }
+            
+            values.push({
+                name: rawSkillName, // Keep original name for display
+                canonicalName: skillName,
+                value: skillValue,
+                weight: coefficient
+            });
+        }
         
-        // Calculate geometric mean: G = (v1 * v2 * ... * vn)^(1/n)
-        const product = validValues.reduce((prod, val) => prod * val, 1.0);
-        const geometricMean = Math.pow(product, 1.0 / validValues.length);
+        return values;
+    }
+    
+    /**
+     * Calculate upgrade factor using weighted sum
+     * Formula: factor = 1 + Σ(weight_i * (skill_i - 1))
+     * @param {Array<{name: string, value: number, weight: number}>} skillInfo - Array of skill info
+     * @returns {number} Upgrade factor
+     */
+    calculateTechTreeUpgradeFactor(skillInfo) {
+        if (!skillInfo || skillInfo.length === 0) return 1.0;
         
-        // Calculate log(G)
-        const logG = Math.log(geometricMean);
+        let bonus = 0;
         
-        // F = exp(alpha * log(G)) = G^alpha
-        const factor = Math.exp(alpha * logG);
+        for (const { value, weight } of skillInfo) {
+            // Skip invalid values
+            if (value <= 0 || !isFinite(value)) continue;
+            
+            // Calculate contribution: weight * (skillValue - 1)
+            // This gives 0 when skill = 1.0, and scales linearly
+            bonus += weight * (value - 1.0);
+        }
         
-        return factor;
+        return 1.0 + bonus;
     }
     
     /**
      * Calculate upgrade factor from skill coefficients
      * @param {string} category - Category name (e.g., 'probe_energy_production')
      * @param {Object} skills - Current skills
-     * @param {number} alpha - Alpha factor (default from config)
      * @returns {number} Upgrade factor
      */
-    calculateUpgradeFactorFromCoefficients(category, skills, alpha = null) {
+    calculateUpgradeFactorFromCoefficients(category, skills) {
         if (!this.economicRules || !this.economicRules.skill_coefficients) {
             return 1.0;
         }
@@ -110,9 +139,8 @@ class EnergyCalculator {
             return 1.0;
         }
         
-        const skillValues = this.buildSkillValues(coefficients, skills);
-        const alphaFactor = alpha !== null ? alpha : (this.economicRules.alpha_factors?.probe_performance || 0.75);
-        return this.calculateTechTreeUpgradeFactor(skillValues, alphaFactor);
+        const skillInfo = this.buildSkillValues(coefficients, skills);
+        return this.calculateTechTreeUpgradeFactor(skillInfo);
     }
     
     /**
@@ -179,6 +207,7 @@ class EnergyCalculator {
     /**
      * Calculate energy production from structures
      * Uses new multiplier-based system with structure upgrade factors
+     * Solar buildings scale with zone's solar_irradiance_factor (inverse square of orbital radius)
      * @param {Object} structuresByZone - Structures by zone
      * @param {Object} buildings - Building definitions
      * @param {Object} state - Game state (to get pre-calculated upgrade factors)
@@ -199,6 +228,10 @@ class EnergyCalculator {
         for (const zoneId in structuresByZone) {
             const zoneStructures = structuresByZone[zoneId] || {};
             
+            // Get zone's solar irradiance factor (1.0 at Earth, scales with 1/r²)
+            const zoneData = this.orbitalMechanics?.getZone?.(zoneId);
+            const solarIrradianceFactor = zoneData?.solar_irradiance_factor || 1.0;
+            
             for (const [buildingId, building] of Object.entries(allBuildings)) {
                 const count = zoneStructures[buildingId] || 0;
                 if (count === 0) continue;
@@ -212,20 +245,21 @@ class EnergyCalculator {
                     // Apply structure performance upgrade factor
                     const perfFactor = state.upgrade_factors?.structure?.energy?.performance || 1.0;
                     
-                    // Apply zone efficiency
-                    const zoneEfficiency = building.orbital_efficiency?.[zoneId] || 1.0;
+                    // Apply solar irradiance scaling for solar-powered buildings
+                    // Solar power scales with 1/r² (encoded in solar_irradiance_factor)
+                    const solarScaling = building.uses_solar ? solarIrradianceFactor : 1.0;
                     
-                    // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                    const geometricFactor = Math.pow(count, 2.1);
-                    const effectiveProduction = basePowerW * geometricFactor * zoneEfficiency * perfFactor;
+                    // Apply geometric scaling to benefits (same exponent as cost scaling)
+                    const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
+                    const effectiveProduction = basePowerW * geometricFactor * solarScaling * perfFactor;
                     totalProduction += effectiveProduction;
                 } else if (building.effects?.energy_production_per_second) {
                     // Legacy system fallback
                     const baseProduction = building.effects.energy_production_per_second;
                     const upgradeFactor = state.tech_upgrade_factors?.energy_generation || 1.0;
                     const zoneEfficiency = building.orbital_efficiency?.[zoneId] || 1.0;
-                    // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                    const geometricFactor = Math.pow(count, 2.1);
+                    // Apply geometric scaling to benefits (same exponent as cost scaling)
+                    const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                     const effectiveProduction = baseProduction * geometricFactor * zoneEfficiency * upgradeFactor;
                     totalProduction += effectiveProduction;
                 }
@@ -286,6 +320,7 @@ class EnergyCalculator {
     
     /**
      * Calculate energy consumption from structures
+     * Supports both multiplier-based and fixed MW consumption systems
      * @param {Object} structuresByZone - Structures by zone
      * @param {Object} buildings - Building definitions
      * @param {Object} state - Game state (for research upgrades)
@@ -305,8 +340,24 @@ class EnergyCalculator {
                 const count = zoneStructures[buildingId] || 0;
                 if (count === 0) continue;
                 
-                // Check if building has energy cost multiplier
-                if (building.energy_cost_multiplier !== undefined) {
+                // Check for fixed base power consumption (e.g., data centers)
+                // This is a fixed MW value that doesn't scale with solar
+                if (building.base_power_consumption_mw !== undefined && building.base_power_consumption_mw > 0) {
+                    const baseCostMW = building.base_power_consumption_mw;
+                    const baseCostW = baseCostMW * 1e6; // Convert MW to watts
+                    
+                    // Get cost upgrade factor (energy costs decrease with research)
+                    const costFactor = state?.upgrade_factors?.structure?.building?.cost || 1.0;
+                    
+                    // Apply geometric scaling (same exponent as cost scaling)
+                    const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
+                    
+                    // Energy cost decreases with research
+                    const effectiveCost = (baseCostW * geometricFactor) / costFactor;
+                    totalConsumption += effectiveCost;
+                }
+                // Check if building has energy cost multiplier (legacy system)
+                else if (building.energy_cost_multiplier !== undefined) {
                     // New multiplier-based system
                     if (building.energy_cost_multiplier === 0) continue;
                     

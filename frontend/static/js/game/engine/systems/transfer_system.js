@@ -26,75 +26,132 @@ class TransferSystem {
     }
     
     /**
-     * Build skill values array from coefficients and skills
-     * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
-     * @param {Object} skills - Current skills from research
-     * @returns {Array<number>} Array of (coefficient * skill) values
+     * Get probe mass in kg from economic rules
+     * @returns {number} Probe mass in kg
      */
-    buildSkillValues(coefficients, skills) {
-        if (!coefficients) return [1.0];
-        
-        const values = [];
-        for (const [skillName, coefficient] of Object.entries(coefficients)) {
-            if (skillName === 'description') continue; // Skip description field
-            
-            // Map skill names to actual skill values
-            let skillValue = 1.0;
-            switch (skillName) {
-                case 'robotic':
-                    skillValue = skills.robotic || skills.manipulation || 1.0;
-                    break;
-                case 'computer':
-                    skillValue = skills.computer?.total || 1.0;
-                    break;
-                case 'solar_pv':
-                    skillValue = skills.solar_pv || skills.energy_collection || 1.0;
-                    break;
-                default:
-                    skillValue = skills[skillName] || 1.0;
-            }
-            
-            values.push(coefficient * skillValue);
-        }
-        
-        return values.length > 0 ? values : [1.0];
+    getProbeMass() {
+        return this.economicRules?.probe?.mass_kg || 100;
     }
     
     /**
-     * Calculate tech tree upgrade factor using geometric mean
-     * Formula: F = G^alpha where G = (c1*s1 * c2*s2 * ... * cn*sn)^(1/n)
-     * @param {Array<number>} skillValues - Array of (skill * coefficient) values
-     * @param {number} alpha - Tech growth scale factor (default 0.75)
-     * @returns {number} Tech tree upgrade factor
+     * Get base specific impulse (ISP) in seconds
+     * @returns {number} Base ISP in seconds
      */
-    calculateTechTreeUpgradeFactor(skillValues, alpha = 0.75) {
-        if (!skillValues || skillValues.length === 0) return 1.0;
+    getBaseIsp() {
+        return this.economicRules?.propulsion?.base_isp_seconds || 500;
+    }
+    
+    /**
+     * Get effective specific impulse with propulsion skill applied
+     * @param {Object} skills - Current skills
+     * @returns {number} Effective ISP in seconds
+     */
+    getEffectiveIsp(skills) {
+        const propulsionSkill = skills?.propulsion || 1.0;
+        return this.getBaseIsp() * propulsionSkill;
+    }
+    
+    /**
+     * Get exhaust velocity in m/s based on current propulsion skill
+     * @param {Object} skills - Current skills
+     * @returns {number} Exhaust velocity in m/s
+     */
+    getExhaustVelocity(skills) {
+        const g0 = 9.80665; // Standard gravity m/s²
+        return this.getEffectiveIsp(skills) * g0;
+    }
+    
+    /**
+     * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * @param {string} skillName - Skill name from economic rules
+     * @returns {string} Canonical skill name
+     */
+    resolveSkillAlias(skillName) {
+        // Map economic_rules skill names to SKILL_DEFINITIONS skill names
+        const aliasMap = {
+            'energy_storage': 'battery_density',
+            'thermal_management': 'radiator',
+            'robotics': 'manipulation',
+            'robotic': 'manipulation',
+            'energy': 'solar_pv',
+            'energy_collection': 'solar_pv',
+            'materials_science': 'materials'
+        };
+        return aliasMap[skillName] || skillName;
+    }
+
+    /**
+     * Build skill values with names for breakdown tracking
+     * Dynamically reads ALL skills from coefficients and resolves aliases
+     * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
+     * @param {Object} skills - Current skills from research
+     * @returns {Array<{name: string, value: number, weight: number}>} Array of skill info
+     */
+    buildSkillValues(coefficients, skills) {
+        if (!coefficients) return [];
         
-        // Filter out zero/negative values (safety check)
-        const validValues = skillValues.filter(v => v > 0);
-        if (validValues.length === 0) return 1.0;
+        const values = [];
+        for (const [rawSkillName, coefficient] of Object.entries(coefficients)) {
+            if (rawSkillName === 'description') continue; // Skip description field
+            
+            // Resolve skill alias to canonical name
+            const skillName = this.resolveSkillAlias(rawSkillName);
+            
+            // Get skill value (with fallbacks for common aliases)
+            let skillValue = skills[skillName] || 1.0;
+            
+            // Additional fallback handling for complex skill types
+            if (skillValue === 1.0 && skillName === 'manipulation') {
+                skillValue = skills.manipulation || skills.robotic || 1.0;
+            }
+            if (skillValue === 1.0 && skillName === 'solar_pv') {
+                skillValue = skills.solar_pv || skills.energy_collection || 1.0;
+            }
+            if (skillValue === 1.0 && rawSkillName === 'computer') {
+                skillValue = skills.computer?.total || 1.0;
+            }
+            
+            values.push({
+                name: rawSkillName, // Keep original name for display
+                canonicalName: skillName,
+                value: skillValue,
+                weight: coefficient
+            });
+        }
         
-        // Calculate geometric mean: G = (v1 * v2 * ... * vn)^(1/n)
-        const product = validValues.reduce((prod, val) => prod * val, 1.0);
-        const geometricMean = Math.pow(product, 1.0 / validValues.length);
+        return values;
+    }
+    
+    /**
+     * Calculate upgrade factor using weighted sum
+     * Formula: factor = 1 + Σ(weight_i * (skill_i - 1))
+     * @param {Array<{name: string, value: number, weight: number}>} skillInfo - Array of skill info
+     * @returns {number} Upgrade factor
+     */
+    calculateTechTreeUpgradeFactor(skillInfo) {
+        if (!skillInfo || skillInfo.length === 0) return 1.0;
         
-        // Calculate log(G)
-        const logG = Math.log(geometricMean);
+        let bonus = 0;
         
-        // F = exp(alpha * log(G)) = G^alpha
-        const factor = Math.exp(alpha * logG);
+        for (const { value, weight } of skillInfo) {
+            // Skip invalid values
+            if (value <= 0 || !isFinite(value)) continue;
+            
+            // Calculate contribution: weight * (skillValue - 1)
+            // This gives 0 when skill = 1.0, and scales linearly
+            bonus += weight * (value - 1.0);
+        }
         
-        return factor;
+        return 1.0 + bonus;
     }
     
     /**
      * Calculate upgrade factor from skill coefficients
      * @param {string} category - Category name (e.g., 'mass_driver_capacity')
      * @param {Object} skills - Current skills
-     * @param {number} alpha - Alpha factor (default from config)
      * @returns {number} Upgrade factor
      */
-    calculateUpgradeFactorFromCoefficients(category, skills, alpha = null) {
+    calculateUpgradeFactorFromCoefficients(category, skills) {
         if (!this.economicRules || !this.economicRules.skill_coefficients) {
             return 1.0;
         }
@@ -104,9 +161,83 @@ class TransferSystem {
             return 1.0;
         }
         
-        const skillValues = this.buildSkillValues(coefficients, skills);
-        const alphaFactor = alpha !== null ? alpha : (this.economicRules.alpha_factors?.structure_performance || 0.8);
-        return this.calculateTechTreeUpgradeFactor(skillValues, alphaFactor);
+        const skillInfo = this.buildSkillValues(coefficients, skills);
+        return this.calculateTechTreeUpgradeFactor(skillInfo);
+    }
+    
+    /**
+     * Calculate fuel required for a probe transfer using Tsiolkovsky rocket equation
+     * Uses total delta-v (escape + Hohmann) and allocates fuel proportionally based on
+     * mass driver contribution vs probe propulsion.
+     * 
+     * @param {string} fromZone - Source zone ID
+     * @param {string} toZone - Destination zone ID
+     * @param {number} probeMass - Mass of probe(s) in kg
+     * @param {Object} skills - Current skills (for propulsion ISP)
+     * @param {Object} state - Game state (optional, for escape velocity and mass driver calculation)
+     * @returns {number} Fuel required in kg
+     */
+    calculateFuelRequired(fromZone, toZone, probeMass, skills, state = null) {
+        // Get Hohmann delta-v for transfer
+        const hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZone, toZone);
+        if (!hohmannDeltaV || hohmannDeltaV <= 0) return 0;
+        
+        // Get escape delta-v (requires zone mass from state)
+        let escapeDeltaV = 0;
+        let massDriverDeltaV = 0;
+        
+        if (state) {
+            const zones = state.zones || {};
+            const fromZoneData = zones[fromZone] || {};
+            const fromZoneMass = fromZoneData.mass_remaining !== undefined ? fromZoneData.mass_remaining : 0;
+            
+            if (fromZoneMass > 0) {
+                escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZone, fromZoneMass);
+            }
+            
+            // Get mass driver contribution
+            const structuresByZone = state.structures_by_zone || {};
+            const zoneStructures = structuresByZone[fromZone] || {};
+            const massDriverCount = zoneStructures['mass_driver'] || 0;
+            if (massDriverCount > 0) {
+                massDriverDeltaV = this.getMassDriverMuzzleVelocity(state, fromZone);
+            }
+        }
+        
+        // Total delta-v required for the entire trip
+        const totalRequiredDeltaV = escapeDeltaV + hohmannDeltaV;
+        if (totalRequiredDeltaV <= 0) return 0;
+        
+        // Convert to m/s
+        const totalDeltaVMS = totalRequiredDeltaV * 1000;
+        
+        // Get base ISP from economic rules (default 500 seconds)
+        const baseIsp = 500; // seconds
+        
+        // Get effective ISP (base * propulsion skill)
+        const propulsionSkill = skills?.propulsion || 1.0;
+        const effectiveIsp = baseIsp * propulsionSkill;
+        
+        // Calculate exhaust velocity (m/s)
+        const g0 = 9.80665; // Standard gravity m/s²
+        const exhaustVelocity = effectiveIsp * g0;
+        
+        // Tsiolkovsky rocket equation: Δv = Isp × g₀ × ln(m₀/m_f)
+        // Rearranged to solve for fuel: m_fuel = m_f × (e^(Δv/v_e) - 1)
+        // Calculate TOTAL fuel for the entire trip
+        const massRatio = Math.exp(totalDeltaVMS / exhaustVelocity);
+        const totalFuelRequired = probeMass * (massRatio - 1);
+        
+        // Allocate fuel cost proportionally based on delta-v makeup
+        // Mass driver provides boost (capped at total required)
+        const massDriverContribution = Math.min(massDriverDeltaV, totalRequiredDeltaV);
+        const probeContribution = Math.max(0, totalRequiredDeltaV - massDriverContribution);
+        
+        // Probe fuel = (probe delta-v / total delta-v) × total fuel
+        const probeFuelFraction = probeContribution / totalRequiredDeltaV;
+        const fuelRequired = totalFuelRequired * probeFuelFraction;
+        
+        return fuelRequired;
     }
     
     /**
@@ -172,31 +303,56 @@ class TransferSystem {
      */
     processContinuousTransfer(state, transfer, deltaTime, currentTime) {
         const fromZoneId = transfer.from_zone;
+        const toZoneId = transfer.to_zone;
         const transferResourceType = transfer.resource_type || 'probe'; // 'probe' or 'metal'
+        
+        // Mass drivers (metal transfers) are completely disabled when net energy is negative
+        // Other activities get throttled, but mass drivers turn off entirely
+        if (transferResourceType === 'metal') {
+            const netEnergy = this.getNetEnergy(state);
+            if (netEnergy < 0) {
+                // Mass drivers are offline - skip metal transfer processing
+                // Mark transfer as energy-blocked for UI display
+                transfer.energy_blocked = true;
+                return;
+            } else {
+                transfer.energy_blocked = false;
+            }
+        }
         
         // Get current skills for transfer time calculation
         const skills = state.skills || {};
         
-        // Recalculate transfer time with current skills (for continuous transfers)
-        // This allows transfers to benefit from skill improvements during transit
-        let baseTransferTime = this.orbitalMechanics.calculateTransferTime(
-            transfer.from_zone,
-            transfer.to_zone,
-            skills
-        );
+        // Get zone mass for escape velocity calculation
+        const zones = state.zones || {};
+        const fromZone = this.orbitalMechanics.getZone(fromZoneId);
+        const fromZoneData = zones[fromZoneId] || {};
+        const fromZoneMass = fromZoneData.mass_remaining !== undefined && fromZoneData.mass_remaining !== null
+            ? fromZoneData.mass_remaining
+            : (fromZone?.total_mass_kg || 0);
         
-        // Apply mass driver speed multiplier for probe and metal transfers leaving this zone
+        // Get mass driver muzzle velocity for combined delta-v calculation
         const structuresByZone = state.structures_by_zone || {};
         const zoneStructures = structuresByZone[fromZoneId] || {};
         const massDriverCount = zoneStructures['mass_driver'] || 0;
+        const massDriverMuzzleVelocity = massDriverCount > 0 ? 
+            this.getMassDriverMuzzleVelocity(state, fromZoneId) : 0;
         
-        if (massDriverCount > 0) {
-            const speedMultiplier = this.calculateMassDriverSpeedMultiplier(massDriverCount, state);
-            baseTransferTime = baseTransferTime * speedMultiplier;
-        }
+        // Get probe delta-v bonus from starting skill points
+        const probeDvBonus = state.skill_bonuses?.probe_dv_bonus || 0;
+        
+        // Calculate transfer time with speed bonus from excess delta-v
+        // Uses combined probe + mass driver delta-v, with excess providing speed bonus
+        let baseTransferTime = this.orbitalMechanics.calculateTransferTimeWithBoost(
+            fromZoneId,
+            toZoneId,
+            skills,
+            massDriverMuzzleVelocity,
+            fromZoneMass,
+            probeDvBonus
+        );
         
         // Slow down metal transfers to Dyson sphere for visual effect
-        const toZoneId = transfer.to_zone;
         const isDysonDestination = toZoneId === 'dyson_sphere' || toZoneId === 'dyson';
         if (isDysonDestination && transferResourceType === 'metal') {
             baseTransferTime = baseTransferTime * 3.0;
@@ -244,6 +400,27 @@ class TransferSystem {
                 const batchCount = Math.floor(Math.min(accumulated, available));
                 // Ensure batch is at least 1 probe (should be guaranteed by while condition)
                 if (batchCount >= MIN_PROBE_BATCH) {
+                    // Calculate fuel required for this batch
+                    const probeMass = this.getProbeMass();
+                    const batchMass = batchCount * probeMass;
+                    const fuelRequired = this.calculateFuelRequired(fromZoneId, toZoneId, batchMass, skills, state);
+                    
+                    // Check if zone has enough methalox fuel
+                    const zones = state.zones || {};
+                    if (!zones[fromZoneId]) {
+                        zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
+                    }
+                    const zoneMethalox = zones[fromZoneId].methalox || 0;
+                    
+                    if (zoneMethalox < fuelRequired) {
+                        // Not enough fuel - stop sending batches
+                        break;
+                    }
+                    
+                    // Deduct fuel from zone
+                    zones[fromZoneId].methalox = Math.max(0, zoneMethalox - fuelRequired);
+                    state.zones = zones;
+                    
                     // Remove probes from source zone immediately
                     zoneProbes[probeType] = Math.max(0, zoneProbes[probeType] - batchCount);
                     available = zoneProbes[probeType];
@@ -279,12 +456,12 @@ class TransferSystem {
             
             // Update zone probe_mass (subtract mass of probes sent)
             if (totalProbesSent > 0) {
-                const PROBE_MASS = 100; // kg per probe
+                const probeMass = this.getProbeMass();
                 const zones = state.zones || {};
                 if (!zones[fromZoneId]) {
-                    zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, mass_remaining: 0, depleted: false };
+                    zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
                 }
-                zones[fromZoneId].probe_mass = Math.max(0, (zones[fromZoneId].probe_mass || 0) - (totalProbesSent * PROBE_MASS));
+                zones[fromZoneId].probe_mass = Math.max(0, (zones[fromZoneId].probe_mass || 0) - (totalProbesSent * probeMass));
                 state.zones = zones;
             }
             
@@ -331,7 +508,7 @@ class TransferSystem {
                 if (batchMass >= MIN_METAL_BATCH_KG) {
                     // Remove metal from source zone's stored_metal immediately
                     if (!zones[fromZoneId]) {
-                        zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, mass_remaining: 0, depleted: false };
+                        zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
                     }
                     zones[fromZoneId].stored_metal = Math.max(0, (zones[fromZoneId].stored_metal || 0) - batchMass);
                     available = zones[fromZoneId].stored_metal;
@@ -418,7 +595,7 @@ class TransferSystem {
             }
             
             // Update zone probe_mass
-            const PROBE_MASS = 100; // kg per probe
+            const probeMass = this.getProbeMass();
             const zones = state.zones || {};
             if (!zones[toZoneId]) {
                 zones[toZoneId] = {
@@ -430,7 +607,7 @@ class TransferSystem {
                     depleted: false
                 };
             }
-            zones[toZoneId].probe_mass = (zones[toZoneId].probe_mass || 0) + (totalArrived * PROBE_MASS);
+            zones[toZoneId].probe_mass = (zones[toZoneId].probe_mass || 0) + (totalArrived * probeMass);
             state.zones = zones;
             state.probes_by_zone = probesByZone;
             
@@ -440,7 +617,7 @@ class TransferSystem {
             const totalArrived = arrivedBatches.reduce((sum, batch) => sum + (batch.mass_kg || 0), 0);
             const zones = state.zones || {};
             if (!zones[toZoneId]) {
-                zones[toZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, mass_remaining: 0, depleted: false };
+                zones[toZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
             }
             zones[toZoneId].stored_metal = (zones[toZoneId].stored_metal || 0) + totalArrived;
             state.zones = zones;
@@ -479,7 +656,7 @@ class TransferSystem {
         
         const replicatingProbes = totalProbes * replicateAllocation;
         const PROBE_BUILD_RATE = 100.0; // kg/day per probe
-        const PROBE_MASS = 100; // kg per probe
+        const probeMass = this.getProbeMass();
         const buildingRateKgPerDay = replicatingProbes * PROBE_BUILD_RATE;
         
         // Apply upgrade factors if available
@@ -488,7 +665,7 @@ class TransferSystem {
         const effectiveRateKgPerDay = buildingRateKgPerDay * probeReplicateFactor;
         
         // Convert to probes/day
-        return effectiveRateKgPerDay / PROBE_MASS;
+        return effectiveRateKgPerDay / probeMass;
     }
     
     /**
@@ -535,7 +712,7 @@ class TransferSystem {
             probesByZone[toZoneId][probeType] += probeCount;
             
             // Update zone probe_mass
-            const PROBE_MASS = 100; // kg per probe
+            const probeMass = this.getProbeMass();
             if (!state.zones) {
                 state.zones = {};
             }
@@ -550,7 +727,7 @@ class TransferSystem {
                     depleted: false
                 };
             }
-            zones[toZoneId].probe_mass = (zones[toZoneId].probe_mass || 0) + (probeCount * PROBE_MASS);
+            zones[toZoneId].probe_mass = (zones[toZoneId].probe_mass || 0) + (probeCount * probeMass);
             
             // Explicitly reassign to ensure state is updated
             state.probes_by_zone = probesByZone;
@@ -599,12 +776,15 @@ class TransferSystem {
     
     /**
      * Calculate metal transfer capacity based on mass driver count and upgrades
+     * Note: This is now a maximum capacity estimate. Actual throughput depends on destination delta-v.
+     * For a specific destination, use calculateMassDriverThroughput() instead.
      * @param {Object} state - Game state
      * @param {string} zoneId - Zone identifier
+     * @param {string} targetZoneId - Optional target zone for delta-v specific calculation
      * @param {Object} buildingsData - Optional buildings data (loaded from buildings.json)
      * @returns {number} Metal transfer capacity in kg/day
      */
-    calculateMetalTransferCapacity(state, zoneId, buildingsData = null) {
+    calculateMetalTransferCapacity(state, zoneId, targetZoneId = null, buildingsData = null) {
         const structuresByZone = state.structures_by_zone || {};
         const zoneStructures = structuresByZone[zoneId] || {};
         const massDriverCount = zoneStructures['mass_driver'] || 0;
@@ -613,26 +793,34 @@ class TransferSystem {
             return 0; // No metal transfer without mass drivers
         }
         
-        // Get base capacity from buildings data, or use default (100 GT/day per driver)
-        let baseCapacityPerDriver = 100e12; // Default: 100 GT/day
-        if (buildingsData && buildingsData.mass_driver) {
-            baseCapacityPerDriver = buildingsData.mass_driver.metal_launch_capacity_kg_per_day || baseCapacityPerDriver;
+        // If target zone is specified, use physics-based throughput calculation
+        if (targetZoneId) {
+            const throughputPerDriver = this.calculateMassDriverThroughput(state, zoneId, targetZoneId, buildingsData);
+            return throughputPerDriver * massDriverCount;
         }
         
-        // Capacity increases linearly with number of drivers
-        let totalCapacity = baseCapacityPerDriver * massDriverCount;
+        // Otherwise, calculate maximum capacity (for nearest orbit, e.g., Venus from Earth = 3 km/s)
+        // Use a reference delta-v of 3 km/s (Venus from Earth) for capacity estimation
+        const referenceDeltaVKmS = 3.0;
+        const powerMW = this.getMassDriverPowerDraw(state, zoneId, buildingsData);
+        const efficiency = this.getMassDriverEfficiency(state, zoneId, buildingsData);
         
-        // Apply upgrade factors (transport research improves capacity)
-        const upgradeFactors = state.upgrade_factors || {};
-        const transportUpgrade = upgradeFactors.structure?.building?.performance || 1.0;
+        // Net power in watts
+        const netPowerW = powerMW * 1e6 * efficiency;
         
-        // Use config-driven skill coefficients for mass driver capacity
-        const skills = state.skills || {};
-        const capacityUpgradeFactor = this.calculateUpgradeFactorFromCoefficients('mass_driver_capacity', skills);
+        // Energy per day (joules)
+        const secondsPerDay = 86400;
+        const energyPerDayJ = netPowerW * secondsPerDay;
         
-        totalCapacity = totalCapacity * transportUpgrade * capacityUpgradeFactor;
+        // Energy per kg at reference delta-v: E = 0.5 * v^2 (v in m/s)
+        const deltaVMS = referenceDeltaVKmS * 1000;
+        const energyPerKgJ = 0.5 * deltaVMS * deltaVMS;
         
-        return totalCapacity;
+        // Mass per day per driver
+        const capacityPerDriver = energyPerDayJ / energyPerKgJ;
+        
+        // Total capacity scales with number of drivers
+        return capacityPerDriver * massDriverCount;
     }
     
     /**
@@ -678,10 +866,11 @@ class TransferSystem {
      * @param {string} zoneId - Zone identifier
      * @param {Object} buildingsData - Optional buildings data
      * @param {string} excludeTransferId - Optional transfer ID to exclude
+     * @param {string} targetZoneId - Optional target zone for delta-v specific calculation
      * @returns {number} Available capacity in kg/day
      */
-    getAvailableMetalCapacity(state, zoneId, buildingsData = null, excludeTransferId = null) {
-        const totalCapacity = this.calculateMetalTransferCapacity(state, zoneId, buildingsData);
+    getAvailableMetalCapacity(state, zoneId, buildingsData = null, excludeTransferId = null, targetZoneId = null) {
+        const totalCapacity = this.calculateMetalTransferCapacity(state, zoneId, targetZoneId, buildingsData);
         const usedCapacity = this.calculateUsedMetalCapacity(state, zoneId, excludeTransferId);
         return Math.max(0, totalCapacity - usedCapacity);
     }
@@ -727,6 +916,146 @@ class TransferSystem {
     }
     
     /**
+     * Get mass driver power draw (MW) with upgrades
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {number} Power draw in MW
+     */
+    getMassDriverPowerDraw(state, zoneId, buildingsData = null) {
+        // Get base power from buildings data
+        let basePowerMW = 100; // Default: 100 MW
+        if (buildingsData && buildingsData.mass_driver) {
+            basePowerMW = buildingsData.mass_driver.power_draw_mw || basePowerMW;
+        }
+        
+        // Apply upgrade factors
+        const skills = state.skills || {};
+        const powerUpgradeFactor = this.calculateUpgradeFactorFromCoefficients('mass_driver_power', skills);
+        
+        // Power increases with upgrades (more power = more capacity)
+        return basePowerMW * powerUpgradeFactor;
+    }
+    
+    /**
+     * Get mass driver energy efficiency with upgrades
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {number} Efficiency (0-1)
+     */
+    getMassDriverEfficiency(state, zoneId, buildingsData = null) {
+        // Get base efficiency from buildings data
+        let baseEfficiency = 0.4; // Default: 40%
+        if (buildingsData && buildingsData.mass_driver) {
+            baseEfficiency = buildingsData.mass_driver.energy_efficiency || baseEfficiency;
+        }
+        
+        // Apply upgrade factors
+        const skills = state.skills || {};
+        const efficiencyUpgradeFactor = this.calculateUpgradeFactorFromCoefficients('mass_driver_efficiency', skills);
+        
+        // Efficiency improves with upgrades (capped at 1.0)
+        return Math.min(1.0, baseEfficiency * efficiencyUpgradeFactor);
+    }
+    
+    /**
+     * Get mass driver muzzle velocity (delta-v capacity) with upgrades
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {number} Muzzle velocity in km/s
+     */
+    getMassDriverMuzzleVelocity(state, zoneId, buildingsData = null) {
+        // Get base muzzle velocity from buildings data
+        let baseMuzzleVelocityKmS = 3.0; // Default: 3 km/s (enough for Venus but not Mars)
+        if (buildingsData && buildingsData.mass_driver) {
+            baseMuzzleVelocityKmS = buildingsData.mass_driver.base_muzzle_velocity_km_s || baseMuzzleVelocityKmS;
+        }
+        
+        // Apply mass driver delta-v bonus from starting skill points
+        const massDriverBonus = state.skill_bonuses?.mass_driver_dv_bonus || 0;
+        baseMuzzleVelocityKmS += massDriverBonus;
+        
+        // Apply upgrade factors
+        const skills = state.skills || {};
+        const velocityUpgradeFactor = this.calculateUpgradeFactorFromCoefficients('mass_driver_muzzle_velocity', skills);
+        
+        // Muzzle velocity increases with upgrades
+        return baseMuzzleVelocityKmS * velocityUpgradeFactor;
+    }
+    
+    /**
+     * Calculate mass driver throughput (kg/day) for a specific destination
+     * Based on physics: throughput = (power * efficiency * time) / (0.5 * v^2 per kg)
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Source zone identifier
+     * @param {string} targetZoneId - Destination zone identifier
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {number} Mass throughput in kg/day (0 if unreachable)
+     */
+    calculateMassDriverThroughput(state, zoneId, targetZoneId, buildingsData = null) {
+        const powerMW = this.getMassDriverPowerDraw(state, zoneId, buildingsData);
+        const efficiency = this.getMassDriverEfficiency(state, zoneId, buildingsData);
+        const muzzleVelocityKmS = this.getMassDriverMuzzleVelocity(state, zoneId, buildingsData);
+        
+        // Get zone mass for escape velocity calculation
+        const zones = state.zones || {};
+        const zoneData = zones[zoneId] || {};
+        const zone = this.orbitalMechanics.getZone(zoneId);
+        const zoneMass = zoneData.mass_remaining !== undefined && zoneData.mass_remaining !== null
+            ? zoneData.mass_remaining
+            : (zone?.total_mass_kg || 0);
+        
+        const requiredDeltaVKmS = this.orbitalMechanics.getTotalDeltaVKmS(zoneId, targetZoneId, zoneMass);
+        
+        // Check if target is reachable
+        if (requiredDeltaVKmS > muzzleVelocityKmS) {
+            return 0; // Cannot reach this orbit
+        }
+        
+        // Net power in watts
+        const netPowerW = powerMW * 1e6 * efficiency;
+        
+        // Energy per day (joules)
+        const secondsPerDay = 86400;
+        const energyPerDayJ = netPowerW * secondsPerDay;
+        
+        // Energy per kg at this delta-v: E = 0.5 * v^2 (v in m/s)
+        const deltaVMS = requiredDeltaVKmS * 1000;
+        const energyPerKgJ = 0.5 * deltaVMS * deltaVMS;
+        
+        // Mass per day
+        if (energyPerKgJ <= 0) return 0;
+        return energyPerDayJ / energyPerKgJ;
+    }
+    
+    /**
+     * Check if mass driver can reach destination based on muzzle velocity
+     * @param {Object} state - Game state
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {number} fromZoneMass - Current mass of source zone in kg (optional)
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {boolean} True if mass driver can reach destination
+     */
+    canMassDriverReach(state, fromZoneId, toZoneId, fromZoneMass = null, buildingsData = null) {
+        // Get zone mass if not provided
+        if (fromZoneMass === null || fromZoneMass === undefined) {
+            const zones = state.zones || {};
+            const fromZoneData = zones[fromZoneId] || {};
+            const fromZone = this.orbitalMechanics.getZone(fromZoneId);
+            fromZoneMass = fromZoneData.mass_remaining !== undefined && fromZoneData.mass_remaining !== null
+                ? fromZoneData.mass_remaining
+                : (fromZone?.total_mass_kg || 0);
+        }
+        
+        const requiredDeltaV = this.orbitalMechanics.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
+        const muzzleVelocity = this.getMassDriverMuzzleVelocity(state, fromZoneId, buildingsData);
+        return muzzleVelocity >= requiredDeltaV;
+    }
+    
+    /**
      * Create a new transfer
      * @param {Object} state - Game state
      * @param {string} fromZoneId - Source zone
@@ -757,6 +1086,69 @@ class TransferSystem {
             return { success: false, transfer: null, error: `Zone not found: ${!fromZone ? fromZoneId : toZoneId}` };
         }
         
+        // Get current skills (use provided skills or state skills)
+        const currentSkills = (skills && typeof skills === 'object') ? skills : (state.skills || {});
+        
+        // Get current zone mass for escape velocity calculation
+        const zones = state.zones || {};
+        const fromZoneData = zones[fromZoneId] || {};
+        // Use mass_remaining if available, otherwise fall back to original mass from zone data
+        const fromZoneMass = fromZoneData.mass_remaining !== undefined && fromZoneData.mass_remaining !== null
+            ? fromZoneData.mass_remaining
+            : (fromZone.total_mass_kg || 0);
+        
+        // Check for mass driver presence (provides delta-v boost for probe transfers)
+        const structuresByZone = state.structures_by_zone || {};
+        const zoneStructures = structuresByZone[fromZoneId] || {};
+        const massDriverCount = zoneStructures['mass_driver'] || 0;
+        
+        // Get mass driver muzzle velocity (0 if no mass drivers)
+        const massDriverMuzzleVelocity = massDriverCount > 0 ? 
+            this.getMassDriverMuzzleVelocity(state, fromZoneId) : 0;
+        
+        // Get probe delta-v bonus from starting skill points
+        const probeDvBonus = state.skill_bonuses?.probe_dv_bonus || 0;
+        
+        // Check delta-v access gating
+        // Probe transfers: combine probe delta-v + mass driver boost (if available)
+        // Metal transfers: use mass driver muzzle velocity only
+        if (resourceType === 'probe') {
+            // Probe transfers: use combined probe + mass driver delta-v capacity
+            if (!this.orbitalMechanics.canProbeReach(fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus)) {
+                // Show error in terms of net delta-v vs Hohmann (matches chart visualization)
+                // Net delta-v = total capacity - escape velocity
+                const escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+                const hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+                const reachInfo = this.orbitalMechanics.getReachabilityInfo(
+                    fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
+                );
+                const netDeltaV = reachInfo.totalCapacity - escapeDeltaV;
+                
+                let errorMsg = `Insufficient Δv: transfer requires ${hohmannDeltaV.toFixed(2)} km/s, net Δv is ${netDeltaV.toFixed(2)} km/s`;
+                errorMsg += ` (capacity: ${reachInfo.totalCapacity.toFixed(2)} - escape: ${escapeDeltaV.toFixed(2)})`;
+                return { 
+                    success: false, 
+                    transfer: null, 
+                    error: errorMsg
+                };
+            }
+        } else if (resourceType === 'metal') {
+            // Metal transfers: check if mass driver has enough muzzle velocity
+            if (!this.canMassDriverReach(state, fromZoneId, toZoneId, fromZoneMass)) {
+                // Show error in terms of net delta-v vs Hohmann (matches chart visualization)
+                const escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+                const hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+                const muzzleVelocity = this.getMassDriverMuzzleVelocity(state, fromZoneId);
+                const netDeltaV = muzzleVelocity - escapeDeltaV;
+                
+                return { 
+                    success: false, 
+                    transfer: null, 
+                    error: `Insufficient Δv: transfer requires ${hohmannDeltaV.toFixed(2)} km/s, net Δv is ${netDeltaV.toFixed(2)} km/s (muzzle: ${muzzleVelocity.toFixed(2)} - escape: ${escapeDeltaV.toFixed(2)})` 
+                };
+            }
+        }
+        
         // Metal transfers require mass drivers
         if (resourceType === 'metal') {
             if (!this.hasMassDriver(state, fromZoneId)) {
@@ -765,7 +1157,8 @@ class TransferSystem {
             
             // Check capacity for continuous metal transfers
             if (type === 'continuous' && ratePercentage > 0) {
-                const availableCapacity = this.getAvailableMetalCapacity(state, fromZoneId);
+                // Use destination-specific capacity calculation
+                const availableCapacity = this.getAvailableMetalCapacity(state, fromZoneId, null, null, toZoneId);
                 if (availableCapacity <= 0) {
                     return { success: false, transfer: null, error: 'No mass driver capacity available. Build more mass drivers or reduce other transfer rates.' };
                 }
@@ -777,12 +1170,15 @@ class TransferSystem {
             }
         }
         
-        // Get current skills (use provided skills or state skills)
-        const currentSkills = (skills && typeof skills === 'object') ? skills : (state.skills || {});
+        // Calculate delta-v using new two-component system (escape + Hohmann)
+        const deltaVKmS = this.orbitalMechanics.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
+        const deltaV = deltaVKmS * 1000; // Convert to m/s for compatibility
         
-        // Calculate delta-v and base transfer time using current skills
-        const deltaV = this.orbitalMechanics.calculateDeltaV(fromZoneId, toZoneId, currentSkills);
-        let transferTime = this.orbitalMechanics.calculateTransferTime(fromZoneId, toZoneId, currentSkills);
+        // Calculate transfer time with speed bonus from excess delta-v
+        // Combined probe + mass driver delta-v determines both reachability AND speed bonus
+        let transferTime = this.orbitalMechanics.calculateTransferTimeWithBoost(
+            fromZoneId, toZoneId, currentSkills, massDriverMuzzleVelocity, fromZoneMass, probeDvBonus
+        );
         
         // Validate transfer time
         if (!transferTime || !isFinite(transferTime) || transferTime <= 0) {
@@ -790,20 +1186,12 @@ class TransferSystem {
             return { success: false, transfer: null, error: `Invalid transfer time: ${transferTime} days` };
         }
         
-        // Apply mass driver speed multiplier for probe and metal transfers leaving this zone
-        const structuresByZone = state.structures_by_zone || {};
-        const zoneStructures = structuresByZone[fromZoneId] || {};
-        const massDriverCount = zoneStructures['mass_driver'] || 0;
-        
-        if (massDriverCount > 0) {
-            const speedMultiplier = this.calculateMassDriverSpeedMultiplier(massDriverCount, state);
-            transferTime = transferTime * speedMultiplier;
-            
-            // Validate after multiplier
-            if (!transferTime || !isFinite(transferTime) || transferTime <= 0) {
-                console.error(`[Transfer] Invalid transfer time after multiplier: ${transferTime} for ${fromZoneId} -> ${toZoneId}`);
-                return { success: false, transfer: null, error: `Invalid transfer time after multiplier: ${transferTime} days` };
-            }
+        // Log the speed bonus if applicable
+        const reachInfo = this.orbitalMechanics.getReachabilityInfo(
+            fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
+        );
+        if (reachInfo.excessDeltaV > 0) {
+            console.log(`[Transfer] Speed bonus from excess delta-v: +${reachInfo.excessDeltaV.toFixed(2)} km/s (total capacity: ${reachInfo.totalCapacity.toFixed(2)} km/s, required: ${reachInfo.requiredDeltaV.toFixed(2)} km/s)`);
         }
         
         // Slow down metal transfers to Dyson sphere for visual effect
@@ -811,6 +1199,38 @@ class TransferSystem {
         const isDysonDestination = toZoneId === 'dyson_sphere' || toZoneId === 'dyson';
         if (isDysonDestination && resourceType === 'metal') {
             transferTime = transferTime * 3.0;
+        }
+        
+        // Check fuel requirement for one-time probe transfers
+        if (type === 'one-time' && resourceType === 'probe') {
+            const probeMassPerUnit = this.getProbeMass();
+            const probeMass = resourceCount * probeMassPerUnit;
+            const fuelRequired = this.calculateFuelRequired(fromZoneId, toZoneId, probeMass, currentSkills, state);
+            
+            // Check if zone has enough methalox fuel
+            const zoneMethalox = zones[fromZoneId]?.methalox || 0;
+            if (zoneMethalox < fuelRequired) {
+                return {
+                    success: false,
+                    transfer: null,
+                    error: `Insufficient methalox fuel: need ${fuelRequired.toFixed(2)} kg, have ${zoneMethalox.toFixed(2)} kg`
+                };
+            }
+            
+            // Deduct fuel immediately for one-time transfers
+            if (!zones[fromZoneId]) {
+                zones[fromZoneId] = {
+                    stored_metal: 0,
+                    probe_mass: 0,
+                    structure_mass: 0,
+                    slag_mass: 0,
+                    methalox: 0,
+                    mass_remaining: 0,
+                    depleted: false
+                };
+            }
+            zones[fromZoneId].methalox = Math.max(0, zoneMethalox - fuelRequired);
+            state.zones = zones;
         }
         
         const transfer = {
@@ -1011,7 +1431,7 @@ class TransferSystem {
                 }, 0);
                 const zones = state.zones || {};
                 if (!zones[fromZoneId]) {
-                    zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, mass_remaining: 0, depleted: false };
+                    zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
                 }
                 zones[fromZoneId].stored_metal = (zones[fromZoneId].stored_metal || 0) + totalInTransit;
                 state.zones = zones;
@@ -1062,7 +1482,7 @@ class TransferSystem {
     calculateInTransitProbePositions(state) {
         const activeTransfers = state.active_transfers || [];
         const currentTime = state.time || 0;
-        const PROBE_MASS = 100; // kg per probe
+        const probeMass = this.getProbeMass();
         
         const positions = [];
         
@@ -1110,7 +1530,7 @@ class TransferSystem {
                         } else {
                             // Probe transfer
                             const batchCount = batch.count || 0;
-                            batchMass = batchCount * PROBE_MASS;
+                            batchMass = batchCount * probeMass;
                         }
                         
                         if (batchMass > 0) {
@@ -1152,7 +1572,7 @@ class TransferSystem {
                     } else {
                         // Probe transfer
                         const probeCount = transfer.probe_count || 0;
-                        transferMass = probeCount * PROBE_MASS;
+                        transferMass = probeCount * probeMass;
                     }
                     
                     if (transferMass > 0) {
@@ -1171,6 +1591,39 @@ class TransferSystem {
         positions.sort((a, b) => a.au - b.au);
         
         return positions;
+    }
+    
+    /**
+     * Get net energy from game state
+     * Used to determine if mass drivers should be operational
+     * Mass drivers turn off completely when net energy is negative
+     * @param {Object} state - Game state
+     * @returns {number} Net energy in watts (positive = surplus, negative = deficit)
+     */
+    getNetEnergy(state) {
+        // Check derived totals first (most accurate, calculated by engine)
+        const derived = state.derived || {};
+        const totals = derived.totals || {};
+        
+        if (totals.energy_net !== undefined) {
+            return totals.energy_net;
+        }
+        
+        // Fallback: calculate from production and consumption rates
+        const energyProduction = totals.energy_produced || state.energy_production_rate || 0;
+        const energyConsumption = totals.energy_consumed || state.energy_consumption_rate || 0;
+        
+        return energyProduction - energyConsumption;
+    }
+    
+    /**
+     * Check if mass drivers are operational
+     * Mass drivers require positive net energy to function
+     * @param {Object} state - Game state
+     * @returns {boolean} True if mass drivers can operate
+     */
+    areMassDriversOperational(state) {
+        return this.getNetEnergy(state) >= 0;
     }
 }
 

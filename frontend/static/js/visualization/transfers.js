@@ -19,13 +19,16 @@ class TransferVisualization {
         // {transferId: lastCreationTime}
         this.continuousTransferLastCreation = new Map();
         
+        // Track visibility state for transfer lines (respects Tab toggle)
+        this.linesVisible = true;
+        
         // Interval for creating new visualizations (30 days)
         this.CONTINUOUS_VISUALIZATION_INTERVAL = 120.0; // days
         
         // Colors for different resource types
         this.colors = {
             probe: new THREE.Color(0x00ffff), // Cyan
-            metal: new THREE.Color(0xC0C0C0)  // Silver
+            metal: new THREE.Color(0xC0C0C0)   // Silver
         };
         
         // Interval for metal transfers (monthly = 30 days)
@@ -33,6 +36,24 @@ class TransferVisualization {
         
         // Geometry cache for ellipse arcs (keyed by zone pair)
         this.ellipseCache = new Map();
+        
+        // Callback for when transfers arrive at destination
+        // Called with: {zoneId, resourceType, positions: [THREE.Vector3], dotCount}
+        this.onTransferArrival = null;
+        
+        // Animation state for smooth interpolation
+        this.lastGameTime = 0;
+        this.lastRealTime = 0;
+        this.timeSpeed = 1;
+        this.isPaused = false;
+    }
+    
+    /**
+     * Set callback for transfer arrivals
+     * @param {Function} callback - Called with arrival info when transfers complete
+     */
+    setArrivalCallback(callback) {
+        this.onTransferArrival = callback;
     }
     
     /**
@@ -72,14 +93,12 @@ class TransferVisualization {
             return null;
         }
         
-        // Dyson sphere uses special visual radius: 0.8x Mercury's orbit
+        // Dyson sphere uses 0.29 AU (real value)
         // Check this FIRST because getZonePosition returns (0,0,0) for Dyson sphere
         if (zoneId === 'dyson_sphere' || zoneId === 'dyson') {
             try {
-                const mercuryOrbitKm = this.solarSystem.planetData?.mercury?.orbit_km || 173700000;
-                if (this.solarSystem.logScaleOrbit) {
-                    const mercuryOrbit = this.solarSystem.logScaleOrbit(mercuryOrbitKm);
-                    return mercuryOrbit * 0.8; // Match Dyson sphere visualization
+                if (this.solarSystem.scaleAUToVisual) {
+                    return this.solarSystem.scaleAUToVisual(0.29); // Dyson sphere at 0.29 AU
                 }
             } catch (e) {
                 return null;
@@ -104,23 +123,299 @@ class TransferVisualization {
         
         const planetInfo = this.solarSystem.planetData?.[zoneId];
         if (planetInfo && planetInfo.orbit_km) {
-            // Use the same scaling function as planets (rocky planets use different scaling)
-            if (this.solarSystem.rockyPlanets && this.solarSystem.rockyPlanets.includes(zoneId)) {
-                return this.solarSystem.scaleRockyPlanetOrbit(planetInfo.orbit_km);
-            } else {
-                return this.solarSystem.logScaleOrbit(planetInfo.orbit_km);
+            // Use unified scaling (converts km to AU first)
+            const orbitAU = planetInfo.orbit_km / this.solarSystem.AU_KM;
+            if (this.solarSystem.scaleAUToVisual) {
+                return this.solarSystem.scaleAUToVisual(orbitAU);
             }
         }
         
-        // Fallback: use radius_au converted to km then log-scaled
-        const orbitKm = (zone.radius_au || 0) * 149600000;
-        if (orbitKm === 0) {
-            return null;
-        }
-        if (this.solarSystem.logScaleOrbit) {
-            return this.solarSystem.logScaleOrbit(orbitKm);
+        // Fallback: use radius_au directly
+        if (zone.radius_au && this.solarSystem.scaleAUToVisual) {
+            return this.solarSystem.scaleAUToVisual(zone.radius_au);
         }
         return null;
+    }
+    
+    /**
+     * Get orbital velocity for a zone (visual linear velocity)
+     * 
+     * UNITS: Returns visual units per game day.
+     * 
+     * The animation system uses orbitalSpeed in rad/animation-sec, where:
+     *   orbitalSpeed = 0.01 / sqrt(period_days / 365.25)
+     * 
+     * For a planet with period T days:
+     *   - Completes 2π radians in 2π / orbitalSpeed animation-seconds
+     *   - That equals 2π * sqrt(T/365.25) / 0.01 animation-seconds
+     *   - This represents T game days
+     * 
+     * The animation-sec to game-day conversion factor for each zone is:
+     *   animSecsPerOrbit = 2π / orbitalSpeed = 2π * sqrt(T/365.25) / 0.01
+     *   gameDaysPerOrbit = T
+     *   animSecsPerDay = animSecsPerOrbit / gameDaysPerOrbit = (2π/0.01) * sqrt(T/365.25) / T
+     *                  = 628.32 * sqrt(1/(T * 365.25))
+     * 
+     * So to convert linear velocity from visual-units/anim-sec to visual-units/game-day:
+     *   velocity_per_day = velocity_per_anim_sec * animSecsPerDay
+     * 
+     * @param {string} zoneId - Zone ID
+     * @returns {number} Linear velocity in visual units/day (game time)
+     */
+    getOrbitalVelocity(zoneId) {
+        // Get orbital period for this zone to calculate time conversion factor
+        const orbitalPeriodDays = this.solarSystem?.getOrbitalPeriod?.(zoneId) || 365.25;
+        
+        // Animation seconds per game day for this zone
+        // Formula: (2π / 0.01) * sqrt(1 / (period * 365.25))
+        const animSecsPerDay = (2 * Math.PI / 0.01) * Math.sqrt(1 / (orbitalPeriodDays * 365.25));
+        
+        // Get visual orbital radius and angular speed from planet
+        const planet = this.solarSystem?.planets?.[zoneId];
+        if (planet && planet.userData) {
+            const radius = planet.userData.radius;
+            const angularSpeed = planet.userData.orbitalSpeed; // radians/animation-sec
+            if (radius && angularSpeed) {
+                const velocityPerAnimSec = radius * angularSpeed; // visual units/animation-sec
+                return velocityPerAnimSec * animSecsPerDay; // visual units/game-day
+            }
+        }
+        
+        // Fallback: calculate from visual radius using Kepler's law approximation
+        const radius = this.getVisualOrbitRadius(zoneId);
+        if (!radius || radius === 0) return 0.01 * animSecsPerDay;
+        
+        // Approximate angular speed: 0.01 / sqrt(period/365.25) rad/animation-sec
+        const approximateAngularSpeed = 0.01 / Math.sqrt(orbitalPeriodDays / 365.25);
+        const velocityPerAnimSec = radius * approximateAngularSpeed;
+        return velocityPerAnimSec * animSecsPerDay; // visual units/game-day
+    }
+    
+    /**
+     * Get physical orbital velocity in km/s for a zone
+     * Uses vis-viva equation: v = sqrt(μ/r) for circular orbit
+     * @param {string} zoneId - Zone ID
+     * @returns {number} Orbital velocity in km/s
+     */
+    getPhysicalOrbitalVelocityKmS(zoneId) {
+        const zone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+        if (!zone) return 0;
+        
+        // Standard gravitational parameter for Sun (m³/s²)
+        const SUN_MU = 1.32712440018e20; // G * M_sun
+        
+        // Get orbital radius in meters
+        const r = zone.radius_km * 1000; // Convert km to m
+        
+        if (r <= 0) return 0;
+        
+        // For circular orbit: v = sqrt(μ/r)
+        const velocityMS = Math.sqrt(SUN_MU / r);
+        
+        // Convert m/s to km/s
+        return velocityMS / 1000;
+    }
+    
+    /**
+     * Calculate probe delta-v capacity from skills (simplified version)
+     * This matches the logic in orbital_mechanics.js but doesn't require economic rules
+     * @param {Object} skills - Current skills from research
+     * @returns {number} Probe delta-v capacity in km/s
+     */
+    calculateProbeDeltaVCapacity(skills) {
+        // Default base capacity (matches orbital_mechanics.js default)
+        const baseDeltaV = 1.0; // km/s
+        
+        // Simplified calculation: if we have propulsion skill, use it
+        // Otherwise, return base capacity
+        // Note: Full calculation requires economic rules, but this is sufficient for visualization
+        if (skills && skills.propulsion) {
+            // Simple multiplier: propulsion skill increases capacity linearly
+            // This is a simplified version - full version uses skill coefficients from config
+            return baseDeltaV * skills.propulsion;
+        }
+        
+        return baseDeltaV;
+    }
+    
+    /**
+     * Get transfer velocity with probe capacity boost (visual linear velocity)
+     * Formula: visual_velocity = base_velocity * (1 + excess_delta_v / orbital_velocity_km_s)
+     * @param {string} zoneId - Zone ID
+     * @param {number} probeDeltaVCapacity - Probe's delta-v capacity in km/s (optional)
+     * @returns {number} Linear velocity in visual units/day (game time)
+     */
+    getTransferVelocity(zoneId, probeDeltaVCapacity = null) {
+        const baseVelocity = this.getOrbitalVelocity(zoneId);
+        
+        // If no probe capacity provided, return base velocity
+        if (probeDeltaVCapacity === null || probeDeltaVCapacity === undefined) {
+            return baseVelocity;
+        }
+        
+        // Get zone data for escape velocity
+        const zone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+        if (!zone) return baseVelocity;
+        
+        const escapeVelocity = zone.escape_delta_v_km_s || 0;
+        const orbitalVelocityKmS = this.getPhysicalOrbitalVelocityKmS(zoneId);
+        
+        if (orbitalVelocityKmS <= 0) return baseVelocity;
+        
+        // Calculate speed boost: excess delta-v adds directly to speed
+        // Speed = orbital_velocity + (probe_delta_v - escape_velocity)
+        const excessDeltaV = Math.max(0, probeDeltaVCapacity - escapeVelocity);
+        const transferSpeedKmS = orbitalVelocityKmS + excessDeltaV;
+        
+        // Calculate speed multiplier for visual velocity
+        const speedMultiplier = transferSpeedKmS / orbitalVelocityKmS;
+        
+        return baseVelocity * speedMultiplier;
+    }
+    
+    /**
+     * Calculate approximate arc length of Hohmann transfer ellipse (in visual units)
+     * Uses numerical integration along the ellipse path
+     * @param {Object} params - Ellipse parameters {a, e, rInner, rOuter}
+     * @param {number} fromVisualRadius - Origin visual radius
+     * @param {number} toVisualRadius - Destination visual radius
+     * @returns {number} Arc length in visual units
+     */
+    calculateArcLength(params, fromVisualRadius, toVisualRadius) {
+        if (!params || !fromVisualRadius || !toVisualRadius) return 0;
+        
+        const rInner = Math.min(fromVisualRadius, toVisualRadius);
+        const rOuter = Math.max(fromVisualRadius, toVisualRadius);
+        const a = (rInner + rOuter) / 2;
+        const e = (rOuter - rInner) / (rOuter + rInner);
+        const p = a * (1 - e * e);
+        
+        // Numerically integrate arc length along half ellipse (Hohmann transfer)
+        // Use more segments for accuracy
+        const segments = 200;
+        let arcLength = 0;
+        let prevX = null;
+        let prevZ = null;
+        
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const nu = t * Math.PI; // True anomaly from 0 to π (half ellipse)
+            
+            // Calculate radius using ellipse equation: r = p / (1 + e*cos(ν))
+            const r = p / (1 + e * Math.cos(nu));
+            
+            // Calculate position (angle doesn't matter for length, just relative positions)
+            const x = Math.cos(nu) * r;
+            const z = Math.sin(nu) * r;
+            
+            if (prevX !== null) {
+                const dx = x - prevX;
+                const dz = z - prevZ;
+                const segmentLength = Math.sqrt(dx * dx + dz * dz);
+                arcLength += segmentLength;
+            }
+            
+            prevX = x;
+            prevZ = z;
+        }
+        
+        return arcLength;
+    }
+    
+    /**
+     * Calculate visual transfer time based on arc length and average velocity
+     * @param {number} arcLength - Arc length in visual units
+     * @param {number} vStart - Starting velocity (visual units/day)
+     * @param {number} vEnd - Ending velocity (visual units/day)
+     * @param {number} gameTransferTimeDays - Game's transfer time in days (for fallback)
+     * @returns {number} Visual transfer time in days (game time)
+     */
+    calculateVisualTransferTime(arcLength, vStart, vEnd, gameTransferTimeDays) {
+        const vAvg = (vStart + vEnd) / 2;
+        if (vAvg <= 0 || arcLength <= 0) {
+            // Fallback to game time
+            return gameTransferTimeDays;
+        }
+        
+        // Visual transfer time = arc_length / avg_velocity
+        // Units: visual units / (visual units/day) = days
+        const visualTimeDays = arcLength / vAvg;
+        
+        return visualTimeDays;
+    }
+    
+    /**
+     * Calculate current velocity at a given point in the transfer
+     * Uses linear interpolation: v = v0 + delta_v * (elapsed_time / trip_time)
+     * @param {number} v0 - Starting velocity in visual units/day
+     * @param {number} vEnd - Ending velocity in visual units/day
+     * @param {number} elapsedTime - Time elapsed since departure (in days)
+     * @param {number} tripTime - Total trip time (in days)
+     * @returns {number} Current velocity in visual units/day
+     */
+    calculateCurrentVelocity(v0, vEnd, elapsedTime, tripTime) {
+        if (tripTime <= 0) return v0;
+        
+        const deltaV = vEnd - v0;
+        const progressRatio = Math.max(0.0, Math.min(1.0, elapsedTime / tripTime));
+        
+        return v0 + deltaV * progressRatio;
+    }
+    
+    /**
+     * Calculate progress using velocity-integrated approach
+     * 
+     * Key principle: Visual speed should match current velocity at each point
+     * Visual speed = (dprogress/dt) * arcLength
+     * We want: visual_speed = current_velocity
+     * So: dprogress/dt = current_velocity / arcLength
+     * Progress = (1/arcLength) * integral(current_velocity) dt
+     * 
+     * For linear velocity: v(t) = v0 + deltaV * t/T
+     * Progress = (1/arcLength) * (v0*t + 0.5*deltaV*t^2/T)
+     * 
+     * To ensure progress goes from 0 to 1: arcLength = vAvg * T
+     * So we use visual trip time: T_visual = arcLength / vAvg (if arcLength available)
+     * Otherwise use game's trip time
+     * 
+     * UNITS: All velocities are in visual units/day, times are in days.
+     * This ensures dimensional consistency: position = v*t has units of visual units.
+     * 
+     * @param {number} v0 - Starting velocity in visual units/day
+     * @param {number} vEnd - Ending velocity in visual units/day  
+     * @param {number} elapsedTime - Time elapsed since departure (in days)
+     * @param {number} tripTime - Total trip time (in days)
+     * @param {number} arcLength - Arc length of the transfer (visual units)
+     * @returns {number} Progress from 0.0 to 1.0
+     */
+    calculateVelocityIntegratedProgress(v0, vEnd, elapsedTime, tripTime, arcLength) {
+        if (tripTime <= 0) {
+            return Math.max(0.0, Math.min(1.0, elapsedTime / tripTime));
+        }
+        
+        const t = Math.max(0, Math.min(elapsedTime, tripTime));
+        const T = tripTime; // This is already visualTransferTimeDays when passed from update()
+        const deltaV = vEnd - v0;
+        const vAvg = (v0 + vEnd) / 2;
+        
+        // Use the passed-in tripTime directly (it's already visualTransferTimeDays)
+        // This accounts for starting velocity differences between outbound and inbound transfers
+        // For outbound transfers: visualTransferTimeDays < game's tripTime (faster start)
+        // For inbound transfers: visualTransferTimeDays >= game's tripTime (slower start)
+        const visualTripTime = T;
+        
+        // For linear velocity: v(t) = v0 + deltaV * t/T
+        // Position = integral of velocity: s(t) = v0*t + 0.5*deltaV*t^2/T
+        const position = v0 * t + 0.5 * deltaV * t * t / visualTripTime;
+        
+        // Total distance: use arcLength if available, otherwise vAvg * visualTripTime
+        // Note: if visualTripTime was calculated correctly, arcLength should equal vAvg * visualTripTime
+        const totalDistance = arcLength > 0 ? arcLength : (vAvg * visualTripTime);
+        
+        // Normalized progress (0 to 1)
+        const progress = totalDistance > 0 ? position / totalDistance : (t / visualTripTime);
+        
+        return Math.max(0.0, Math.min(1.0, progress));
     }
     
     /**
@@ -185,7 +480,7 @@ class TransferVisualization {
      * @param {string} toZoneId - Destination zone ID (for getting visual position)
      * @returns {THREE.BufferGeometry} Ellipse arc geometry
      */
-    createEllipseArc(params, fromAngle, toAngle, transferAngle, fromRadiusAU, toRadiusAU, segments = 64, fromZoneId = null, toZoneId = null) {
+    createEllipseArc(params, fromAngle, toAngle, transferAngle, fromRadiusAU, toRadiusAU, segments = 256, fromZoneId = null, toZoneId = null) {
         // Get origin orbital radius (use getVisualOrbitRadius which handles Dyson sphere specially)
         const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
         
@@ -489,7 +784,7 @@ class TransferVisualization {
         const { fromAngle, toAngle, transferAngle } = this.calculateLaunchAngles(fromZoneId, toZoneId);
         
         // Create geometry once with fixed orientation, passing zone IDs for visual position matching
-        const geometry = this.createEllipseArc(params, fromAngle, toAngle, transferAngle, params.fromAU, params.toAU, 64, fromZoneId, toZoneId);
+        const geometry = this.createEllipseArc(params, fromAngle, toAngle, transferAngle, params.fromAU, params.toAU, 128, fromZoneId, toZoneId);
         const color = this.colors[resourceType] || this.colors.probe;
         
         // Create dashed line material
@@ -512,15 +807,14 @@ class TransferVisualization {
     
     /**
      * Create cargo icon(s) for a transfer
-     * Metal transfers use 5 silver squares spread along the trajectory
+     * Metal transfers use a single silver square
      * Probes use a single sphere
      */
     createCargoDot(resourceType) {
         const color = this.colors[resourceType] || this.colors.probe;
         
         if (resourceType === 'metal') {
-            // Create 5 squares for metal transfers (spread along trajectory)
-            const dots = [];
+            // Create a single square for metal transfers
             const size = 0.06;
             const geometry = new THREE.BoxGeometry(size, size, size);
             const material = new THREE.MeshBasicMaterial({
@@ -529,11 +823,8 @@ class TransferVisualization {
                 emissiveIntensity: 0.5
             });
             
-            for (let i = 0; i < 5; i++) {
-                const dot = new THREE.Mesh(geometry.clone(), material.clone());
-                dots.push(dot);
-            }
-            return dots;
+            const icon = new THREE.Mesh(geometry, material);
+            return icon;
         } else {
             // Create a single sphere for probe transfers
             const geometry = new THREE.SphereGeometry(0.05, 8, 8);
@@ -601,7 +892,7 @@ class TransferVisualization {
      * Create periodic visualization for continuous transfer
      * Creates a new ellipse and dot every 7 days
      */
-    createPeriodicVisualization(transfer, fromZoneId, toZoneId, resourceType, departureTime, transferTime) {
+    createPeriodicVisualization(transfer, fromZoneId, toZoneId, resourceType, departureTime, transferTime, gameState = null) {
         const batchId = this.getBatchId(transfer.id, departureTime);
         
         // Check if visualization already exists
@@ -628,6 +919,44 @@ class TransferVisualization {
             this.scene.add(dot);
         }
         
+        // Get probe delta-v capacity from skills
+        let probeDeltaVCapacity = null;
+        if (gameState && gameState.skills) {
+            probeDeltaVCapacity = this.calculateProbeDeltaVCapacity(gameState.skills);
+        }
+        
+        // Calculate orbital velocities with probe capacity boost
+        const fromVelocityBase = this.getTransferVelocity(fromZoneId, probeDeltaVCapacity);
+        const toVelocity = this.getTransferVelocity(toZoneId, null); // Destination doesn't affect starting speed
+        
+        // Check if mass driver exists at origin zone
+        let hasMassDriver = false;
+        if (gameState && gameState.structures_by_zone) {
+            const zoneStructures = gameState.structures_by_zone[fromZoneId] || {};
+            hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
+        }
+        
+        // Apply mass driver boost: 1.5x origin velocity if mass driver exists
+        const fromVelocity = hasMassDriver ? fromVelocityBase * 1.5 : fromVelocityBase;
+        const avgVelocity = (fromVelocity + toVelocity) / 2;
+        
+        // Calculate visual arc length and visual transfer time
+        const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
+        const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
+        let arcLength = 0;
+        let visualTransferTimeDays = transferTime; // Fallback to game time
+        
+        if (fromVisualRadius && toVisualRadius && ellipseData.params) {
+            arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
+            if (arcLength > 0 && avgVelocity > 0) {
+                // Calculate visual transfer time using average velocity
+                // Units: arcLength (visual units) / avgVelocity (visual units/day) = days
+                // This ensures progress reaches exactly 1.0 at completion
+                // Visual speed varies linearly from fromVelocity to toVelocity
+                visualTransferTimeDays = arcLength / avgVelocity;
+            }
+        }
+        
         const arrivalTime = departureTime + transferTime;
         
         const batchViz = {
@@ -645,8 +974,17 @@ class TransferVisualization {
             transferId: transfer.id,
             departureTime: departureTime,
             arrivalTime: arrivalTime,
-            resourceType: resourceType
+            resourceType: resourceType,
+            fromVelocity: fromVelocity,
+            toVelocity: toVelocity,
+            avgVelocity: avgVelocity,
+            hasMassDriver: hasMassDriver,
+            arcLength: arcLength,
+            visualTransferTimeDays: visualTransferTimeDays
         };
+        
+        // Respect current visibility state (Tab toggle)
+        ellipseData.line.visible = this.linesVisible;
         
         this.continuousBatches.set(batchId, batchViz);
         return batchViz;
@@ -659,24 +997,38 @@ class TransferVisualization {
         const batchViz = this.continuousBatches.get(batchId);
         if (!batchViz) return;
         
+        // Remove ellipse line trajectory
         if (batchViz.ellipse) {
+            // Ensure it's removed from scene even if already removed
+            if (batchViz.ellipse.parent) {
+                batchViz.ellipse.parent.remove(batchViz.ellipse);
+            }
             this.scene.remove(batchViz.ellipse);
-            batchViz.ellipse.geometry.dispose();
-            batchViz.ellipse.material.dispose();
+            if (batchViz.ellipse.geometry) batchViz.ellipse.geometry.dispose();
+            if (batchViz.ellipse.material) {
+                if (Array.isArray(batchViz.ellipse.material)) {
+                    batchViz.ellipse.material.forEach(mat => mat.dispose());
+                } else {
+                    batchViz.ellipse.material.dispose();
+                }
+            }
         }
         
+        // Remove dot(s)
         if (batchViz.dot) {
-            // Handle both single dot and array of dots
+            // Handle both single dot and array of dots (for backwards compatibility)
             if (this.isMultiDot(batchViz.dot)) {
                 for (const d of batchViz.dot) {
+                    if (d.parent) d.parent.remove(d);
                     this.scene.remove(d);
-                    d.geometry.dispose();
-                    d.material.dispose();
+                    if (d.geometry) d.geometry.dispose();
+                    if (d.material) d.material.dispose();
                 }
             } else {
+                if (batchViz.dot.parent) batchViz.dot.parent.remove(batchViz.dot);
                 this.scene.remove(batchViz.dot);
-                batchViz.dot.geometry.dispose();
-                batchViz.dot.material.dispose();
+                if (batchViz.dot.geometry) batchViz.dot.geometry.dispose();
+                if (batchViz.dot.material) batchViz.dot.material.dispose();
             }
         }
         
@@ -691,6 +1043,12 @@ class TransferVisualization {
         
         const activeTransfers = gameState.active_transfers || [];
         const currentTime = gameState.time || 0;
+        
+        // Update animation timing state from game engine
+        this.lastGameTime = currentTime;
+        this.timeSpeed = window.gameEngine?.timeSpeed || 1;
+        // Game is paused when engine is not running
+        this.isPaused = !(window.gameEngine?.isRunning ?? true);
         
         // Track which transfers and batches we've seen
         const seenTransferIds = new Set();
@@ -734,7 +1092,8 @@ class TransferVisualization {
                                         toZoneId,
                                         resourceType,
                                         chunkStartTime,
-                                        transferTime
+                                        transferTime,
+                                        gameState
                                     );
                                     
                                     if (batchViz) {
@@ -758,57 +1117,46 @@ class TransferVisualization {
                     if (batchViz.transferId === transferId) {
                         seenBatchIds.add(batchId);
                         
-                        // Calculate progress for this visualization
-                        const progress = this.calculateBatchProgress({
-                            departure_time: batchViz.departureTime,
-                            arrival_time: batchViz.arrivalTime
-                        }, currentTime);
+                        // Calculate progress by integrating velocity over time
+                        const tripTime = batchViz.arrivalTime - batchViz.departureTime;
+                        const elapsed = currentTime - batchViz.departureTime;
                         
-                        if (progress >= 1.0) {
+                        // Use visual transfer time if available (accounts for starting velocity)
+                        const visualTripTime = batchViz.visualTransferTimeDays || tripTime;
+                        
+                        // Sync animation state for smooth interpolation between updates
+                        // (Dot positioning is handled by animate() for smooth 60fps updates)
+                        const scaledElapsed = tripTime > 0 ? (elapsed / tripTime) * visualTripTime : elapsed;
+                        this.syncAnimationState(batchViz, scaledElapsed);
+                        
+                        // Calculate progress to check for completion
+                        const v0 = batchViz.fromVelocity || 0.01;
+                        const vEnd = batchViz.toVelocity || 0.01;
+                        const arcLength = batchViz.arcLength || 0;
+                        const progress = this.calculateVelocityIntegratedProgress(v0, vEnd, elapsed, visualTripTime, arcLength);
+                        
+                        // Check if transfer has completed: both visual progress and actual arrival time
+                        const hasArrived = currentTime >= batchViz.arrivalTime;
+                        const isComplete = progress >= 1.0 || hasArrived;
+                        
+                        if (isComplete) {
+                            // Collect dot position BEFORE hiding (for arrival event)
+                            // Emit arrival event before removing
+                            this.emitArrivalEvent(batchViz);
+                            
+                            // Hide dot after collecting position
+                            if (batchViz.dot) {
+                                if (this.isMultiDot(batchViz.dot)) {
+                                    batchViz.dot.forEach(d => d.visible = false);
+                                } else {
+                                    batchViz.dot.visible = false;
+                                }
+                            }
+                            
                             // Visualization completed, remove it
                             this.removeBatch(batchId);
-                        } else {
-                            // Update dot position(s) along fixed trajectory
-                            if (this.isMultiDot(batchViz.dot)) {
-                                // Metal transfer: spread 5 dots along the trajectory
-                                const spacing = 0.03; // 3% spacing between dots (closer together)
-                                for (let i = 0; i < batchViz.dot.length; i++) {
-                                    // Lead dot at full progress, trailing dots behind
-                                    const dotProgress = progress - (i * spacing);
-                                    if (dotProgress >= 0 && dotProgress <= 1) {
-                                        const position = this.calculatePositionOnEllipse(
-                                            batchViz.params,
-                                            batchViz.fromAngle,
-                                            batchViz.toAngle,
-                                            batchViz.transferAngle,
-                                            batchViz.fromAU,
-                                            batchViz.toAU,
-                                            dotProgress,
-                                            batchViz.fromZoneId,
-                                            batchViz.toZoneId
-                                        );
-                                        batchViz.dot[i].position.copy(position);
-                                        batchViz.dot[i].visible = true;
-                                    } else {
-                                        batchViz.dot[i].visible = false;
-                                    }
-                                }
-                            } else {
-                                const position = this.calculatePositionOnEllipse(
-                                    batchViz.params,
-                                    batchViz.fromAngle,
-                                    batchViz.toAngle,
-                                    batchViz.transferAngle,
-                                    batchViz.fromAU,
-                                    batchViz.toAU,
-                                    progress,
-                                    batchViz.fromZoneId,
-                                    batchViz.toZoneId
-                                );
-                                batchViz.dot.position.copy(position);
-                                batchViz.dot.visible = true;
-                            }
                         }
+                        // Note: Dot positioning is now handled by animate() method for smooth 60fps updates
                     }
                 }
             } else {
@@ -843,6 +1191,45 @@ class TransferVisualization {
                         this.scene.add(dot);
                     }
                     
+        // Get probe delta-v capacity from skills
+        let probeDeltaVCapacity = null;
+        if (gameState && gameState.skills) {
+            probeDeltaVCapacity = this.calculateProbeDeltaVCapacity(gameState.skills);
+        }
+        
+        // Calculate orbital velocities with probe capacity boost
+        const fromVelocityBase = this.getTransferVelocity(fromZoneId, probeDeltaVCapacity);
+        const toVelocity = this.getTransferVelocity(toZoneId, null); // Destination doesn't affect starting speed
+        
+        // Check if mass driver exists at origin zone
+        let hasMassDriver = false;
+        if (gameState && gameState.structures_by_zone) {
+            const zoneStructures = gameState.structures_by_zone[fromZoneId] || {};
+            hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
+        }
+        
+        // Apply mass driver boost: 1.5x origin velocity if mass driver exists
+        const fromVelocity = hasMassDriver ? fromVelocityBase * 1.5 : fromVelocityBase;
+        const avgVelocity = (fromVelocity + toVelocity) / 2;
+                    
+                    // Calculate visual arc length and visual transfer time
+                    const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
+                    const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
+                    let arcLength = 0;
+                    const gameTransferTime = transfer.transfer_time || 0;
+                    let visualTransferTimeDays = gameTransferTime; // Fallback to game time
+                    
+                    if (fromVisualRadius && toVisualRadius && ellipseData.params) {
+                        arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
+                        if (arcLength > 0 && avgVelocity > 0) {
+                            // Calculate visual transfer time using average velocity
+                            // Units: arcLength (visual units) / avgVelocity (visual units/day) = days
+                            // This ensures progress reaches exactly 1.0 at completion
+                            // Visual speed varies linearly from fromVelocity to toVelocity
+                            visualTransferTimeDays = arcLength / avgVelocity;
+                        }
+                    }
+                    
                     transferViz = {
                         ellipse: ellipseData.line,
                         params: ellipseData.params,
@@ -855,58 +1242,63 @@ class TransferVisualization {
                         toZoneId: toZoneId, // Store for visual radius calculation
                         dot: dot,
                         transferId: transferId,
-                        resourceType: resourceType
+                        resourceType: resourceType,
+                        fromVelocity: fromVelocity,
+                        toVelocity: toVelocity,
+                        avgVelocity: avgVelocity,
+                        hasMassDriver: hasMassDriver,
+                        arcLength: arcLength,
+                        visualTransferTimeDays: visualTransferTimeDays
                     };
+                    
+                    // Respect current visibility state (Tab toggle)
+                    ellipseData.line.visible = this.linesVisible;
                     
                     this.transfers.set(transferId, transferViz);
                 }
                 
-                // Calculate progress
-                const progress = this.calculateProgress(transfer, currentTime);
+                // Calculate progress by integrating velocity over time
+                const departureTime = transfer.departure_time || 0;
+                const arrivalTime = transfer.arrival_time || currentTime;
+                const tripTime = arrivalTime - departureTime;
+                const elapsed = currentTime - departureTime;
                 
-                // Update dot position(s) along fixed trajectory
-                if (this.isMultiDot(transferViz.dot)) {
-                    // Metal transfer: spread 5 dots along the trajectory
-                    const spacing = 0.03; // 3% spacing between dots (closer together)
-                    for (let i = 0; i < transferViz.dot.length; i++) {
-                        // Lead dot at full progress, trailing dots behind
-                        const dotProgress = progress - (i * spacing);
-                        if (dotProgress >= 0 && dotProgress <= 1) {
-                            const position = this.calculatePositionOnEllipse(
-                                transferViz.params,
-                                transferViz.fromAngle,
-                                transferViz.toAngle,
-                                transferViz.transferAngle,
-                                transferViz.fromAU,
-                                transferViz.toAU,
-                                dotProgress,
-                                transferViz.fromZoneId,
-                                transferViz.toZoneId
-                            );
-                            transferViz.dot[i].position.copy(position);
-                            transferViz.dot[i].visible = true;
-                        } else {
-                            transferViz.dot[i].visible = false;
-                        }
-                    }
-                } else {
-                    const position = this.calculatePositionOnEllipse(
-                        transferViz.params,
-                        transferViz.fromAngle,
-                        transferViz.toAngle,
-                        transferViz.transferAngle,
-                        transferViz.fromAU,
-                        transferViz.toAU,
-                        progress,
-                        transferViz.fromZoneId,
-                        transferViz.toZoneId
-                    );
-                    transferViz.dot.position.copy(position);
-                    transferViz.dot.visible = true;
-                }
+                // Use visual transfer time if available (accounts for starting velocity)
+                // For outbound transfers (high v0), visualTransferTimeDays is shorter than tripTime
+                // This makes them appear faster, matching the higher initial velocity
+                const visualTripTime = transferViz.visualTransferTimeDays || tripTime;
+                
+                // Sync animation state for smooth interpolation between updates
+                // Scale elapsed to match visual trip time proportion
+                const scaledElapsed = tripTime > 0 ? (elapsed / tripTime) * visualTripTime : elapsed;
+                this.syncAnimationState(transferViz, scaledElapsed);
+                
+                // Calculate progress to check for completion
+                // (Dot positioning is handled by animate() for smooth 60fps updates)
+                const v0 = transferViz.fromVelocity || 0.01;
+                const vEnd = transferViz.toVelocity || 0.01;
+                const arcLength = transferViz.arcLength || 0;
+                const progress = this.calculateVelocityIntegratedProgress(v0, vEnd, elapsed, visualTripTime, arcLength);
+                
+                // Check if transfer has completed: both visual progress and actual arrival time
+                const hasArrived = currentTime >= arrivalTime;
+                const isComplete = progress >= 1.0 || hasArrived;
                 
                 // Remove visualization when transfer completes
-                if (progress >= 1.0) {
+                if (isComplete) {
+                    // Collect dot position BEFORE hiding (for arrival event)
+                    // Emit arrival event before removing
+                    this.emitArrivalEvent(transferViz);
+                    
+                    // Hide dot after collecting position
+                    if (transferViz.dot) {
+                        if (this.isMultiDot(transferViz.dot)) {
+                            transferViz.dot.forEach(d => d.visible = false);
+                        } else {
+                            transferViz.dot.visible = false;
+                        }
+                    }
+                    
                     this.removeTransfer(transferId);
                 }
             }
@@ -935,34 +1327,228 @@ class TransferVisualization {
     }
     
     /**
+     * Emit arrival event when a transfer completes
+     * @param {Object} viz - Transfer or batch visualization object
+     */
+    emitArrivalEvent(viz) {
+        if (!this.onTransferArrival) return;
+        
+        const toZoneId = viz.toZoneId;
+        const resourceType = viz.resourceType || 'probe';
+        
+        // Collect dot positions at destination
+        const positions = [];
+        if (viz.dot) {
+            if (this.isMultiDot(viz.dot)) {
+                for (const d of viz.dot) {
+                    if (d.visible && d.position) {
+                        positions.push(d.position.clone());
+                    }
+                }
+            } else {
+                if (viz.dot.visible && viz.dot.position) {
+                    positions.push(viz.dot.position.clone());
+                }
+            }
+        }
+        
+        // If no positions collected, calculate destination position from ellipse
+        // This gives us the position at the destination orbit radius where the transfer arrives
+        if (positions.length === 0) {
+            const destPos = this.calculatePositionOnEllipse(
+                viz.params,
+                viz.fromAngle,
+                viz.toAngle,
+                viz.transferAngle,
+                viz.fromAU,
+                viz.toAU,
+                1.0, // At destination (progress = 1.0)
+                viz.fromZoneId,
+                viz.toZoneId
+            );
+            positions.push(destPos);
+        }
+        
+        // Emit the callback
+        this.onTransferArrival({
+            zoneId: toZoneId,
+            resourceType: resourceType,
+            positions: positions,
+            dotCount: positions.length
+        });
+    }
+    
+    /**
      * Remove transfer visualization
      */
     removeTransfer(transferId) {
         const transferViz = this.transfers.get(transferId);
         if (!transferViz) return;
         
+        // Remove ellipse line trajectory
         if (transferViz.ellipse) {
+            // Ensure it's removed from scene even if already removed
+            if (transferViz.ellipse.parent) {
+                transferViz.ellipse.parent.remove(transferViz.ellipse);
+            }
             this.scene.remove(transferViz.ellipse);
-            transferViz.ellipse.geometry.dispose();
-            transferViz.ellipse.material.dispose();
+            if (transferViz.ellipse.geometry) transferViz.ellipse.geometry.dispose();
+            if (transferViz.ellipse.material) {
+                if (Array.isArray(transferViz.ellipse.material)) {
+                    transferViz.ellipse.material.forEach(mat => mat.dispose());
+                } else {
+                    transferViz.ellipse.material.dispose();
+                }
+            }
         }
         
+        // Remove dot(s)
         if (transferViz.dot) {
-            // Handle both single dot and array of dots
+            // Handle both single dot and array of dots (for backwards compatibility)
             if (this.isMultiDot(transferViz.dot)) {
                 for (const d of transferViz.dot) {
+                    if (d.parent) d.parent.remove(d);
                     this.scene.remove(d);
-                    d.geometry.dispose();
-                    d.material.dispose();
+                    if (d.geometry) d.geometry.dispose();
+                    if (d.material) d.material.dispose();
                 }
             } else {
+                if (transferViz.dot.parent) transferViz.dot.parent.remove(transferViz.dot);
                 this.scene.remove(transferViz.dot);
-                transferViz.dot.geometry.dispose();
-                transferViz.dot.material.dispose();
+                if (transferViz.dot.geometry) transferViz.dot.geometry.dispose();
+                if (transferViz.dot.material) transferViz.dot.material.dispose();
             }
         }
         
         this.transfers.delete(transferId);
+    }
+    
+    /**
+     * Animate transfer dots smoothly between game state updates.
+     * Called every frame (~60fps) for smooth motion.
+     * @param {number} deltaTime - Time since last frame in seconds (real time)
+     */
+    animate(deltaTime) {
+        if (this.isPaused || !deltaTime) return;
+        
+        // Calculate interpolated game time based on real elapsed time and game speed
+        const realNow = performance.now() / 1000;
+        const realDelta = Math.min(deltaTime, 0.1); // Cap at 100ms to prevent large jumps
+        
+        // Estimate current game time by interpolating from last known state
+        // Game time advances by (real_delta * timeSpeed) days per second
+        // But the update() function provides game time in days directly
+        // So we interpolate: currentTime = lastGameTime + realDelta * timeSpeed / 86400
+        // However, game time is typically in days, and timeSpeed is multiplier
+        // The game runs timeSpeed * 86400 game-seconds per real-second
+        // Which is timeSpeed days per real-day, or timeSpeed/86400 days per real-second
+        // Actually the game engine uses days directly, so:
+        // interpolatedTime = lastGameTime + (realDelta * timeSpeed * daysPerSecond)
+        // Where daysPerSecond depends on the base tick rate
+        
+        // Simpler approach: just advance based on the last known velocity
+        // Each transfer knows its position from last update, just lerp toward where it should be
+        
+        // For each transfer, calculate target position and smoothly interpolate
+        this.animateTransfers(this.transfers, deltaTime);
+        this.animateTransfers(this.continuousBatches, deltaTime);
+    }
+    
+    /**
+     * Animate a collection of transfers with smooth interpolation
+     * @param {Map} transferMap - Map of transfers (either this.transfers or this.continuousBatches)
+     * @param {number} deltaTime - Time since last frame in seconds
+     */
+    animateTransfers(transferMap, deltaTime) {
+        for (const [id, viz] of transferMap.entries()) {
+            if (!viz.dot || !viz.visible) continue;
+            
+            // Calculate how much game time has passed based on time speed
+            // timeSpeed is game-days per second at 1x, so:
+            // gameDelta = deltaTime * timeSpeed (in days)
+            const gameDelta = deltaTime * this.timeSpeed;
+            
+            // Update the internal elapsed tracker
+            if (viz.animElapsed === undefined) {
+                viz.animElapsed = 0;
+            }
+            viz.animElapsed += gameDelta;
+            
+            // Cap animElapsed to not exceed the trip time
+            const tripTime = viz.visualTransferTimeDays || (viz.arrivalTime - viz.departureTime);
+            if (tripTime <= 0) continue;
+            
+            // Clamp elapsed time
+            viz.animElapsed = Math.min(viz.animElapsed, tripTime);
+            
+            // Calculate velocities
+            const v0 = viz.fromVelocity || 0.01;
+            const vEnd = viz.toVelocity || 0.01;
+            const arcLength = viz.arcLength || 0;
+            
+            // Calculate progress using velocity integration
+            const progress = this.calculateVelocityIntegratedProgress(v0, vEnd, viz.animElapsed, tripTime, arcLength);
+            
+            // Update dot position(s)
+            if (this.isMultiDot(viz.dot)) {
+                // Metal transfer: spread dots along the trajectory
+                const spacing = 0.006;
+                const visualTripTime = tripTime;
+                for (let i = 0; i < viz.dot.length; i++) {
+                    const trailingElapsed = viz.animElapsed - (i * spacing * visualTripTime);
+                    let dotProgress;
+                    if (trailingElapsed > 0 && trailingElapsed <= visualTripTime) {
+                        dotProgress = this.calculateVelocityIntegratedProgress(v0, vEnd, trailingElapsed, visualTripTime, arcLength);
+                    } else {
+                        dotProgress = progress - (i * spacing);
+                    }
+                    if (dotProgress >= 0 && dotProgress <= 1) {
+                        const position = this.calculatePositionOnEllipse(
+                            viz.params,
+                            viz.fromAngle,
+                            viz.toAngle,
+                            viz.transferAngle,
+                            viz.fromAU,
+                            viz.toAU,
+                            dotProgress,
+                            viz.fromZoneId,
+                            viz.toZoneId
+                        );
+                        viz.dot[i].position.copy(position);
+                        viz.dot[i].visible = true;
+                    } else {
+                        viz.dot[i].visible = false;
+                    }
+                }
+            } else {
+                if (progress >= 0 && progress <= 1) {
+                    const position = this.calculatePositionOnEllipse(
+                        viz.params,
+                        viz.fromAngle,
+                        viz.toAngle,
+                        viz.transferAngle,
+                        viz.fromAU,
+                        viz.toAU,
+                        progress,
+                        viz.fromZoneId,
+                        viz.toZoneId
+                    );
+                    viz.dot.position.copy(position);
+                    viz.dot.visible = true;
+                }
+            }
+        }
+    }
+    
+    /**
+     * Sync animation state with game state (called from update())
+     * Resets the animation elapsed time to match the authoritative game time
+     * @param {Object} viz - Transfer visualization object
+     * @param {number} gameElapsed - Elapsed time from game state (in game days)
+     */
+    syncAnimationState(viz, gameElapsed) {
+        viz.animElapsed = gameElapsed;
+        viz.visible = true;
     }
     
     /**
@@ -981,6 +1567,29 @@ class TransferVisualization {
         
         this.continuousTransferLastCreation.clear();
         this.ellipseCache.clear();
+    }
+    
+    /**
+     * Toggle visibility of all transfer trajectory lines
+     * @param {boolean} visible - Whether lines should be visible
+     */
+    toggleTransferLines(visible) {
+        // Save visibility state so new transfers respect it
+        this.linesVisible = visible;
+        
+        // Toggle one-time transfer ellipse lines
+        for (const [transferId, transferViz] of this.transfers.entries()) {
+            if (transferViz.ellipse) {
+                transferViz.ellipse.visible = visible;
+            }
+        }
+        
+        // Toggle continuous transfer ellipse lines
+        for (const [batchId, batchViz] of this.continuousBatches.entries()) {
+            if (batchViz.ellipse) {
+                batchViz.ellipse.visible = visible;
+            }
+        }
     }
 }
 

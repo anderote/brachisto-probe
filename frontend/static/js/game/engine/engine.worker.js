@@ -180,11 +180,16 @@ function handleAction(data) {
         const result = engine.performAction(actionType, actionData);
         const gameState = engine.getState();
         
+        // Propagate the engine's success/failure status properly
+        // Engine actions return {success: boolean, error?: string, ...}
+        const actionSuccess = result && result.success !== undefined ? result.success : true;
+        
         self.postMessage({
             type: 'actionComplete',
             actionId: actionId,
-            success: true,
+            success: actionSuccess,
             result: result,
+            error: result && result.error ? result.error : null,
             gameState: gameState
         });
     } catch (error) {

@@ -12,6 +12,7 @@ class OrbitalMechanics {
         this.dataLoader = dataLoader;
         this.orbitalZones = null;
         this.economicRules = null;
+        this.hohmannTransfers = null;  // Pre-calculated Hohmann transfer delta-v matrix
         
         // Standard gravitational parameter for Sun (m³/s²)
         this.SUN_MU = 1.32712440018e20;  // G * M_sun
@@ -37,6 +38,14 @@ class OrbitalMechanics {
     }
     
     /**
+     * Initialize with transfer delta-v data
+     * @param {Object} transferData - Hohmann transfer delta-v matrix from data loader
+     */
+    initializeTransferData(transferData) {
+        this.hohmannTransfers = transferData;
+    }
+    
+    /**
      * Get zone properties by ID
      * @param {string} zoneId - Zone identifier
      * @returns {Object|null} Zone properties
@@ -47,65 +56,87 @@ class OrbitalMechanics {
     }
     
     /**
-     * Build skill values array from coefficients and skills
+     * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * @param {string} skillName - Skill name from economic rules
+     * @returns {string} Canonical skill name
+     */
+    resolveSkillAlias(skillName) {
+        // Map economic_rules skill names to SKILL_DEFINITIONS skill names
+        const aliasMap = {
+            'energy_storage': 'battery_density',
+            'thermal_management': 'radiator',
+            'robotics': 'manipulation',
+            'robotic': 'manipulation',
+            'energy': 'solar_pv',
+            'energy_collection': 'solar_pv',
+            'materials_science': 'materials'
+        };
+        return aliasMap[skillName] || skillName;
+    }
+
+    /**
+     * Build skill values with names for breakdown tracking
+     * Dynamically reads ALL skills from coefficients and resolves aliases
      * @param {Object} coefficients - Skill coefficients { skillName: coefficient }
      * @param {Object} skills - Current skills from research
-     * @returns {Array<number>} Array of (coefficient * skill) values
+     * @returns {Array<{name: string, value: number, weight: number}>} Array of skill info
      */
     buildSkillValues(coefficients, skills) {
-        if (!coefficients) return [1.0];
+        if (!coefficients) return [];
         
         const values = [];
-        for (const [skillName, coefficient] of Object.entries(coefficients)) {
-            if (skillName === 'description') continue; // Skip description field
+        for (const [rawSkillName, coefficient] of Object.entries(coefficients)) {
+            if (rawSkillName === 'description') continue; // Skip description field
             
-            // Map skill names to actual skill values
-            let skillValue = 1.0;
-            switch (skillName) {
-                case 'robotic':
-                    skillValue = skills.robotic || skills.manipulation || 1.0;
-                    break;
-                case 'computer':
-                    skillValue = skills.computer?.total || 1.0;
-                    break;
-                case 'solar_pv':
-                    skillValue = skills.solar_pv || skills.energy_collection || 1.0;
-                    break;
-                default:
-                    skillValue = skills[skillName] || 1.0;
+            // Resolve skill alias to canonical name
+            const skillName = this.resolveSkillAlias(rawSkillName);
+            
+            // Get skill value (with fallbacks for common aliases)
+            let skillValue = skills[skillName] || 1.0;
+            
+            // Additional fallback handling for complex skill types
+            if (skillValue === 1.0 && skillName === 'manipulation') {
+                skillValue = skills.manipulation || skills.robotic || 1.0;
+            }
+            if (skillValue === 1.0 && skillName === 'solar_pv') {
+                skillValue = skills.solar_pv || skills.energy_collection || 1.0;
+            }
+            if (skillValue === 1.0 && rawSkillName === 'computer') {
+                skillValue = skills.computer?.total || 1.0;
             }
             
-            values.push(coefficient * skillValue);
+            values.push({
+                name: rawSkillName, // Keep original name for display
+                canonicalName: skillName,
+                value: skillValue,
+                weight: coefficient
+            });
         }
         
-        return values.length > 0 ? values : [1.0];
+        return values;
     }
     
     /**
-     * Calculate tech tree upgrade factor using geometric mean
-     * Formula: F = G^alpha where G = (c1*s1 * c2*s2 * ... * cn*sn)^(1/n)
-     * @param {Array<number>} skillValues - Array of (skill * coefficient) values
-     * @param {number} alpha - Tech growth scale factor (default 0.75)
-     * @returns {number} Tech tree upgrade factor
+     * Calculate upgrade factor using weighted sum
+     * Formula: factor = 1 + Σ(weight_i * (skill_i - 1))
+     * @param {Array<{name: string, value: number, weight: number}>} skillInfo - Array of skill info
+     * @returns {number} Upgrade factor
      */
-    calculateTechTreeUpgradeFactor(skillValues, alpha = 0.75) {
-        if (!skillValues || skillValues.length === 0) return 1.0;
+    calculateTechTreeUpgradeFactor(skillInfo) {
+        if (!skillInfo || skillInfo.length === 0) return 1.0;
         
-        // Filter out zero/negative values (safety check)
-        const validValues = skillValues.filter(v => v > 0);
-        if (validValues.length === 0) return 1.0;
+        let bonus = 0;
         
-        // Calculate geometric mean: G = (v1 * v2 * ... * vn)^(1/n)
-        const product = validValues.reduce((prod, val) => prod * val, 1.0);
-        const geometricMean = Math.pow(product, 1.0 / validValues.length);
+        for (const { value, weight } of skillInfo) {
+            // Skip invalid values
+            if (value <= 0 || !isFinite(value)) continue;
+            
+            // Calculate contribution: weight * (skillValue - 1)
+            // This gives 0 when skill = 1.0, and scales linearly
+            bonus += weight * (value - 1.0);
+        }
         
-        // Calculate log(G)
-        const logG = Math.log(geometricMean);
-        
-        // F = exp(alpha * log(G)) = G^alpha
-        const factor = Math.exp(alpha * logG);
-        
-        return factor;
+        return 1.0 + bonus;
     }
     
     /**
@@ -125,9 +156,8 @@ class OrbitalMechanics {
             return 1.0 / (1 + (skills.propulsion || 1.0) - 1.0);
         }
         
-        const skillValues = this.buildSkillValues(coefficients, skills);
-        const alpha = this.economicRules.alpha_factors?.probe_performance || 0.75;
-        const upgradeFactor = this.calculateTechTreeUpgradeFactor(skillValues, alpha);
+        const skillInfo = this.buildSkillValues(coefficients, skills);
+        const upgradeFactor = this.calculateTechTreeUpgradeFactor(skillInfo);
         
         // Delta-v reduction: higher upgrade factor = lower delta-v requirement
         // Return inverse (1 / factor) so that factor > 1 means less delta-v needed
@@ -151,9 +181,8 @@ class OrbitalMechanics {
             return 1.0;
         }
         
-        const skillValues = this.buildSkillValues(coefficients, skills);
-        const alpha = this.economicRules.alpha_factors?.probe_performance || 0.75;
-        const upgradeFactor = this.calculateTechTreeUpgradeFactor(skillValues, alpha);
+        const skillInfo = this.buildSkillValues(coefficients, skills);
+        const upgradeFactor = this.calculateTechTreeUpgradeFactor(skillInfo);
         
         // Transfer speed: higher upgrade factor = faster transfers
         return upgradeFactor;
@@ -161,10 +190,12 @@ class OrbitalMechanics {
     
     /**
      * Calculate delta-v for Hohmann transfer between two zones
+     * Note: This is pure physics - orbital mechanics don't change with upgrades.
+     * Upgrades affect probe capacity and mass driver performance, not orbital delta-v requirements.
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
-     * @param {Object|number} skillsOrPropulsionSkill - Skills object or propulsion skill multiplier (for backward compatibility)
-     * @returns {number} Delta-v in m/s
+     * @param {Object|number} skillsOrPropulsionSkill - DEPRECATED: kept for backward compatibility but not used
+     * @returns {number} Delta-v in m/s (fixed physics value, not reduced by upgrades)
      */
     calculateDeltaV(fromZoneId, toZoneId, skillsOrPropulsionSkill = 1.0) {
         const fromZone = this.getZone(fromZoneId);
@@ -191,7 +222,7 @@ class OrbitalMechanics {
         
         if (rInner === rOuter) return 0;  // Same zone
         
-        // Calculate Hohmann transfer delta-v
+        // Calculate Hohmann transfer delta-v (pure physics, no skill reduction)
         const sqrtMu = Math.sqrt(this.SUN_MU);
         const rSum = rInner + rOuter;
         
@@ -203,32 +234,21 @@ class OrbitalMechanics {
         
         const totalDeltaV = Math.abs(dv1) + Math.abs(dv2);
         
-        // Apply skill-based delta-v reduction
-        let reductionFactor = 1.0;
-        if (typeof skillsOrPropulsionSkill === 'object' && skillsOrPropulsionSkill !== null) {
-            // New system: use skill coefficients from config
-            reductionFactor = this.calculateDeltaVReductionFactor(skillsOrPropulsionSkill);
-        } else {
-            // Legacy system: use propulsion skill directly
-            const propulsionSkill = skillsOrPropulsionSkill || 1.0;
-            reductionFactor = 1.0 / (1 + (propulsionSkill - 1.0));
-        }
-        
-        const effectiveDeltaV = totalDeltaV * reductionFactor;
-        
-        return effectiveDeltaV;
+        // Return pure physics value - NO skill reduction
+        // Upgrades affect probe capacity and mass driver performance, not orbital mechanics
+        return totalDeltaV;
     }
     
     /**
-     * Calculate transfer time based on Hohmann ellipse arc length
-     * Uses constant cargo speed along the elliptical path
-     * Calibrated so Earth (1 AU) to Mars (1.52 AU) takes ~8 months
+     * Calculate transfer time based on Hohmann ellipse arc length and physics-based speed
+     * Speed = orbital_velocity + (probe_delta_v - escape_velocity)
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
      * @param {Object|number} skillsOrPropulsionSkill - Skills object or propulsion skill multiplier (for backward compatibility)
+     * @param {number} probeDvBonus - Optional probe delta-v bonus from starting skill points (km/s)
      * @returns {number} Transfer time in days
      */
-    calculateTransferTime(fromZoneId, toZoneId, skillsOrPropulsionSkill = 1.0) {
+    calculateTransferTime(fromZoneId, toZoneId, skillsOrPropulsionSkill = 1.0, probeDvBonus = 0) {
         const fromZone = this.getZone(fromZoneId);
         const toZone = this.getZone(toZoneId);
         
@@ -254,29 +274,38 @@ class OrbitalMechanics {
         const b = semiMinorAxis;
         const h = Math.pow((a - b) / (a + b), 2);
         const fullCircumference = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-        const arcLength = fullCircumference / 2; // Half-orbit for Hohmann transfer
+        const arcLengthAU = fullCircumference / 2; // Half-orbit for Hohmann transfer
         
-        // Base cargo speed: calibrated so Earth→Mars takes 8 months (243 days)
-        // Earth-Mars arc length: a=1.26 AU, e=0.206, b≈1.23 AU, arc≈3.9 AU
-        // Speed = 3.9 AU / 243 days ≈ 0.016 AU/day
-        const EARTH_MARS_ARC = 3.9; // AU (approximate)
-        const EARTH_MARS_TIME = 243; // days (8 months)
-        const BASE_SPEED_AU_PER_DAY = EARTH_MARS_ARC / EARTH_MARS_TIME;
+        // Convert arc length to km
+        const arcLengthKm = arcLengthAU * AU_KM;
         
-        const baseTimeDays = arcLength / BASE_SPEED_AU_PER_DAY;
-        
-        // Apply skill-based transfer speed multiplier
-        let speedFactor = 1.0;
+        // Get probe delta-v capacity from skills (including starting skill point bonus)
+        let probeDeltaVCapacity = 1.0; // Default base capacity
         if (typeof skillsOrPropulsionSkill === 'object' && skillsOrPropulsionSkill !== null) {
-            // New system: use skill coefficients from config
-            speedFactor = this.calculateTransferSpeedFactor(skillsOrPropulsionSkill);
+            probeDeltaVCapacity = this.getProbeDeltaVCapacity(skillsOrPropulsionSkill, probeDvBonus);
+        } else {
+            // If just a number was passed, add the bonus directly
+            probeDeltaVCapacity = (skillsOrPropulsionSkill || 1.0) + probeDvBonus;
         }
-        // Legacy: if propulsionSkill is a number, it's currently unused (reserved for future)
         
-        // Higher speed factor = faster transfers = less time
-        const effectiveTimeDays = baseTimeDays / speedFactor;
+        // Calculate transfer speed using physics-based formula
+        // Speed = orbital_velocity + (probe_delta_v - escape_velocity)
+        const transferSpeedKmS = this.calculateTransferSpeedKmS(fromZoneId, probeDeltaVCapacity);
         
-        return effectiveTimeDays;
+        if (transferSpeedKmS <= 0) {
+            // Fallback to old calculation if speed calculation fails
+            const EARTH_MARS_ARC = 3.9; // AU (approximate)
+            const EARTH_MARS_TIME = 243; // days (8 months)
+            const BASE_SPEED_AU_PER_DAY = EARTH_MARS_ARC / EARTH_MARS_TIME;
+            return arcLengthAU / BASE_SPEED_AU_PER_DAY;
+        }
+        
+        // Calculate time: distance / speed
+        // Convert km/s to km/day: km/s * 86400 s/day = km/day
+        const transferSpeedKmPerDay = transferSpeedKmS * 86400;
+        const transferTimeDays = arcLengthKm / transferSpeedKmPerDay;
+        
+        return transferTimeDays;
     }
     
     /**
@@ -357,6 +386,348 @@ class OrbitalMechanics {
         const zone = this.getZone(zoneId);
         if (!zone) return false;
         return zone.is_dyson_zone || false;
+    }
+    
+    /**
+     * Get physical orbital velocity for a zone in km/s
+     * Uses vis-viva equation: v = sqrt(μ/r) for circular orbit
+     * @param {string} zoneId - Zone identifier
+     * @returns {number} Orbital velocity in km/s
+     */
+    getOrbitalVelocityKmS(zoneId) {
+        const zone = this.getZone(zoneId);
+        if (!zone) return 0;
+        
+        // Get orbital radius in meters
+        const r = zone.radius_km * 1000; // Convert km to m
+        
+        if (r <= 0) return 0;
+        
+        // For circular orbit: v = sqrt(μ/r)
+        // μ = G * M_sun (standard gravitational parameter)
+        const velocityMS = Math.sqrt(this.SUN_MU / r);
+        
+        // Convert m/s to km/s
+        return velocityMS / 1000;
+    }
+    
+    /**
+     * Calculate transfer speed in km/s based on probe delta-v capacity
+     * Formula: speed = orbital_velocity + (probe_delta_v - escape_velocity)
+     * @param {string} fromZoneId - Source zone
+     * @param {number} probeDeltaVCapacity - Probe's delta-v capacity in km/s
+     * @returns {number} Transfer speed in km/s
+     */
+    calculateTransferSpeedKmS(fromZoneId, probeDeltaVCapacity) {
+        const zone = this.getZone(fromZoneId);
+        if (!zone) return 0;
+        
+        const escapeVelocity = zone.escape_delta_v_km_s || 0;
+        const orbitalVelocity = this.getOrbitalVelocityKmS(fromZoneId);
+        
+        // Speed = orbital velocity + (probe capacity - escape velocity)
+        // Excess delta-v beyond escape velocity adds directly to speed
+        const excessDeltaV = Math.max(0, probeDeltaVCapacity - escapeVelocity);
+        return orbitalVelocity + excessDeltaV;
+    }
+    
+    /**
+     * Get pre-calculated Hohmann transfer delta-v (km/s) between two zones
+     * This is the orbital transfer component only, does not include escape velocity
+     * Note: This is FIXED physics - orbital mechanics don't change with upgrades
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @returns {number} Hohmann transfer delta-v in km/s (fixed, physics-based)
+     */
+    getHohmannDeltaVKmS(fromZoneId, toZoneId) {
+        if (!this.hohmannTransfers) {
+            // Fallback to calculated value if transfer data not loaded (no skill reduction)
+            const fromZone = this.getZone(fromZoneId);
+            const toZone = this.getZone(toZoneId);
+            if (!fromZone || !toZone) return Infinity;
+            if (fromZoneId === toZoneId) return 0;
+            
+            // Calculate pure Hohmann transfer (no skill reduction)
+            const r1 = fromZone.radius_km * 1000;
+            const r2 = toZone.radius_km * 1000;
+            const rInner = Math.min(r1, r2);
+            const rOuter = Math.max(r1, r2);
+            const rSum = rInner + rOuter;
+            const sqrtMu = Math.sqrt(this.SUN_MU);
+            const dv1 = sqrtMu / Math.sqrt(rInner) * (Math.sqrt(2 * rOuter / rSum) - 1);
+            const dv2 = sqrtMu / Math.sqrt(rOuter) * (1 - Math.sqrt(2 * rInner / rSum));
+            return (Math.abs(dv1) + Math.abs(dv2)) / 1000; // Convert to km/s
+        }
+        
+        const fromTransfers = this.hohmannTransfers[fromZoneId];
+        if (!fromTransfers) {
+            return Infinity;
+        }
+        
+        const deltaV = fromTransfers[toZoneId];
+        if (deltaV === undefined) {
+            return Infinity;
+        }
+        
+        return deltaV;
+    }
+    
+    /**
+     * Calculate dynamic escape delta-v based on current zone mass
+     * Escape velocity scales with sqrt(mass ratio)
+     * @param {string} zoneId - Zone identifier
+     * @param {number} currentMass - Current mass of the zone in kg
+     * @returns {number} Escape delta-v in km/s
+     */
+    calculateEscapeDeltaV(zoneId, currentMass) {
+        const zone = this.getZone(zoneId);
+        if (!zone) {
+            return 0;
+        }
+        
+        const baseEscapeDV = zone.escape_delta_v_km_s || 0;
+        if (baseEscapeDV === 0) {
+            return 0; // No gravity well (e.g., Dyson sphere, asteroid belt)
+        }
+        
+        const originalMass = zone.total_mass_kg || 0;
+        if (originalMass <= 0 || currentMass <= 0) {
+            return 0;
+        }
+        
+        // Scale with sqrt(mass ratio): v_escape ∝ sqrt(M)
+        const massRatio = currentMass / originalMass;
+        return baseEscapeDV * Math.sqrt(massRatio);
+    }
+    
+    /**
+     * Get total delta-v for a transfer (escape + Hohmann)
+     * Note: This is the REQUIRED delta-v, not affected by upgrades.
+     * Upgrades affect probe capacity and mass driver performance, not orbital mechanics.
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {number} fromZoneMass - Current mass of source zone in kg
+     * @param {Object} skills - Current skills (deprecated, kept for compatibility but not used)
+     * @returns {number} Total delta-v in km/s (required, not reduced by upgrades)
+     */
+    getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass, skills = null) {
+        // Escape delta-v from origin body (scales with planetary mass only)
+        const escapeDV = this.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+        
+        // Hohmann transfer delta-v (fixed, physics-based, not affected by upgrades)
+        const hohmannDV = this.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+        
+        // Total delta-v required (escape + orbital transfer)
+        // This is the PHYSICS requirement, not affected by upgrades
+        return escapeDV + hohmannDV;
+    }
+    
+    /**
+     * Get delta-v requirement in km/s (converted from m/s)
+     * Legacy method - now uses two-component system if zone mass is provided
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {Object|number} skillsOrZoneMass - Current skills or zone mass (for backward compatibility)
+     * @returns {number} Delta-v in km/s
+     */
+    getDeltaVKmS(fromZoneId, toZoneId, skillsOrZoneMass = null) {
+        // If skillsOrZoneMass is a number, treat it as zone mass (new API)
+        if (typeof skillsOrZoneMass === 'number') {
+            return this.getTotalDeltaVKmS(fromZoneId, toZoneId, skillsOrZoneMass);
+        }
+        
+        // Legacy: use old calculation method
+        const deltaVMS = this.calculateDeltaV(fromZoneId, toZoneId, skillsOrZoneMass || {});
+        return deltaVMS / 1000; // Convert m/s to km/s
+    }
+    
+    /**
+     * Calculate probe delta-v capacity from skills
+     * @param {Object} skills - Current skills from research
+     * @param {number} probeDvBonus - Optional probe delta-v bonus from starting skill points (km/s)
+     * @returns {number} Probe delta-v capacity in km/s
+     */
+    getProbeDeltaVCapacity(skills, probeDvBonus = 0) {
+        if (!this.economicRules || !this.economicRules.probe_transfer) {
+            return 1.0 + probeDvBonus; // Default base capacity + bonus
+        }
+        
+        // Add probe delta-v bonus from starting skill points
+        const baseDeltaV = (this.economicRules.probe_transfer.base_delta_v_km_s || 1.0) + probeDvBonus;
+        
+        if (!this.economicRules.skill_coefficients || !this.economicRules.skill_coefficients.probe_delta_v_capacity) {
+            return baseDeltaV; // No upgrades
+        }
+        
+        const coefficients = this.economicRules.skill_coefficients.probe_delta_v_capacity;
+        const skillInfo = this.buildSkillValues(coefficients, skills);
+        const upgradeFactor = this.calculateTechTreeUpgradeFactor(skillInfo);
+        
+        // Capacity increases with upgrade factor
+        return baseDeltaV * upgradeFactor;
+    }
+    
+    /**
+     * Calculate combined delta-v capacity from probe + mass driver
+     * When a zone has mass drivers, probes launched from there get a boost
+     * @param {Object} skills - Current skills from research
+     * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s (0 if no mass driver)
+     * @param {number} probeDvBonus - Optional probe delta-v bonus from starting skill points (km/s)
+     * @returns {number} Combined delta-v capacity in km/s
+     */
+    getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity = 0, probeDvBonus = 0) {
+        const probeCapacity = this.getProbeDeltaVCapacity(skills, probeDvBonus);
+        
+        // Mass driver adds its muzzle velocity to the probe's own delta-v
+        // This represents the probe being launched at higher velocity
+        return probeCapacity + massDriverMuzzleVelocity;
+    }
+    
+    /**
+     * Calculate excess delta-v available for speed bonus
+     * @param {number} totalCapacity - Combined probe + mass driver delta-v capacity in km/s
+     * @param {number} requiredDeltaV - Required delta-v for the transfer in km/s
+     * @returns {number} Excess delta-v in km/s (0 if not enough capacity)
+     */
+    getExcessDeltaV(totalCapacity, requiredDeltaV) {
+        return Math.max(0, totalCapacity - requiredDeltaV);
+    }
+    
+    /**
+     * Calculate transfer time with speed bonus from excess delta-v
+     * Excess delta-v provides a speed boost: each km/s of excess reduces transfer time
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {Object} skills - Current skills
+     * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s (0 if no mass driver)
+     * @param {number} fromZoneMass - Current mass of source zone in kg (optional)
+     * @returns {number} Transfer time in days (reduced by excess delta-v speed bonus)
+     */
+    calculateTransferTimeWithBoost(fromZoneId, toZoneId, skills, massDriverMuzzleVelocity = 0, fromZoneMass = null, probeDvBonus = 0) {
+        const fromZone = this.getZone(fromZoneId);
+        const toZone = this.getZone(toZoneId);
+        
+        if (!fromZone || !toZone) return Infinity;
+        
+        // Get zone mass for escape velocity calculation
+        let zoneMass = fromZoneMass;
+        if (zoneMass === null || zoneMass === undefined) {
+            zoneMass = fromZone.total_mass_kg || 0;
+        }
+        
+        // Get required delta-v
+        const requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, zoneMass);
+        
+        // Get combined capacity (probe + mass driver + probe dv bonus)
+        const totalCapacity = this.getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity, probeDvBonus);
+        
+        // Get excess delta-v for speed bonus
+        const excessDeltaV = this.getExcessDeltaV(totalCapacity, requiredDeltaV);
+        
+        // Get orbital radii in AU
+        const AU_KM = 149597870.7;
+        const r1_au = fromZone.radius_au || (fromZone.radius_km / AU_KM);
+        const r2_au = toZone.radius_au || (toZone.radius_km / AU_KM);
+        
+        if (r1_au === r2_au) return 0;
+        
+        // Calculate Hohmann transfer ellipse parameters
+        const rInner = Math.min(r1_au, r2_au);
+        const rOuter = Math.max(r1_au, r2_au);
+        const semiMajorAxis = (rInner + rOuter) / 2;
+        const eccentricity = (rOuter - rInner) / (rOuter + rInner);
+        const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity * eccentricity);
+        
+        // Calculate arc length of half-ellipse using Ramanujan's approximation
+        const a = semiMajorAxis;
+        const b = semiMinorAxis;
+        const h = Math.pow((a - b) / (a + b), 2);
+        const fullCircumference = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+        const arcLengthAU = fullCircumference / 2; // Half-orbit for Hohmann transfer
+        
+        // Convert arc length to km
+        const arcLengthKm = arcLengthAU * AU_KM;
+        
+        // Calculate base transfer speed: orbital velocity + excess delta-v
+        // Excess delta-v directly adds to transfer speed (probe goes faster than minimum energy transfer)
+        const orbitalVelocityKmS = this.getOrbitalVelocityKmS(fromZoneId);
+        const escapeVelocityKmS = fromZone.escape_delta_v_km_s || 0;
+        
+        // Base speed is orbital velocity (minimum for Hohmann transfer)
+        // Excess delta-v adds directly to this (more energy = faster transfer)
+        // Note: excessDeltaV is the remaining delta-v after overcoming escape + Hohmann requirements
+        const transferSpeedKmS = orbitalVelocityKmS + excessDeltaV;
+        
+        if (transferSpeedKmS <= 0) {
+            // Fallback to old calculation
+            const EARTH_MARS_ARC = 3.9;
+            const EARTH_MARS_TIME = 243;
+            const BASE_SPEED_AU_PER_DAY = EARTH_MARS_ARC / EARTH_MARS_TIME;
+            return arcLengthAU / BASE_SPEED_AU_PER_DAY;
+        }
+        
+        // Calculate time: distance / speed
+        const transferSpeedKmPerDay = transferSpeedKmS * 86400;
+        const transferTimeDays = arcLengthKm / transferSpeedKmPerDay;
+        
+        return transferTimeDays;
+    }
+    
+    /**
+     * Check if probe can reach destination based on combined delta-v capacity
+     * Combines probe delta-v + mass driver muzzle velocity (if available)
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {Object} skills - Current skills
+     * @param {number} fromZoneMass - Current mass of source zone in kg (optional)
+     * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s (0 if no mass driver)
+     * @returns {boolean} True if probe can reach destination
+     */
+    canProbeReach(fromZoneId, toZoneId, skills, fromZoneMass = null, massDriverMuzzleVelocity = 0, probeDvBonus = 0) {
+        // Get required delta-v (fixed physics, not affected by upgrades)
+        let requiredDeltaV;
+        if (fromZoneMass !== null && fromZoneMass !== undefined) {
+            requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
+        } else {
+            const fromZone = this.getZone(fromZoneId);
+            const toZone = this.getZone(toZoneId);
+            if (!fromZone || !toZone) return false;
+            
+            const fromZoneMassLegacy = fromZone.total_mass_kg || 0;
+            requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMassLegacy);
+        }
+        
+        // Get combined capacity (probe + mass driver + probe dv bonus)
+        const totalCapacity = this.getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity, probeDvBonus);
+        
+        // Compare combined capacity vs requirement
+        return totalCapacity >= requiredDeltaV;
+    }
+    
+    /**
+     * Get reachability info with detailed breakdown
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {Object} skills - Current skills
+     * @param {number} fromZoneMass - Current mass of source zone in kg
+     * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s
+     * @returns {Object} {canReach, requiredDeltaV, probeCapacity, massDriverBoost, totalCapacity, excessDeltaV}
+     */
+    getReachabilityInfo(fromZoneId, toZoneId, skills, fromZoneMass, massDriverMuzzleVelocity = 0, probeDvBonus = 0) {
+        const requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
+        const probeCapacity = this.getProbeDeltaVCapacity(skills, probeDvBonus);
+        const totalCapacity = this.getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity, probeDvBonus);
+        const excessDeltaV = this.getExcessDeltaV(totalCapacity, requiredDeltaV);
+        const canReach = totalCapacity >= requiredDeltaV;
+        
+        return {
+            canReach,
+            requiredDeltaV,
+            probeCapacity,
+            massDriverBoost: massDriverMuzzleVelocity,
+            totalCapacity,
+            excessDeltaV
+        };
     }
 }
 

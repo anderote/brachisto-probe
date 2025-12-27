@@ -49,18 +49,22 @@ class GameEngine:
         
         # Initialize probes by zone and starting buildings
         zones = self.data_loader.load_orbital_mechanics()
-        initial_probes = self.config.get('initial_probes', 1)  # Start with 1 probe
-        earth_zone_id = 'earth'
+        initial_probes = self.config.get('initial_probes', Config.INITIAL_PROBES)
+        default_zone = self.config.get('default_zone', 'earth')
+        initial_structures = self.config.get('initial_structures', {})
         
         for zone in zones:
             zone_id = zone['id']
             self.probes_by_zone[zone_id] = {'probe': 0}
             self.structures_by_zone[zone_id] = {}
             
-            if zone_id == earth_zone_id:
-                # Earth starts with 1 probe, no structures
+            # Set initial probes for the default zone
+            if zone_id == default_zone:
                 self.probes_by_zone[zone_id] = {'probe': initial_probes}
-                self.structures_by_zone[zone_id] = {}
+            
+            # Set initial structures for this zone if specified in config
+            if zone_id in initial_structures:
+                self.structures_by_zone[zone_id] = dict(initial_structures[zone_id])
             
             # Initialize zone allocations
             if zone.get('is_dyson_zone', False):
@@ -294,20 +298,6 @@ class GameEngine:
                         'start_time': None,  # Time when research started (in days)
                         'completion_time': None  # Time when research completed (in days)
                     }
-            # Handle subcategories (computer systems)
-            if 'subcategories' in tree_data:
-                for subcat_id, subcat_data in tree_data['subcategories'].items():
-                    if 'tiers' in subcat_data:
-                        for tier in subcat_data['tiers']:
-                            tier_id = tier['id']
-                            # Use subcatId_tierId as the key
-                            tier_key = subcat_id + '_' + tier_id
-                            self.research[tree_id][tier_key] = {
-                                'tranches_completed': 0,
-                                'enabled': False,
-                                'start_time': None,  # Time when research started (in days)
-                                'completion_time': None  # Time when research completed (in days)
-                            }
     
     def _get_research_tree(self, skill_category):
         """Get research tree data for a skill category."""
@@ -323,8 +313,8 @@ class GameEngine:
         - Tiers compound multiplicatively: total_bonus = tier1_bonus * tier2_bonus * ...
         
         Args:
-            skill_category: Research tree ID (e.g., 'propulsion_systems')
-            skill_name: Optional subcategory name (e.g., 'processing' for computer_systems)
+            skill_category: Research tree ID (e.g., 'propulsion_systems', 'computer_processing')
+            skill_name: Unused, kept for compatibility
         
         Returns:
             Total bonus multiplier (multiplicative product of all tier bonuses)
@@ -337,64 +327,33 @@ class GameEngine:
         if not research_tree:
             return 0.0  # No bonus if no research tree
         
-        # Handle subcategories (e.g., computer_systems has processing, memory, etc.)
-        if skill_name and 'subcategories' in research_tree:
-            if skill_name in research_tree['subcategories']:
-                subcat_data = research_tree['subcategories'][skill_name]
-                if 'tiers' in subcat_data:
-                    for tier in subcat_data['tiers']:
-                        tier_key = skill_name + '_' + tier['id']
-                        progress = self.research.get(skill_category, {}).get(tier_key, {})
-                        tranches_completed = progress.get('tranches_completed', 0)
-                        is_complete = tranches_completed >= tier['tranches']
-                        start_time = progress.get('start_time')
-                        completion_time = progress.get('completion_time')
-                        
-                        if start_time is not None:
-                            base_bonus = tier.get('total_bonus', 0.0)
-                            time_elapsed_days = self.time - start_time
-                            
-                            if is_complete and completion_time is not None:
-                                # Tier completed: principal doubles, then continues compounding
-                                time_since_completion_days = self.time - completion_time
-                                # Base bonus doubles on completion
-                                effective_base = base_bonus * 2.0
-                                # Continue compounding from completion time
-                                tier_bonus = effective_base * math.exp(0.20 * time_since_completion_days)
-                            else:
-                                # During research: compound continuously
-                                tier_bonus = base_bonus * math.exp(0.20 * time_elapsed_days)
-                            
-                            # Multiplicative compounding: multiply by (1 + tier_bonus)
-                            total_bonus_multiplier *= (1.0 + tier_bonus)
-        else:
-            # Regular tiers
-            if 'tiers' in research_tree:
-                for tier in research_tree['tiers']:
-                    tier_id = tier['id']
-                    progress = self.research.get(skill_category, {}).get(tier_id, {})
-                    tranches_completed = progress.get('tranches_completed', 0)
-                    is_complete = tranches_completed >= tier['tranches']
-                    start_time = progress.get('start_time')
-                    completion_time = progress.get('completion_time')
+        # All trees are now regular (no subcategory handling needed)
+        if 'tiers' in research_tree:
+            for tier in research_tree['tiers']:
+                tier_id = tier['id']
+                progress = self.research.get(skill_category, {}).get(tier_id, {})
+                tranches_completed = progress.get('tranches_completed', 0)
+                is_complete = tranches_completed >= tier['tranches']
+                start_time = progress.get('start_time')
+                completion_time = progress.get('completion_time')
+                
+                if start_time is not None:
+                    base_bonus = tier.get('total_bonus', 0.0)
+                    time_elapsed_days = self.time - start_time
                     
-                    if start_time is not None:
-                        base_bonus = tier.get('total_bonus', 0.0)
-                        time_elapsed_days = self.time - start_time
-                        
-                        if is_complete and completion_time is not None:
-                            # Tier completed: principal doubles, then continues compounding
-                            time_since_completion_days = self.time - completion_time
-                            # Base bonus doubles on completion
-                            effective_base = base_bonus * 2.0
-                            # Continue compounding from completion time
-                            tier_bonus = effective_base * math.exp(0.20 * time_since_completion_days)
-                        else:
-                            # During research: compound continuously
-                            tier_bonus = base_bonus * math.exp(0.20 * time_elapsed_days)
-                        
-                        # Multiplicative compounding: multiply by (1 + tier_bonus)
-                        total_bonus_multiplier *= (1.0 + tier_bonus)
+                    if is_complete and completion_time is not None:
+                        # Tier completed: principal doubles, then continues compounding
+                        time_since_completion_days = self.time - completion_time
+                        # Base bonus doubles on completion
+                        effective_base = base_bonus * 2.0
+                        # Continue compounding from completion time
+                        tier_bonus = effective_base * math.exp(0.20 * time_since_completion_days)
+                    else:
+                        # During research: compound continuously
+                        tier_bonus = base_bonus * math.exp(0.20 * time_elapsed_days)
+                    
+                    # Multiplicative compounding: multiply by (1 + tier_bonus)
+                    total_bonus_multiplier *= (1.0 + tier_bonus)
         
         # Return the additive bonus (multiplier - 1.0) to match existing API
         return total_bonus_multiplier - 1.0
@@ -403,8 +362,8 @@ class GameEngine:
         """Get base skill value before research modifiers.
         
         Args:
-            skill_category: Skill category ID
-            skill_name: Optional subcategory name
+            skill_category: Skill category ID (e.g., 'propulsion_systems', 'computer_processing')
+            skill_name: Unused, kept for compatibility
         
         Returns:
             Base skill value
@@ -417,7 +376,11 @@ class GameEngine:
             'locomotion_systems': 1.0,  # efficiency multiplier
             'acds': 1.0,  # efficiency multiplier
             'robotic_systems': 1.0,  # efficiency multiplier
-            'computer_systems': 1.0,  # compute power multiplier (calculated from sub-skills)
+            # Computer trees are now top-level
+            'computer_processing': 1.0,  # processing power multiplier
+            'computer_gpu': 1.0,  # GPU compute multiplier
+            'computer_interconnect': 1.0,  # interconnect bandwidth multiplier
+            'computer_interface': 1.0,  # interface efficiency multiplier
             'production_efficiency': 1.0,  # production rate multiplier
             'recycling_efficiency': 0.75,  # base recycling efficiency (75%)
             'energy_collection': 1.0,  # energy collection efficiency multiplier
@@ -428,18 +391,14 @@ class GameEngine:
             'dyson_swarm_construction': 1.0,  # construction rate multiplier
         }
         
-        # For computer_systems subcategories
-        if skill_category == 'computer_systems' and skill_name:
-            return 1.0  # Base compute sub-skill value
-        
         return base_values.get(skill_category, 1.0)
     
     def get_skill_value(self, skill_category, skill_name=None):
         """Get effective skill value with research bonuses applied.
         
         Args:
-            skill_category: Skill category ID
-            skill_name: Optional subcategory name
+            skill_category: Skill category ID (e.g., 'propulsion_systems', 'computer_processing')
+            skill_name: Unused, kept for compatibility
         
         Returns:
             Effective skill value (base * (1 + bonus))
@@ -449,21 +408,71 @@ class GameEngine:
         return base_value * (1.0 + research_bonus)
     
     def get_compute_power(self):
-        """Calculate effective compute power from computer_systems subcategories.
+        """Calculate effective compute power from computer trees.
         
-        Uses geometric mean: compute = (processing × memory × interface × transmission)^0.25
+        Uses geometric mean: compute = (processing × gpu × interconnect × interface)^0.25
         
         Returns:
             Effective compute power multiplier
         """
-        processing = self.get_skill_value('computer_systems', 'processing')
-        memory = self.get_skill_value('computer_systems', 'memory')
-        interface = self.get_skill_value('computer_systems', 'interface')
-        transmission = self.get_skill_value('computer_systems', 'transmission')
+        # Computer trees are now top-level trees
+        processing = self.get_skill_value('computer_processing')
+        gpu = self.get_skill_value('computer_gpu')
+        interconnect = self.get_skill_value('computer_interconnect')
+        interface = self.get_skill_value('computer_interface')
         
         # Geometric mean
-        compute_power = (processing * memory * interface * transmission) ** 0.25
+        compute_power = (processing * gpu * interconnect * interface) ** 0.25
         return compute_power
+    
+    def calculate_probe_count_scaling_penalty(self, probe_count, zone_id=None):
+        """Calculate probe count scaling penalty (diminishing returns for probe count within a zone).
+        
+        Each doubling of probe count reduces efficiency.
+        Formula: efficiency = (1 - penalty_per_doubling)^log2(probe_count)
+        
+        The penalty_per_doubling is interpolated based on compute skill:
+        - At base compute (1.0): 40% penalty per doubling (so doubling only gives 20% more output)
+        - At max compute (6.19x): 1% penalty per doubling (so doubling gives ~98% more output)
+        
+        Args:
+            probe_count: Total number of probes in the zone
+            zone_id: Zone identifier (optional, for future per-zone adjustments)
+        
+        Returns:
+            Efficiency factor (0-1), where 1 = no penalty
+        """
+        # No penalty for 0 or 1 probe
+        if probe_count <= 1:
+            return 1.0
+        
+        # Load probe count scaling parameters from economic rules
+        economic_rules = self.data_loader.load_economic_rules()
+        probe_count_scaling = economic_rules.get('probe_count_scaling', {})
+        
+        base_penalty = probe_count_scaling.get('base_penalty_per_doubling', 0.0)
+        min_penalty = probe_count_scaling.get('min_penalty_per_doubling', 0.0)
+        compute_threshold = probe_count_scaling.get('compute_skill_threshold', 6.19)
+        
+        # Get compute skill (geometric mean of cpu, gpu, interconnect, io_bandwidth)
+        compute_skill = self.get_compute_power()
+        
+        # Interpolate penalty per doubling based on compute skill
+        # At compute 1.0: use base penalty (40%)
+        # At compute >= threshold: use min penalty (1%)
+        # Linear interpolation between them
+        normalized_compute = min(1.0, max(0, (compute_skill - 1.0) / (compute_threshold - 1.0)))
+        penalty_per_doubling = base_penalty - (base_penalty - min_penalty) * normalized_compute
+        
+        # Calculate number of doublings: log2(probeCount)
+        doublings = math.log2(probe_count)
+        
+        # Efficiency = (1 - penalty)^doublings
+        efficiency_per_doubling = 1.0 - penalty_per_doubling
+        efficiency = math.pow(efficiency_per_doubling, doublings)
+        
+        # Clamp to reasonable minimum (0.1% efficiency minimum)
+        return max(0.001, efficiency)
     
     def get_dyson_target_mass(self):
         """Calculate effective Dyson sphere target mass with research modifiers.
@@ -673,7 +682,8 @@ class GameEngine:
             # Calculate energy needed for effective compute (1 kW per PFLOPS/s, modified by research)
             compute_pflops = intelligence_rate / 1e15
             base_compute_power_draw = compute_pflops * 1000  # 1000W = 1 kW per PFLOPS/s
-            compute_efficiency = self._get_research_bonus('computer_systems', 'compute_power_efficiency', 1.0)
+            # Use compute power from computer trees (geometric mean of processing, gpu, interconnect, interface)
+            compute_efficiency = self.get_compute_power()
             compute_energy_consumption = base_compute_power_draw / compute_efficiency if compute_efficiency > 0 else base_compute_power_draw
         
         # Total energy consumption
@@ -989,6 +999,12 @@ class GameEngine:
                         zone_dexterity = zone_probes * base_dexterity
                         # Replication uses dexterity capacity (kg/s)
                         replication_capacity = replicate_count * Config.PROBE_BUILD_RATE
+                        
+                        # Apply probe count scaling penalty (diminishing returns)
+                        total_zone_probes = sum(self.probes_by_zone.get(zone_id, {}).values())
+                        probe_count_scaling_efficiency = self.calculate_probe_count_scaling_penalty(total_zone_probes, zone_id)
+                        replication_capacity *= probe_count_scaling_efficiency
+                        
                         zone_replication_capacity[zone_id] = replication_capacity
                         total_replication_capacity += replication_capacity
             
@@ -1192,6 +1208,12 @@ class GameEngine:
                 
                 # Base rate: 10.0 kg/day per probe, modified by skills
                 base_dyson_rate = dyson_probes * Config.PROBE_BUILD_RATE * dyson_construction_multiplier * building_skill_multiplier
+                
+                # Apply probe count scaling penalty (diminishing returns)
+                total_dyson_zone_probes = sum(self.probes_by_zone.get(dyson_zone_id, {}).values())
+                probe_count_scaling_efficiency = self.calculate_probe_count_scaling_penalty(total_dyson_zone_probes, dyson_zone_id)
+                base_dyson_rate *= probe_count_scaling_efficiency
+                
                 # Apply throttling
                 dyson_construction_rate_kg_s = base_dyson_rate * energy_throttle * metal_throttle
         
@@ -1208,7 +1230,9 @@ class GameEngine:
         
         Includes:
         - Dyson sphere energy production (from mass × 5 kW/kg, modified by energy collection skills)
-        - Energy structure production (solar arrays, etc., modified by energy collection skill)
+        - Structure energy production (power stations, data centers with integrated solar, etc.)
+        
+        Solar-powered structures (uses_solar: true) scale with solar_irradiance_factor (1/r²).
         
         Dyson sphere power is allocated between economy (energy) and compute based on slider.
         Allocation: dyson_power_allocation (0 = all economy, 100 = all compute)
@@ -1231,50 +1255,79 @@ class GameEngine:
             # Allocate based on slider
             rate += dyson_power * economy_fraction
         
-        # Energy structures (solar arrays, reactors, etc.)
+        # Energy structures (power stations, data centers, etc.)
         # Apply energy collection skill modifiers
         energy_collection_multiplier = self.get_skill_value('energy_collection')
         
         # Load orbital zones for distance calculations
         zones = self.data_loader.load_orbital_mechanics()
-        zone_map = {zone['id']: zone for zone in zones.get('orbital_zones', [])}
+        zone_map = {zone['id']: zone for zone in zones}
         
         # Zone-based structures (new system)
         for zone_id, zone_structures in self.structures_by_zone.items():
             for building_id, count in zone_structures.items():
                 building = self.data_loader.get_building_by_id(building_id)
                 if building:
-                    category = self._get_building_category(building_id)
-                    if category == 'energy':
-                        effects = building.get('effects', {})
-                        energy_output = effects.get('energy_production_per_second', 0)
+                    # Check for new power_output_mw property (power stations, data centers)
+                    power_output_mw = building.get('power_output_mw', 0)
+                    if power_output_mw > 0:
+                        # Convert MW to watts
+                        energy_output = power_output_mw * 1e6
                         
-                        # Apply orbital efficiency
-                        orbital_efficiency = 1.0
-                        if 'orbital_efficiency' in building:
-                            orbital_efficiency = building['orbital_efficiency'].get(zone_id, 1.0)
-                        
-                        # Apply base energy at Earth if specified
-                        base_energy = effects.get('base_energy_at_earth', energy_output)
-                        if base_energy != energy_output:
-                            # Scale by orbital efficiency
-                            energy_output = base_energy * orbital_efficiency
-                        
-                        # Apply solar distance modifier (inverse square law)
-                        # Power is proportional to 1/distance², with Earth (1.0 AU) as baseline
-                        solar_distance_modifier = 1.0
-                        if zone_id in zone_map:
+                        # Apply solar irradiance scaling for solar-powered structures
+                        if building.get('uses_solar', False) and zone_id in zone_map:
                             zone = zone_map[zone_id]
-                            radius_au = zone.get('radius_au', 1.0)
-                            if radius_au > 0:
-                                # Inverse square law: power at distance d = power_at_earth * (1.0 / d)²
-                                solar_distance_modifier = (1.0 / radius_au) ** 2
-                        energy_output *= solar_distance_modifier
+                            # Use pre-calculated solar_irradiance_factor (1/r²), or calculate it
+                            solar_factor = zone.get('solar_irradiance_factor')
+                            if solar_factor is None:
+                                radius_au = zone.get('radius_au', 1.0)
+                                if radius_au > 0:
+                                    solar_factor = (1.0 / radius_au) ** 2
+                                else:
+                                    solar_factor = 1.0
+                            energy_output *= solar_factor
+                        
+                        # Apply geometric scaling for multiple structures (count^2.1)
+                        geometric_factor = count ** 2.1
+                        energy_output *= geometric_factor
                         
                         # Apply energy collection skill multiplier
                         energy_output *= energy_collection_multiplier
                         
-                        rate += energy_output * count
+                        rate += energy_output
+                    else:
+                        # Legacy category-based system
+                        category = self._get_building_category(building_id)
+                        if category == 'energy':
+                            effects = building.get('effects', {})
+                            energy_output = effects.get('energy_production_per_second', 0)
+                            
+                            # Apply orbital efficiency
+                            orbital_efficiency = 1.0
+                            if 'orbital_efficiency' in building:
+                                orbital_efficiency = building['orbital_efficiency'].get(zone_id, 1.0)
+                            
+                            # Apply base energy at Earth if specified
+                            base_energy = effects.get('base_energy_at_earth', energy_output)
+                            if base_energy != energy_output:
+                                # Scale by orbital efficiency
+                                energy_output = base_energy * orbital_efficiency
+                            
+                            # Apply solar distance modifier (inverse square law)
+                            # Power is proportional to 1/distance², with Earth (1.0 AU) as baseline
+                            solar_distance_modifier = 1.0
+                            if zone_id in zone_map:
+                                zone = zone_map[zone_id]
+                                radius_au = zone.get('radius_au', 1.0)
+                                if radius_au > 0:
+                                    # Inverse square law: power at distance d = power_at_earth * (1.0 / d)²
+                                    solar_distance_modifier = (1.0 / radius_au) ** 2
+                            energy_output *= solar_distance_modifier
+                            
+                            # Apply energy collection skill multiplier
+                            energy_output *= energy_collection_multiplier
+                            
+                            rate += energy_output * count
         
         # Legacy global structures for backward compatibility
         for building_id, count in self.structures.items():
@@ -1289,30 +1342,43 @@ class GameEngine:
             
             building = self.data_loader.get_building_by_id(building_id)
             if building:
-                category = self._get_building_category(building_id)
-                if category == 'energy':
-                    effects = building.get('effects', {})
-                    energy_output = effects.get('energy_production_per_second', 0)
+                # Check for new power_output_mw property
+                power_output_mw = building.get('power_output_mw', 0)
+                if power_output_mw > 0:
+                    # Convert MW to watts
+                    energy_output = power_output_mw * 1e6
                     
-                    # Apply orbital efficiency (use default zone)
-                    default_zone = 'earth'
-                    orbital_efficiency = 1.0
-                    if 'orbital_efficiency' in building:
-                        orbital_efficiency = building['orbital_efficiency'].get(default_zone, 1.0)
-                    
-                    # Apply base energy at Earth if specified
-                    base_energy = effects.get('base_energy_at_earth', energy_output)
-                    if base_energy != energy_output:
-                        # Scale by orbital efficiency
-                        energy_output = base_energy * orbital_efficiency
-                    
-                    # Legacy structures default to Earth distance (1.0 AU = no modifier)
-                    # solar_distance_modifier = 1.0 (Earth baseline)
-                    
+                    # Legacy structures default to Earth distance (solar_factor = 1.0)
                     # Apply energy collection skill multiplier
                     energy_output *= energy_collection_multiplier
                     
                     rate += energy_output * count
+                else:
+                    # Legacy category-based system
+                    category = self._get_building_category(building_id)
+                    if category == 'energy':
+                        effects = building.get('effects', {})
+                        energy_output = effects.get('energy_production_per_second', 0)
+                        
+                        # Apply orbital efficiency (use default zone)
+                        default_zone = 'earth'
+                        orbital_efficiency = 1.0
+                        if 'orbital_efficiency' in building:
+                            orbital_efficiency = building['orbital_efficiency'].get(default_zone, 1.0)
+                        
+                        # Apply base energy at Earth if specified
+                        base_energy = effects.get('base_energy_at_earth', energy_output)
+                        if base_energy != energy_output:
+                            # Scale by orbital efficiency
+                            energy_output = base_energy * orbital_efficiency
+                        
+                        # Legacy structures default to Earth distance (1.0 AU = no modifier)
+                        # solar_distance_modifier = 1.0 (Earth baseline)
+                        
+                        # Apply energy collection skill multiplier
+                        energy_output *= energy_collection_multiplier
+                        
+                        rate += energy_output * count
         
         return rate
     
@@ -1365,11 +1431,15 @@ class GameEngine:
     def _calculate_energy_consumption(self):
         """Calculate energy consumption rate."""
         from backend.config import Config
-        base_probe_consumption = Config.PROBE_ENERGY_CONSUMPTION  # 10kW per probe
+        # Get base consumption from economic rules, fall back to Config
+        probe_config = self.data_loader.get_probe_config()
+        base_probe_consumption = probe_config.get('base_energy_cost_mining_w', Config.PROBE_BASE_ENERGY_COST_MINING)
         
         # Get research bonuses first
-        # Computer systems: reduces probe base energy consumption
-        computer_reduction = self._get_research_bonus('computer_systems', 'probe_energy_cost_reduction', 0.0)
+        # Computer efficiency reduces probe base energy consumption (based on compute power)
+        compute_power = self.get_compute_power()
+        # More compute power = more efficient probes, reduction scales with compute power bonus
+        computer_reduction = max(0.0, (compute_power - 1.0) * 0.1)  # 10% reduction per 1.0 compute power bonus
         
         # Propulsion systems: reduces dexterity-related energy costs (harvesting operations)
         propulsion_reduction = self._get_research_bonus('propulsion_systems', 'dexterity_energy_cost_reduction', 0.0)
@@ -1388,13 +1458,48 @@ class GameEngine:
         probe_base_consumption *= (1.0 - computer_reduction)
         consumption += probe_base_consumption
         
-        # Structure energy consumption (no longer zone-specific)
+        # Structure energy consumption (zone-based with fixed MW costs)
+        for zone_id, zone_structures in self.structures_by_zone.items():
+            for building_id, count in zone_structures.items():
+                building = self.data_loader.get_building_by_id(building_id)
+                if building:
+                    # Check for new base_power_consumption_mw property (data centers, etc.)
+                    base_consumption_mw = building.get('base_power_consumption_mw', 0)
+                    if base_consumption_mw > 0:
+                        # Fixed power consumption in MW, converted to watts
+                        # This is NOT affected by solar irradiance - it's the compute/operational load
+                        energy_cost = base_consumption_mw * 1e6
+                        # Apply geometric scaling for multiple structures (count^2.1)
+                        geometric_factor = count ** 2.1
+                        consumption += energy_cost * geometric_factor
+                    else:
+                        # Legacy effects-based system
+                        effects = building.get('effects', {})
+                        energy_cost = effects.get('energy_consumption_per_second', 0)
+                        consumption += energy_cost * count
+        
+        # Legacy global structures for backward compatibility
         for building_id, count in self.structures.items():
+            # Skip if already counted in zone structures
+            already_counted = False
+            for zone_structures in self.structures_by_zone.values():
+                if building_id in zone_structures:
+                    already_counted = True
+                    break
+            if already_counted:
+                continue
+            
             building = self.data_loader.get_building_by_id(building_id)
             if building:
-                effects = building.get('effects', {})
-                energy_cost = effects.get('energy_consumption_per_second', 0)
-                consumption += energy_cost * count
+                # Check for new base_power_consumption_mw property
+                base_consumption_mw = building.get('base_power_consumption_mw', 0)
+                if base_consumption_mw > 0:
+                    energy_cost = base_consumption_mw * 1e6
+                    consumption += energy_cost * count
+                else:
+                    effects = building.get('effects', {})
+                    energy_cost = effects.get('energy_consumption_per_second', 0)
+                    consumption += energy_cost * count
         
         # Harvesting energy cost (based on harvest zone delta-v) - apply propulsion reduction
         harvest_allocation = self.probe_allocations.get('harvest', {})
@@ -1450,7 +1555,8 @@ class GameEngine:
         if compute_demand_flops > 0:
             compute_demand_pflops = compute_demand_flops / 1e15
             base_compute_power_draw = compute_demand_pflops * 1000  # 1000W = 1 kW per PFLOPS/s
-            compute_efficiency = self._get_research_bonus('computer_systems', 'compute_power_efficiency', 1.0)
+            # Use compute power from computer trees (geometric mean of processing, gpu, interconnect, interface)
+            compute_efficiency = self.get_compute_power()
             compute_power_draw = base_compute_power_draw / compute_efficiency if compute_efficiency > 0 else base_compute_power_draw
             consumption += compute_power_draw
         
@@ -1463,10 +1569,14 @@ class GameEngine:
     def _calculate_non_compute_energy_consumption(self):
         """Calculate energy consumption for all activities except compute."""
         from backend.config import Config
-        base_probe_consumption = Config.PROBE_ENERGY_CONSUMPTION  # 10kW per probe
+        # Get base consumption from economic rules, fall back to Config
+        probe_config = self.data_loader.get_probe_config()
+        base_probe_consumption = probe_config.get('base_energy_cost_mining_w', Config.PROBE_BASE_ENERGY_COST_MINING)
         
         # Get research bonuses
-        computer_reduction = self._get_research_bonus('computer_systems', 'probe_energy_cost_reduction', 0.0)
+        # Computer efficiency reduces probe base energy consumption (based on compute power)
+        compute_power = self.get_compute_power()
+        computer_reduction = max(0.0, (compute_power - 1.0) * 0.1)  # 10% reduction per 1.0 compute power bonus
         propulsion_reduction = self._get_research_bonus('propulsion_systems', 'dexterity_energy_cost_reduction', 0.0)
         production_efficiency_bonus = self._get_research_bonus('production_efficiency', 'energy_efficiency_bonus', 1.0)
         
@@ -1479,13 +1589,45 @@ class GameEngine:
         probe_base_consumption *= (1.0 - computer_reduction)
         consumption += probe_base_consumption
         
-        # Structure energy consumption
+        # Structure energy consumption (zone-based with fixed MW costs)
+        for zone_id, zone_structures in self.structures_by_zone.items():
+            for building_id, count in zone_structures.items():
+                building = self.data_loader.get_building_by_id(building_id)
+                if building:
+                    # Check for new base_power_consumption_mw property (data centers, etc.)
+                    base_consumption_mw = building.get('base_power_consumption_mw', 0)
+                    if base_consumption_mw > 0:
+                        # Fixed power consumption in MW, converted to watts
+                        energy_cost = base_consumption_mw * 1e6
+                        # Apply geometric scaling for multiple structures (count^2.1)
+                        geometric_factor = count ** 2.1
+                        consumption += energy_cost * geometric_factor
+                    else:
+                        effects = building.get('effects', {})
+                        energy_cost = effects.get('energy_consumption_per_second', 0)
+                        consumption += energy_cost * count
+        
+        # Legacy global structures for backward compatibility
         for building_id, count in self.structures.items():
+            # Skip if already counted in zone structures
+            already_counted = False
+            for zone_structures in self.structures_by_zone.values():
+                if building_id in zone_structures:
+                    already_counted = True
+                    break
+            if already_counted:
+                continue
+            
             building = self.data_loader.get_building_by_id(building_id)
             if building:
-                effects = building.get('effects', {})
-                energy_cost = effects.get('energy_consumption_per_second', 0)
-                consumption += energy_cost * count
+                base_consumption_mw = building.get('base_power_consumption_mw', 0)
+                if base_consumption_mw > 0:
+                    energy_cost = base_consumption_mw * 1e6
+                    consumption += energy_cost * count
+                else:
+                    effects = building.get('effects', {})
+                    energy_cost = effects.get('energy_consumption_per_second', 0)
+                    consumption += energy_cost * count
         
         # Harvesting energy cost
         harvest_allocation = self.probe_allocations.get('harvest', {})
@@ -1563,36 +1705,6 @@ class GameEngine:
                                 
                                 if can_research:
                                     enabled_projects.append((tree_id, tier_id, tier, tier_data))
-            
-            # Check subcategories
-            if 'subcategories' in tree_data:
-                for subcat_id, subcat_data in tree_data['subcategories'].items():
-                    if 'tiers' not in subcat_data:
-                        continue
-                    tiers_list = subcat_data['tiers']
-                    for idx, tier in enumerate(tiers_list):
-                        tier_key = subcat_id + '_' + tier['id']
-                        if tier_key in self.research[tree_id]:
-                            tier_data = self.research[tree_id][tier_key]
-                            if tier_data.get('enabled', False):
-                                tranches_completed = tier_data.get('tranches_completed', 0)
-                                max_tranches = tier.get('tranches', 10)
-                                if tranches_completed < max_tranches:
-                                    # Check prerequisites
-                                    can_research = True
-                                    if idx > 0:
-                                        prev_tier = tiers_list[idx - 1]
-                                        prev_tier_key = subcat_id + '_' + prev_tier['id']
-                                        if prev_tier_key in self.research[tree_id]:
-                                            prev_completed = self.research[tree_id][prev_tier_key].get('tranches_completed', 0)
-                                            prev_max = prev_tier.get('tranches', 10)
-                                            if prev_completed < prev_max:
-                                                can_research = False
-                                        else:
-                                            can_research = False
-                                    
-                                    if can_research:
-                                        enabled_projects.append((tree_id, tier_key, tier, tier_data))
         
         # If no research projects active, compute demand is 0
         if len(enabled_projects) == 0:
@@ -1714,6 +1826,13 @@ class GameEngine:
                 skill_multiplier = locomotion_multiplier * acds_multiplier * robotics_multiplier
                 
                 harvest_rate_per_probe = base_dexterity * harvest_multiplier * base_harvest_rate * mining_rate_multiplier * skill_multiplier
+                
+                # Apply probe count scaling penalty (diminishing returns for probe count)
+                # Get total probes in zone for scaling calculation
+                zone_probe_data = self.probes_by_zone.get(zone_id, {})
+                total_zone_probes = sum(zone_probe_data.values())
+                probe_count_scaling_efficiency = self.calculate_probe_count_scaling_penalty(total_zone_probes, zone_id)
+                harvest_rate_per_probe *= probe_count_scaling_efficiency
                 
                 # Harvest from this zone
                 metal_remaining = self.zone_metal_remaining.get(zone_id, 0)
@@ -1960,8 +2079,8 @@ class GameEngine:
         # So: 1 W = 1e12 FLOPS/s for energy-to-compute conversion
         base_power_per_flops = 1e-12  # watts per FLOPS (1 kW per PFLOPS)
         
-        # Research modifiers for compute power efficiency
-        compute_efficiency = self._get_research_bonus('computer_systems', 'compute_power_efficiency', 1.0)
+        # Research modifiers for compute power efficiency (from computer trees)
+        compute_efficiency = self.get_compute_power()
         # Efficiency > 1.0 means less power needed, so more FLOPS per watt
         power_per_flops = base_power_per_flops / compute_efficiency if compute_efficiency > 0 else base_power_per_flops
         
@@ -2034,38 +2153,6 @@ class GameEngine:
                             
                             if can_research:
                                 enabled_projects.append((tree_id, tier_id, tier, tier_data))
-            
-            # Check subcategories (computer systems)
-            if 'subcategories' in tree_data:
-                for subcat_id, subcat_data in tree_data['subcategories'].items():
-                    if 'tiers' in subcat_data:
-                        tiers_list = subcat_data['tiers']
-                        for idx, tier in enumerate(tiers_list):
-                            tier_key = subcat_id + '_' + tier['id']
-                            if tier_key not in self.research[tree_id]:
-                                continue
-                            
-                            tier_data = self.research[tree_id][tier_key]
-                            if tier_data.get('enabled', False):
-                                tranches_completed = tier_data.get('tranches_completed', 0)
-                                max_tranches = tier.get('tranches', 10)
-                                if tranches_completed < max_tranches:
-                                    # Check prerequisites: first tier has no prerequisites, others require previous tier to be complete
-                                    can_research = True
-                                    if idx > 0:
-                                        # Check if previous tier in the list is complete
-                                        prev_tier = tiers_list[idx - 1]
-                                        prev_tier_key = subcat_id + '_' + prev_tier['id']
-                                        if prev_tier_key in self.research[tree_id]:
-                                            prev_completed = self.research[tree_id][prev_tier_key].get('tranches_completed', 0)
-                                            prev_max = prev_tier.get('tranches', 10)
-                                            if prev_completed < prev_max:
-                                                can_research = False
-                                        else:
-                                            can_research = False  # Previous tier not initialized
-                                    
-                                    if can_research:
-                                        enabled_projects.append((tree_id, tier_key, tier, tier_data))
         
         # Allocate intelligence equally across enabled projects
         if len(enabled_projects) == 0:
@@ -2095,20 +2182,12 @@ class GameEngine:
             tree_data_for_cost = research_trees.get(tree_id, {})
             if 'tiers' in tree_data_for_cost:
                 tier_index = next((i for i, t in enumerate(tree_data_for_cost['tiers']) if t['id'] == tier_id), 0)
-            elif 'subcategories' in tree_data_for_cost:
-                # For subcategories, tier_id format is "subcatId_tierId"
-                # Find which subcategory and tier index
-                for subcat_id, subcat_data in tree_data_for_cost['subcategories'].items():
-                    if tier_id.startswith(subcat_id + '_'):
-                        if 'tiers' in subcat_data:
-                            tier_id_only = tier_id.replace(subcat_id + '_', '', 1)
-                            tier_index = next((i for i, t in enumerate(subcat_data['tiers']) if t['id'] == tier_id_only), 0)
-                        break
             
-            # Exponential cost: first tier = 10 PFLOPS, each tier is 2x more expensive
-            base_cost_pflops = 10.0  # 10 PFLOPS for first tier
-            tier_cost_pflops = base_cost_pflops * (2.0 ** tier_index)
-            tier_cost_flops = tier_cost_pflops * 1e15  # Convert to FLOPS
+            # Exponential cost: first tier = 1000 EFLOPS-days, each tier is 150x more expensive
+            # Cost is in FLOP-days (FLOPS * days)
+            base_cost_eflops_days = 1000.0  # 1000 EFLOPS-days for first tier
+            tier_cost_eflops_days = base_cost_eflops_days * (100.0 ** tier_index)
+            tier_cost_flops = tier_cost_eflops_days * 1e18  # Convert EFLOPS-days to FLOP-days
             
             # Progress: FLOPS allocated * time / total cost = fraction complete
             progress_flops = intelligence_per_project * delta_time
@@ -2305,23 +2384,6 @@ class GameEngine:
                             completion = tranches_completed / max_tranches
                             total_bonus += tier_bonus * completion
         
-        # Check subcategories (for computer systems)
-        if 'subcategories' in tree_data:
-            for subcat_id, subcat_data in tree_data['subcategories'].items():
-                if 'tiers' in subcat_data:
-                    for tier in subcat_data['tiers']:
-                        tier_key = subcat_id + '_' + tier['id']
-                        if tier_key in self.research[tree_id]:
-                            tier_data = self.research[tree_id][tier_key]
-                            tranches_completed = tier_data.get('tranches_completed', 0)
-                            max_tranches = tier.get('tranches', 10)
-                            
-                            if tranches_completed > 0:
-                                tier_bonus = tier.get('effects', {}).get(bonus_key, 0)
-                                if tier_bonus:
-                                    completion = tranches_completed / max_tranches
-                                    total_bonus += tier_bonus * completion
-        
         return total_bonus
     
     def _get_researched_upgrade(self, tree_id, tier_id):
@@ -2387,18 +2449,29 @@ class GameEngine:
         # Production: Energy probes
         # Energy probes removed - all energy comes from Dyson sphere
         
-        # Production: Solar arrays and energy structures
+        # Production: Solar arrays and energy structures (with per-type breakdown)
         solar_multiplier = 4.0  # Buildings at 0.5 AU
         structure_production = 0
+        structure_production_by_type = {}
         for building_id, count in self.structures.items():
+            if count <= 0:
+                continue
             building = self.data_loader.get_building_by_id(building_id)
             if building:
                 effects = building.get('effects', {})
                 energy_output = effects.get('energy_production_per_second', 0)
                 base_energy = effects.get('base_energy_at_earth', energy_output)
-                structure_production += base_energy * solar_multiplier * count
+                building_production = base_energy * solar_multiplier * count
+                structure_production += building_production
+                if building_production > 0:
+                    structure_production_by_type[building_id] = {
+                        'name': building.get('name', building_id),
+                        'count': count,
+                        'production': building_production
+                    }
         breakdown['production']['base'] += structure_production
         breakdown['production']['breakdown']['structures'] = structure_production
+        breakdown['production']['breakdown']['structures_by_type'] = structure_production_by_type
         
         # Production: Dyson sphere energy
         dyson_power_allocation = getattr(self, 'dyson_power_allocation', 0)  # 0 = all economy, 100 = all compute
@@ -2430,25 +2503,39 @@ class GameEngine:
         breakdown['production']['total'] = breakdown['production']['base'] * energy_collection_bonus
         
         # Consumption: Probe base consumption - single probe type only
-        # Apply computer systems reduction (same as actual consumption calculation)
-        computer_reduction = self._get_research_bonus('computer_systems', 'probe_energy_cost_reduction', 0.0)
-        base_probe_consumption = Config.PROBE_ENERGY_CONSUMPTION
+        # Apply computer efficiency reduction (same as actual consumption calculation)
+        compute_power = self.get_compute_power()
+        computer_reduction = max(0.0, (compute_power - 1.0) * 0.1)  # 10% reduction per 1.0 compute power bonus
+        # Get base consumption from economic rules, fall back to Config
+        probe_config = self.data_loader.get_probe_config()
+        base_probe_consumption = probe_config.get('base_energy_cost_mining_w', Config.PROBE_BASE_ENERGY_COST_MINING)
         probe_count = self.probes.get('probe', 0)
         probe_base_consumption = probe_count * base_probe_consumption * (1.0 - computer_reduction)
         
         breakdown['consumption']['base'] = probe_base_consumption
         breakdown['consumption']['breakdown']['probes'] = probe_base_consumption
         
-        # Consumption: Structures
+        # Consumption: Structures (with per-type breakdown)
         structure_consumption = 0
+        structure_breakdown_by_type = {}
         for building_id, count in self.structures.items():
+            if count <= 0:
+                continue
             building = self.data_loader.get_building_by_id(building_id)
             if building:
                 effects = building.get('effects', {})
                 energy_cost = effects.get('energy_consumption_per_second', 0)
-                structure_consumption += energy_cost * count
+                building_consumption = energy_cost * count
+                structure_consumption += building_consumption
+                if building_consumption > 0:
+                    structure_breakdown_by_type[building_id] = {
+                        'name': building.get('name', building_id),
+                        'count': count,
+                        'consumption': building_consumption
+                    }
         breakdown['consumption']['base'] += structure_consumption
         breakdown['consumption']['breakdown']['structures'] = structure_consumption
+        breakdown['consumption']['breakdown']['structures_by_type'] = structure_breakdown_by_type
         
         # Consumption: Harvesting energy cost
         harvest_allocation = self.probe_allocations.get('harvest', {})
@@ -2485,6 +2572,16 @@ class GameEngine:
         breakdown['consumption']['base'] += probe_construction_energy_cost
         breakdown['consumption']['breakdown']['probe_construction'] = probe_construction_energy_cost
         
+        # Consumption: Structure construction energy cost
+        construct_allocation = self.probe_allocations.get('construct', {})
+        constructing_probes = sum(construct_allocation.values())
+        build_allocation = getattr(self, 'build_allocation', 100)  # 0 = all structures, 100 = all probes
+        structure_constructing_power = constructing_probes * (1.0 - build_allocation / 100.0)
+        structure_construction_rate_kg_day = structure_constructing_power * Config.PROBE_BUILD_RATE  # kg/day per probe
+        structure_construction_energy_cost = structure_construction_rate_kg_day * ENERGY_COST_PER_KG_DAY
+        breakdown['consumption']['base'] += structure_construction_energy_cost
+        breakdown['consumption']['breakdown']['structure_construction'] = structure_construction_energy_cost
+        
         # Consumption: Dyson construction energy cost
         dyson_construction_rate = self._calculate_dyson_construction_rate()
         dyson_construction_energy_cost = dyson_construction_rate * ENERGY_COST_PER_KG_DAY
@@ -2510,25 +2607,15 @@ class GameEngine:
                 'researched': True
             })
         
-        # Computer systems reduce probe energy cost
-        computer_bonus = self._get_research_bonus('computer_systems', 'probe_energy_cost_reduction', 0.0)
-        # Need to check computer systems subcategories
-        if 'computer_systems' in self.research:
-            comp_tree = self.data_loader.get_research_tree('computer_systems')
-            if comp_tree and 'subcategories' in comp_tree:
-                for subcat_name, subcat_data in comp_tree['subcategories'].items():
-                    if 'processing' in subcat_name.lower():
-                        for tier in subcat_data.get('tiers', []):
-                            tier_id = tier.get('id')
-                            upgrade = self._get_researched_upgrade('computer_systems', tier_id)
-                            if upgrade and tier.get('effects', {}).get('probe_energy_cost_reduction'):
-                                reduction = tier['effects']['probe_energy_cost_reduction'] * upgrade['completion']
-                                if reduction > 0:
-                                    breakdown['consumption']['upgrades'].append({
-                                        'name': upgrade['name'],
-                                        'bonus': reduction,
-                                        'researched': True
-                                    })
+        # Computer efficiency reduces probe energy cost (based on compute power)
+        compute_power = self.get_compute_power()
+        computer_reduction = max(0.0, (compute_power - 1.0) * 0.1)  # 10% reduction per 1.0 compute power bonus
+        if computer_reduction > 0:
+            breakdown['consumption']['upgrades'].append({
+                'name': 'Computer Efficiency',
+                'bonus': computer_reduction,
+                'researched': True
+            })
         
         # Apply consumption reduction bonuses
         total_consumption_reduction = 1.0
@@ -2546,8 +2633,12 @@ class GameEngine:
     
     def _calculate_dexterity_breakdown(self):
         """Calculate dexterity breakdown with upgrades."""
+        from backend.config import Config
+        
         breakdown = {
-            'probes': {'base': 0, 'total': 0, 'upgrades': []},
+            'probes': {'base': 0, 'total': 0, 'upgrades': [], 'breakdown': {}},
+            'production': {'total': 0, 'probes': {}, 'structures': {}},
+            'consumption': {'total': 0, 'dyson': 0, 'probes': 0, 'structures': 0},
             'factories': {'total': 0}
         }
         
@@ -2558,6 +2649,18 @@ class GameEngine:
         base_dexterity = probe_count * base_dex
         
         breakdown['probes']['base'] = base_dexterity
+        
+        # Calculate zone-by-zone dexterity breakdown
+        zone_breakdown = {}
+        for zone_id, zone_probes in self.probes_by_zone.items():
+            probe_count_in_zone = zone_probes.get('probe', 0)
+            if probe_count_in_zone > 0:
+                zone_dexterity = probe_count_in_zone * base_dex
+                zone_breakdown[zone_id] = {
+                    'probeCount': probe_count_in_zone,
+                    'baseDexterity': zone_dexterity
+                }
+        breakdown['probes']['breakdown'] = zone_breakdown
         
         # Robotic Systems research bonus
         robotic_bonus = self._get_research_bonus('robotic_systems', 'dexterity_multiplier', 1.0)
@@ -2570,33 +2673,103 @@ class GameEngine:
                     'researched': True
                 })
         
-        # Computer Systems processing bonus
-        if 'computer_systems' in self.research:
-            comp_tree = self.data_loader.get_research_tree('computer_systems')
-            if comp_tree and 'subcategories' in comp_tree:
-                processing_tree = comp_tree['subcategories'].get('processing')
-                if processing_tree:
-                    for tier in processing_tree.get('tiers', []):
-                        tier_id = tier.get('id')
-                        upgrade = self._get_researched_upgrade('computer_systems', tier_id)
-                        if upgrade and tier.get('effects', {}).get('dexterity_multiplier'):
-                            multiplier = tier['effects']['dexterity_multiplier']
-                            if multiplier > 1.0:
-                                bonus = (multiplier - 1.0) * upgrade['completion']
-                                breakdown['probes']['upgrades'].append({
-                                    'name': upgrade['name'],
-                                    'bonus': bonus,
-                                    'researched': True
-                                })
+        # Computer Processing bonus (from computer_processing tree)
+        processing_bonus = self._calculate_research_bonus('computer_processing')
+        if processing_bonus > 0:
+            breakdown['probes']['upgrades'].append({
+                'name': 'Computer Processing',
+                'bonus': processing_bonus,
+                'researched': True
+            })
         
         # Calculate total with all multipliers
         total_multiplier = robotic_bonus
-        # Add computer systems multipliers (this is simplified - would need proper calculation)
         breakdown['probes']['total'] = base_dexterity * total_multiplier
         
-        # Factory production (simplified for now)
-        probe_prod_rates, _, _ = self._calculate_probe_production()
-        breakdown['factories']['total'] = sum(probe_prod_rates.values())
+        # Metal production breakdown by zone (probes mining)
+        harvest_allocation = self.probe_allocations.get('harvest', {})
+        total_harvest = sum(harvest_allocation.values())
+        probe_mining_breakdown = {}
+        
+        for zone_id, zone_probes in self.probes_by_zone.items():
+            probe_count_in_zone = zone_probes.get('probe', 0)
+            zone_allocations = self.probe_allocations_by_zone.get(zone_id, {})
+            harvest_alloc_data = zone_allocations.get('harvest', {})
+            # harvest_alloc_data is a dict like {'probe': count}, sum all probe types
+            if isinstance(harvest_alloc_data, dict):
+                mining_probes = sum(harvest_alloc_data.values())
+            else:
+                # Fallback if it's a number (old format)
+                mining_probes = probe_count_in_zone * harvest_alloc_data if harvest_alloc_data else 0
+            
+            if mining_probes > 0:
+                # Calculate mining rate for this zone
+                base_harvest_rate = Config.PROBE_HARVEST_RATE  # kg/day
+                zone_production = mining_probes * base_harvest_rate
+                
+                if zone_id not in probe_mining_breakdown:
+                    probe_mining_breakdown[zone_id] = {
+                        'probeCount': 0,
+                        'production': 0
+                    }
+                probe_mining_breakdown[zone_id]['probeCount'] += mining_probes
+                probe_mining_breakdown[zone_id]['production'] += zone_production
+        
+        breakdown['production']['probes'] = probe_mining_breakdown
+        
+        # Metal production breakdown by structure type
+        structure_mining_breakdown = {}
+        for zone_id, zone_structures in self.structures_by_zone.items():
+            for building_id, count in zone_structures.items():
+                if count <= 0:
+                    continue
+                building = self.data_loader.get_building_by_id(building_id)
+                if building:
+                    effects = building.get('effects', {})
+                    metal_production = effects.get('metal_production_per_day', 0)
+                    if metal_production > 0:
+                        total_production = metal_production * count
+                        if building_id not in structure_mining_breakdown:
+                            structure_mining_breakdown[building_id] = {
+                                'name': building.get('name', building_id),
+                                'count': 0,
+                                'production': 0
+                            }
+                        structure_mining_breakdown[building_id]['count'] += count
+                        structure_mining_breakdown[building_id]['production'] += total_production
+        
+        breakdown['production']['structures'] = structure_mining_breakdown
+        
+        # Calculate total metal production
+        total_probe_production = sum(z.get('production', 0) for z in probe_mining_breakdown.values())
+        total_structure_production = sum(s.get('production', 0) for s in structure_mining_breakdown.values())
+        breakdown['production']['total'] = total_probe_production + total_structure_production
+        
+        # Metal consumption breakdown
+        # Dyson construction
+        dyson_rate = self._calculate_dyson_construction_rate()
+        dyson_metal_consumption = dyson_rate * 0.5  # 50% efficiency
+        breakdown['consumption']['dyson'] = dyson_metal_consumption
+        
+        # Probe construction
+        probe_prod_rates, _, factory_metal_cost_per_probe = self._calculate_probe_production()
+        total_probe_production_rate = sum(probe_prod_rates.values())
+        metal_cost_per_probe = factory_metal_cost_per_probe if factory_metal_cost_per_probe > 0 else Config.PROBE_MASS
+        probe_metal_consumption = total_probe_production_rate * metal_cost_per_probe
+        breakdown['consumption']['probes'] = probe_metal_consumption
+        
+        # Structure construction (simplified)
+        construct_allocation = self.probe_allocations.get('construct', {})
+        constructing_probes = sum(construct_allocation.values())
+        structure_fraction = (100 - self.build_allocation) / 100.0
+        structure_probes = constructing_probes * structure_fraction
+        structure_metal_consumption = structure_probes * Config.PROBE_BUILD_RATE  # kg/day
+        breakdown['consumption']['structures'] = structure_metal_consumption
+        
+        breakdown['consumption']['total'] = dyson_metal_consumption + probe_metal_consumption + structure_metal_consumption
+        
+        # Factory production
+        breakdown['factories']['total'] = total_probe_production_rate
         
         return breakdown
     
@@ -2709,35 +2882,6 @@ class GameEngine:
                             
                             if can_research:
                                 enabled_projects.append((tree_id, tier_id))
-            
-            if 'subcategories' in tree_data:
-                for subcat_id, subcat_data in tree_data['subcategories'].items():
-                    if 'tiers' in subcat_data:
-                        tiers_list = subcat_data['tiers']
-                        for idx, tier in enumerate(tiers_list):
-                            tier_key = subcat_id + '_' + tier['id']
-                            if tier_key not in self.research[tree_id]:
-                                continue
-                            
-                            tier_data = self.research[tree_id][tier_key]
-                            if tier_data.get('enabled', False):
-                                tranches_completed = tier_data.get('tranches_completed', 0)
-                                max_tranches = tier.get('tranches', 10)
-                                if tranches_completed < max_tranches:
-                                    can_research = True
-                                    if idx > 0:
-                                        prev_tier = tiers_list[idx - 1]
-                                        prev_tier_key = subcat_id + '_' + prev_tier['id']
-                                        if prev_tier_key in self.research[tree_id]:
-                                            prev_completed = self.research[tree_id][prev_tier_key].get('tranches_completed', 0)
-                                            prev_max = prev_tier.get('tranches', 10)
-                                            if prev_completed < prev_max:
-                                                can_research = False
-                                        else:
-                                            can_research = False
-                                    
-                                    if can_research:
-                                        enabled_projects.append((tree_id, tier_key))
         
         # Calculate FLOPS per project
         flops_per_project = total_intelligence_flops / len(enabled_projects) if len(enabled_projects) > 0 else 0
@@ -2755,7 +2899,7 @@ class GameEngine:
         """Calculate intelligence breakdown with upgrades."""
         breakdown = {
             'probes': {'base': 0, 'total': 0, 'upgrades': []},
-            'structures': {'base': 0, 'total': 0},
+            'structures': {'base': 0, 'total': 0, 'breakdown': {}},
             'total': 0
         }
         
@@ -2767,6 +2911,7 @@ class GameEngine:
         
         # Research structures - in FLOPS (from zone-based structures)
         structure_intelligence_flops = 0
+        structure_breakdown = {}  # Detailed breakdown by building type
         
         # Check zone-based structures (new system)
         for zone_id, zone_structures in self.structures_by_zone.items():
@@ -2775,12 +2920,24 @@ class GameEngine:
                 if building:
                     effects = building.get('effects', {})
                     intelligence_output_flops = effects.get('intelligence_flops', 0)
-                    if intelligence_output_flops > 0:
-                        structure_intelligence_flops += intelligence_output_flops * count
-                    else:
+                    if intelligence_output_flops == 0:
                         # Legacy: convert from intelligence_per_second
                         intelligence_output = effects.get('intelligence_production_per_second', 0) or effects.get('intelligence_per_second', 0)
-                        structure_intelligence_flops += intelligence_output * 1e12 * count
+                        intelligence_output_flops = intelligence_output * 1e12
+                    
+                    if intelligence_output_flops > 0:
+                        total_flops = intelligence_output_flops * count
+                        structure_intelligence_flops += total_flops
+                        
+                        # Add to detailed breakdown
+                        if building_id not in structure_breakdown:
+                            structure_breakdown[building_id] = {
+                                'name': building.get('name', building_id),
+                                'count': 0,
+                                'flops': 0
+                            }
+                        structure_breakdown[building_id]['count'] += count
+                        structure_breakdown[building_id]['flops'] += total_flops
         
         # Also check legacy global structures for backward compatibility
         for building_id, count in self.structures.items():
@@ -2797,15 +2954,28 @@ class GameEngine:
             if building:
                 effects = building.get('effects', {})
                 intelligence_output_flops = effects.get('intelligence_flops', 0)
-                if intelligence_output_flops > 0:
-                    structure_intelligence_flops += intelligence_output_flops * count
-                else:
+                if intelligence_output_flops == 0:
                     # Legacy: convert from intelligence_per_second
                     intelligence_output = effects.get('intelligence_production_per_second', 0) or effects.get('intelligence_per_second', 0)
-                    structure_intelligence_flops += intelligence_output * 1e12 * count
+                    intelligence_output_flops = intelligence_output * 1e12
+                
+                if intelligence_output_flops > 0:
+                    total_flops = intelligence_output_flops * count
+                    structure_intelligence_flops += total_flops
+                    
+                    # Add to detailed breakdown
+                    if building_id not in structure_breakdown:
+                        structure_breakdown[building_id] = {
+                            'name': building.get('name', building_id),
+                            'count': 0,
+                            'flops': 0
+                        }
+                    structure_breakdown[building_id]['count'] += count
+                    structure_breakdown[building_id]['flops'] += total_flops
         
         breakdown['structures']['base'] = structure_intelligence_flops
         breakdown['structures']['total'] = structure_intelligence_flops
+        breakdown['structures']['breakdown'] = structure_breakdown
         breakdown['total'] = breakdown['probes']['total'] + breakdown['structures']['total']
         
         return breakdown
@@ -3190,30 +3360,6 @@ class GameEngine:
                     if tier_id in self.research[tree_id]:
                         self.research[tree_id][tier_id]['enabled'] = enabled
                         toggled_count += 1
-            
-            # Toggle subcategories (for computer systems)
-            if 'subcategories' in tree_data:
-                for subcat_id, subcat_data in tree_data['subcategories'].items():
-                    if 'tiers' in subcat_data:
-                        for tier in subcat_data['tiers']:
-                            tier_key = subcat_id + '_' + tier['id']
-                            if tier_key in self.research[tree_id]:
-                                self.research[tree_id][tier_key]['enabled'] = enabled
-                                toggled_count += 1
-        
-        # Also handle computer_systems subcategories for intelligence category
-        if category == 'intelligence' and 'computer_systems' in research_trees:
-            tree_id = 'computer_systems'
-            if tree_id in self.research:
-                tree_data = research_trees[tree_id]
-                if 'subcategories' in tree_data:
-                    for subcat_id, subcat_data in tree_data['subcategories'].items():
-                        if 'tiers' in subcat_data:
-                            for tier in subcat_data['tiers']:
-                                tier_key = subcat_id + '_' + tier['id']
-                                if tier_key in self.research[tree_id]:
-                                    self.research[tree_id][tier_key]['enabled'] = enabled
-                                    toggled_count += 1
         
         return {'success': True, 'category': category, 'enabled': enabled, 'toggled_count': toggled_count}
     

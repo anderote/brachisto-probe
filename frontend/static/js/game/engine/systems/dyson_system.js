@@ -56,8 +56,8 @@ class DysonSystem {
         // Calculate building rate
         // Uses pre-calculated upgrade factors from state
         const dysonProbes = totalProbes * dysonAllocation;
-        // Dyson zone is exempt from crowding penalty, but we pass zoneId for consistency
-        const buildingRate = this.productionCalculator.calculateBuildingRate(dysonProbes, newState, 'dyson_sphere');
+        // Dyson zone is exempt from crowding penalty, pass totalProbes for probe count scaling penalty
+        const buildingRate = this.productionCalculator.calculateBuildingRate(dysonProbes, newState, 'dyson_sphere', totalProbes);
         
         // Apply Dyson construction upgrade factor (uses ALPHA_DYSON_FACTOR)
         const dysonUpgradeFactor = newState.upgrade_factors?.dyson?.construction?.performance || 1.0;

@@ -11,6 +11,9 @@
  * @returns {Object} Initial game state
  */
 function createInitialGameState(config = {}) {
+    // Extract skill bonuses from config
+    const skillBonuses = config.skill_bonuses || {};
+    
     return {
         // Time
         time: 0.0,              // Days elapsed
@@ -23,6 +26,18 @@ function createInitialGameState(config = {}) {
         
         // Base energy production (player starts with this - like a small solar array)
         base_energy_production: config.base_energy_production || 100000,  // 100 kW base production
+        
+        // Starting skill bonuses (from skill point allocation at game start)
+        // These provide permanent bonuses on top of base values
+        skill_bonuses: {
+            mass_driver_dv_bonus: skillBonuses.mass_driver_dv_bonus || 0,    // km/s added to mass driver velocity
+            probe_dv_bonus: skillBonuses.probe_dv_bonus || 0,                // km/s added to probe delta-v
+            mining_rate_bonus: skillBonuses.mining_rate_bonus || 0,          // kg/day added to base mining rate
+            replication_rate_bonus: skillBonuses.replication_rate_bonus || 0, // kg/day added to base build rate
+            compute_bonus: skillBonuses.compute_bonus || 1.0,                // Multiplier for intelligence skills
+            energy_bonus: skillBonuses.energy_bonus || 1.0,                  // Multiplier for energy skills
+            dexterity_bonus: skillBonuses.dexterity_bonus || 1.0             // Multiplier for dexterity skills
+        },
         
         // Tech Tree - New unified research/skills system
         tech_tree: {
@@ -90,6 +105,11 @@ function createInitialGameState(config = {}) {
         // Probe allocations by zone (fractions 0-1)
         probe_allocations_by_zone: {},
         
+        // Zone mass limits (slider values as fractions 0-1)
+        // Controls max probe/structure mass ratio for replication/construction
+        // Format: { zoneId: { replicate: 0-1, construct: 0-1, recycle_probes: 0-1 } }
+        zone_mass_limits: {},
+        
         // Structures by zone
         structures_by_zone: {},
         
@@ -116,6 +136,7 @@ function createInitialGameState(config = {}) {
         //   probe_mass: number,        // Mass of all probes in zone
         //   structure_mass: number,    // Mass of all structures in zone
         //   slag_mass: number,         // Mass of slag in zone
+        //   methalox: number,          // Mass of methalox fuel in zone
         //   depleted: boolean          // True when mass_remaining <= 0
         // }
         zones: {},
@@ -174,6 +195,7 @@ function createInitialGameState(config = {}) {
                 metal_refined_rate: 0,
                 slag_produced_rate: 0,
                 metal_consumed_rate: 0,
+                methalox_production_rate: 0,
                 energy_produced: 0,
                 energy_consumed: 0,
                 energy_net: 0,
@@ -185,7 +207,22 @@ function createInitialGameState(config = {}) {
                 probes_transit: 0,
                 dyson_mass_rate: 0
             }
-        }
+        },
+        
+        // Cumulative statistics (running totals since game start)
+        cumulative_stats: {
+            metal_spent: 0,           // Total kg metal consumed (probes, structures, dyson)
+            energy_spent: 0,          // Total J energy consumed
+            flops_spent: 0,           // Total FLOPS spent on research
+            probes_built: 0,          // Total probes constructed
+            structures_built: 0,      // Total structures constructed
+            dyson_mass_added: 0       // Total kg added to Dyson sphere
+        },
+        
+        // Historical data points for plotting (sampled periodically)
+        // Each entry: { time, metal_spent, energy_spent, flops_spent, probes_built }
+        stats_history: [],
+        stats_history_last_sample: 0  // Last time a sample was recorded (in days)
     };
 }
 

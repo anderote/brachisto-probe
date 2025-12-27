@@ -14,8 +14,8 @@ class Config:
     
     # Game configuration
     DYSON_SPHERE_TARGET_MASS = 20e22  # kg, base value (can be reduced by research)
-    INITIAL_PROBES = 1
-    INITIAL_METAL = 1000  # kg
+    INITIAL_PROBES = 10  # Default starting probes (overridden by difficulty config)
+    INITIAL_METAL = 100  # kg
     INITIAL_ENERGY = 0  # watts - energy cannot be stored, use constant supply
     CONSTANT_ENERGY_SUPPLY = 100000  # watts (100kW) - constant power supply
     TICKS_PER_SECOND = 60
@@ -35,18 +35,26 @@ class Config:
     DYSON_POWER_PER_KG = 5000  # watts per kg (5 kW/kg = 5 kW/m² / 1 kg/m²)
     
     # Base probe stats (single probe type)
+    # FALLBACK values - primary source is game_data/economic_rules.json
     # All rates are per-day (fundamental time unit)
     PROBE_MASS = 100  # kg per probe
-    PROBE_BASE_MINING_RATE = 100.0  # kg/day per probe (base mining rate - mines 100kg mass per day)
-    PROBE_BASE_BUILD_RATE = 10.0  # kg/day per probe (base build power - 1 probe takes 10 days to build a 100kg probe)
+    PROBE_BASE_MINING_RATE = 100.0  # kg/day per probe (base mining rate)
+    PROBE_BASE_BUILD_RATE = 20.0  # kg/day per probe (base build power)
     PROBE_BASE_MOVEMENT_SPEED = 30.0  # km/s - for transfer calculations
     PROBE_BASE_MOVEMENT_EFFICIENCY = 1.0  # multiplier - for transfer energy cost reduction
-    PROBE_BASE_POWER_CONSUMPTION = 100000  # watts (100kW) per probe
+    
+    # Probe energy values - FALLBACKS (see economic_rules.json probe section)
+    PROBE_BASE_ENERGY_PRODUCTION = 100000  # 100 kW per probe (base generation)
+    PROBE_BASE_ENERGY_COST_MINING = 500000  # 500 kW per mining probe
+    PROBE_BASE_ENERGY_COST_RECYCLE_SLAG = 300000  # 300 kW per recycling probe
+    
+    # Structure energy values - FALLBACKS (see economic_rules.json structures section)
+    STRUCTURE_BASE_ENERGY_COST = 250000  # 250 kW base for structure energy multipliers
     
     # Legacy aliases for backward compatibility
     PROBE_HARVEST_RATE = PROBE_BASE_MINING_RATE
     PROBE_BUILD_RATE = PROBE_BASE_BUILD_RATE
-    PROBE_ENERGY_CONSUMPTION = PROBE_BASE_POWER_CONSUMPTION
+    PROBE_ENERGY_CONSUMPTION = STRUCTURE_BASE_ENERGY_COST  # Legacy: used for structure energy calculations
 
 class DevelopmentConfig(Config):
     """Development configuration."""

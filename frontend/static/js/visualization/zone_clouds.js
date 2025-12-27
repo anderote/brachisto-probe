@@ -237,8 +237,8 @@ class ZoneClouds {
             const orbitalPhase = Math.random() * Math.PI * 2;
             
             // Orbital speed - faster for closer orbits (Kepler's law: v ∝ 1/√r)
-            // Base speed adjusted for visual effect
-            const baseOrbitalSpeed = cloudType === 'probes' ? 0.8 : 0.3;
+            // Base speed adjusted for visual effect (kept slow for realistic appearance)
+            const baseOrbitalSpeed = cloudType === 'probes' ? 0.15 : 0.08;
             const orbitalSpeed = baseOrbitalSpeed / Math.sqrt(orbitalRadius / minRadius);
             // Add some random variation for more chaos
             const speedVariation = 0.8 + Math.random() * 0.4; // 80% to 120%
@@ -446,9 +446,11 @@ class ZoneClouds {
         let beltConfig;
         
         if (zone.id === 'asteroid_belt') {
-            // Asteroid belt between Mars and Jupiter
-            const marsOrbit = this.solarSystem.logScaleOrbit(this.solarSystem.planetData.mars.orbit_km);
-            const jupiterOrbit = this.solarSystem.logScaleOrbit(this.solarSystem.planetData.jupiter.orbit_km);
+            // Asteroid belt between Mars (1.52 AU) and Jupiter (5.2 AU)
+            const marsAU = this.solarSystem.planetData.mars.orbit_km / AU_KM;
+            const jupiterAU = this.solarSystem.planetData.jupiter.orbit_km / AU_KM;
+            const marsOrbit = this.solarSystem.scaleAUToVisual(marsAU);
+            const jupiterOrbit = this.solarSystem.scaleAUToVisual(jupiterAU);
             beltConfig = {
                 innerRadius: marsOrbit * 1.1,
                 outerRadius: jupiterOrbit * 0.9,
@@ -456,26 +458,25 @@ class ZoneClouds {
                 verticalSpread: 0.8
             };
         } else if (zone.id === 'kuiper' || zone.id === 'kuiper_belt') {
-            // Kuiper belt beyond Neptune
+            // Kuiper belt beyond Neptune (30-50 AU)
             beltConfig = {
-                innerRadius: this.solarSystem.logScaleOrbit(90 * AU_KM),
-                outerRadius: this.solarSystem.logScaleOrbit(165 * AU_KM),
+                innerRadius: this.solarSystem.scaleAUToVisual(30.0),
+                outerRadius: this.solarSystem.scaleAUToVisual(50.0),
                 isSpherical: false,
                 verticalSpread: 0.5
             };
         } else if (zone.id === 'oort_cloud') {
-            // Oort cloud - spherical distribution
+            // Oort cloud - spherical distribution (70-140 AU)
             beltConfig = {
-                innerRadius: this.solarSystem.logScaleOrbit(180 * AU_KM),
-                outerRadius: this.solarSystem.logScaleOrbit(420 * AU_KM),
+                innerRadius: this.solarSystem.scaleAUToVisual(70.0),
+                outerRadius: this.solarSystem.scaleAUToVisual(140.0),
                 isSpherical: true,
                 verticalSpread: 0 // Not used for spherical
             };
         } else if (zone.id === 'dyson_sphere') {
-            // Dyson sphere - use the stored orbit radius from solar system (75% of Mercury's orbit)
-            // This matches the actual Dyson swarm visualization position
+            // Dyson sphere at 0.29 AU
             const dysonOrbit = this.solarSystem.dysonOrbitRadius || 
-                (this.solarSystem.scaleRockyPlanetOrbit(this.solarSystem.planetData.mercury.orbit_km) * 0.75);
+                this.solarSystem.scaleAUToVisual(0.29);
             // Create a thin ring around the Dyson orbit
             beltConfig = {
                 innerRadius: dysonOrbit * 0.9,
@@ -734,9 +735,8 @@ class ZoneClouds {
             const transfer = transferMap[transit.transfer_id];
             
             // Convert AU to 3D position (circular orbit in XZ plane)
-            // Use solar system's log scaling for orbit radius
-            const orbitKm = au * 149600000; // Convert AU to km
-            const orbitRadius = this.solarSystem.logScaleOrbit(orbitKm);
+            // Use solar system's unified scaling for orbit radius
+            const orbitRadius = this.solarSystem.scaleAUToVisual(au);
             
             // Calculate angle along transfer path
             let angle = 0;
@@ -752,10 +752,8 @@ class ZoneClouds {
                     const progress = fromAU > 0 ? (au - fromAU) / (toAU - fromAU) : 0;
                     
                     // Get angles for origin and destination zones
-                    const fromOrbitKm = fromAU * 149600000;
-                    const toOrbitKm = toAU * 149600000;
-                    const fromOrbitRadius = this.solarSystem.logScaleOrbit(fromOrbitKm);
-                    const toOrbitRadius = this.solarSystem.logScaleOrbit(toOrbitKm);
+                    const fromOrbitRadius = this.solarSystem.scaleAUToVisual(fromAU);
+                    const toOrbitRadius = this.solarSystem.scaleAUToVisual(toAU);
                     
                     // Use a consistent angle based on transfer direction
                     // For simplicity, use the average angle between zones
@@ -1145,7 +1143,7 @@ class ZoneClouds {
         const ascendingNode = Math.random() * Math.PI * 2;
         
         // Orbital speed - faster for closer orbits (Kepler's law)
-        const baseOrbitalSpeed = cloudType === 'probes' ? 0.8 : 0.3;
+        const baseOrbitalSpeed = cloudType === 'probes' ? 0.15 : 0.08;
         const minRadius = cloud.userData.minRadius || 0.5;
         const orbitalSpeed = baseOrbitalSpeed / Math.sqrt(Math.max(orbitalRadius / minRadius, 0.5));
         const speedVariation = 0.8 + Math.random() * 0.4;
@@ -1206,5 +1204,30 @@ class ZoneClouds {
         cloud.visible = true;
         
         return true;
+    }
+    
+    /**
+     * Handle transfer arrival event - adds multiple particles at their arrival positions
+     * Called by TransferVisualization when a transfer completes
+     * @param {Object} arrivalInfo - {zoneId, resourceType, positions: [THREE.Vector3], dotCount}
+     */
+    handleTransferArrival(arrivalInfo) {
+        const { zoneId, resourceType, positions, dotCount } = arrivalInfo;
+        
+        if (!positions || positions.length === 0) {
+            return;
+        }
+        
+        // Add each arriving particle to the zone cloud
+        let addedCount = 0;
+        for (const position of positions) {
+            if (this.addArrivingParticle(zoneId, resourceType, position)) {
+                addedCount++;
+            }
+        }
+        
+        if (addedCount > 0) {
+            console.log(`ZoneClouds: Added ${addedCount}/${positions.length} ${resourceType} particles to ${zoneId}`);
+        }
     }
 }

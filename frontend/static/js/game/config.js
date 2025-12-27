@@ -1,21 +1,22 @@
 /** 
  * Game configuration constants
  * 
- * NOTE: Many of these values are now also defined in game_data/economic_rules.json
- * for centralized game balancing. The economic_rules.json file takes precedence
- * when loaded. These values serve as fallbacks.
+ * IMPORTANT: These are FALLBACK values only!
+ * The primary source of truth is game_data/economic_rules.json
+ * These values are only used if economic_rules.json is not loaded.
  * 
  * See game_data/economic_rules.json for:
- * - Base probe rates (mining, building)
+ * - Base probe rates (mining, building, energy production/consumption)
  * - Skill coefficients for production calculations
  * - Alpha factors for tech tree scaling
  * - Crowding penalty parameters
+ * - Structure base energy costs
  */
 class Config {
     // Game configuration
     static DYSON_SPHERE_TARGET_MASS = 20e22;  // kg, base value (can be reduced by research)
     static INITIAL_PROBES = 1;
-    static INITIAL_METAL = 0;  // kg (start with 0 metal)
+    static INITIAL_METAL = 100;  // kg
     static INITIAL_ENERGY = 0;  // watts - energy cannot be stored, use constant supply
     static CONSTANT_ENERGY_SUPPLY = 100000;  // watts (100kW) - constant power supply
     static TICKS_PER_SECOND = 60;
@@ -35,15 +36,27 @@ class Config {
     static DYSON_POWER_PER_KG = 2500;  // watts per kg (5 kW/kg = 5 kW/m² / 1 kg/m²)
     
     // All rates are per-day (fundamental time unit)
-    // NOTE: These are fallbacks - see game_data/economic_rules.json for primary values
+    // FALLBACK values - see game_data/economic_rules.json for primary values
     static PROBE_MASS = 100;  // kg per probe
-    static PROBE_HARVEST_RATE = 100.0;  // kg/day per probe (base mining rate - mines 100kg mass per day)
+    static PROBE_HARVEST_RATE = 100.0;  // kg/day per probe (base mining rate)
     static PROBE_BUILD_RATE = 20.0;  // kg/day per probe (base build power)
-    static PROBE_ENERGY_CONSUMPTION = 250000;  // watts (250kW) - base rate for buildings (constructing rate)
+    static PROBE_BASE_COMPUTE_PFLOPS = 100;  // PFLOPs per probe (base onboard compute)
+    
+    // Probe energy values - FALLBACKS (see economic_rules.json probe section)
+    static PROBE_ENERGY_PRODUCTION = 100000;  // 100 kW per probe (base generation)
+    static PROBE_ENERGY_COST_MINING = 500000;  // 500 kW per mining probe
+    static PROBE_ENERGY_COST_RECYCLE_SLAG = 300000;  // 300 kW per recycling probe
+    
+    // Structure energy values - FALLBACKS (see economic_rules.json structures section)
+    static STRUCTURE_BASE_ENERGY_COST = 250000;  // 250 kW base for structure energy multipliers
+    
+    // Structure geometric scaling exponent - FALLBACK (see economic_rules.json structures section)
+    // Controls how cost and output scale with structure count
+    // Cost of building N = baseCost * N^exponent, Output of N structures = baseOutput * N^exponent
+    static STRUCTURE_GEOMETRIC_SCALING_EXPONENT = 3.2;
     
     // Alpha factors for tech tree scaling (performance benefits)
-    // NOTE: These are fallbacks - see game_data/economic_rules.json for primary values
-    // Higher alpha = more benefit from research
+    // FALLBACK values - see game_data/economic_rules.json for primary values
     static ALPHA_STRUCTURE_FACTOR = 0.8;   // Structures benefit most
     static ALPHA_PROBE_FACTOR = 0.75;      // Probes benefit slightly less
     static ALPHA_DYSON_FACTOR = 0.55;      // Dyson benefits least per skill

@@ -73,9 +73,12 @@ class ProbeVisualization {
             return radiusAU * 2.0;
         }
         try {
-            // Convert AU to km, then use log scale
-            const orbitKm = radiusAU * 149600000; // 1 AU = 149,600,000 km
-            return this.solarSystem.logScaleOrbit(orbitKm);
+            // Use unified scaling directly with AU
+            if (this.solarSystem.scaleAUToVisual) {
+                return this.solarSystem.scaleAUToVisual(radiusAU);
+            }
+            // Fallback if scaling not ready yet
+            return radiusAU * 2.0;
         } catch (e) {
             // Fallback if scaling not ready yet
             return radiusAU * 2.0;

@@ -21,6 +21,7 @@ class GameDataLoader {
         this.researchTrees = null;
         this.economicRules = null;
         this.zoneMetalLimits = null;
+        this.transferDeltaV = null;
         this.cache = {};
     }
 
@@ -89,6 +90,15 @@ class GameDataLoader {
             this.economicRules = await response.json();
         }
         return this.economicRules;
+    }
+
+    async loadTransferDeltaV() {
+        if (!this.transferDeltaV) {
+            const response = await fetch('/game_data/transfer_delta_v.json');
+            const data = await response.json();
+            this.transferDeltaV = data.hohmann_transfers;
+        }
+        return this.transferDeltaV;
     }
 
     getEconomicRules() {
@@ -233,7 +243,8 @@ class GameDataLoader {
             this.loadOrbitalMechanics(),
             this.loadBuildings(),
             this.loadResearchTrees(),
-            this.loadEconomicRules()
+            this.loadEconomicRules(),
+            this.loadTransferDeltaV()
         ]);
     }
 }

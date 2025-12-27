@@ -39,8 +39,10 @@ class TechTree {
         this.skillDefinitions = typeof SKILL_DEFINITIONS !== 'undefined' ? SKILL_DEFINITIONS : {};
         this.treeToSkill = typeof TREE_TO_SKILL !== 'undefined' ? TREE_TO_SKILL : {};
         
-        // Default tier multiplier (10 tiers -> 1e6 total: 1e6^(1/10) ≈ 3.981)
-        this.DEFAULT_TIER_MULTIPLIER = Math.pow(1e6, 1/10);
+        // Default tier multiplier: 1.2x per tier (20% increase, compounding across 10 tranches)
+        // Per-tranche: 1.2^(1/10) ≈ 1.01837, full tier: 1.2x
+        // Full tree (10 tiers): 1.2^10 ≈ 6.19x
+        this.DEFAULT_TIER_MULTIPLIER = 1.2;
         
         // Number of tranches per tier
         this.TRANCHES_PER_TIER = 10;
@@ -269,7 +271,7 @@ class TechTree {
     /**
      * Get upgrade factor for a single tree
      * @param {string} treeId - Research tree ID
-     * @returns {number} Upgrade factor (1.0 to ~1e6 when fully researched)
+     * @returns {number} Upgrade factor (1.0 to ~6.19x when fully researched)
      */
     getTreeUpgradeFactor(treeId) {
         const tree = this.treeLookup[treeId];
@@ -285,19 +287,18 @@ class TechTree {
             const tranchesCompleted = tierState.tranches_completed || 0;
             const totalTranches = tier.tranches || this.TRANCHES_PER_TIER;
             
-            // Get tier multiplier (default to calculated value for 1e6 total)
+            // Get tier multiplier (default 1.2x = 20% per tier)
             const tierMultiplier = tier.tier_multiplier || this.DEFAULT_TIER_MULTIPLIER;
             
             if (tranchesCompleted >= totalTranches) {
-                // Tier complete: full multiplier
+                // Tier complete: full multiplier (1.2x)
                 factor *= tierMultiplier;
             } else if (tranchesCompleted > 0) {
-                // Tier in progress: partial bonus (linear interpolation up to 50% of gain)
-                // At 0 tranches: 1.0x, at 100% tranches: tierMultiplier
-                // During progress: lerp from 1.0 to (0.5 + 0.5 * tierMultiplier)
-                const progressRatio = tranchesCompleted / totalTranches;
-                const partialMaxMultiplier = 0.5 + 0.5 * tierMultiplier;
-                const partialMultiplier = 1.0 + progressRatio * (partialMaxMultiplier - 1.0);
+                // Tier in progress: compound per tranche
+                // Each tranche gives: tierMultiplier^(1/totalTranches)
+                // So N tranches give: tierMultiplier^(N/totalTranches)
+                const perTrancheMultiplier = Math.pow(tierMultiplier, 1.0 / totalTranches);
+                const partialMultiplier = Math.pow(perTrancheMultiplier, tranchesCompleted);
                 factor *= partialMultiplier;
             }
             // If 0 tranches completed, factor stays 1.0 for this tier
@@ -477,8 +478,7 @@ class TechTree {
                 tierCostEFLOPSDays = legacyCostEFLOPSDays;
             }
         } else {
-            // Default: tier 1 costs 100 EFLOPS-days
-            // Higher tiers scale exponentially (each tier costs 2x more)
+            // Default: tier 1 costs 1000 EFLOPS-days, tier 10 costs 1e21x more
             // Find tier index to determine scaling
             let tierIndex = 0;
             if (tree && tree.tiers) {
@@ -486,23 +486,10 @@ class TechTree {
                 if (foundIndex >= 0) {
                     tierIndex = foundIndex;
                 }
-            } else if (tree && tree.subcategories && tierId.includes('_')) {
-                // Handle subcategory tiers (format: "subcatId_tierId")
-                const parts = tierId.split('_');
-                if (parts.length >= 2) {
-                    const subcatId = parts[0];
-                    const actualTierId = parts.slice(1).join('_');
-                    const subcatData = tree.subcategories[subcatId];
-                    if (subcatData && subcatData.tiers) {
-                        const foundIndex = subcatData.tiers.findIndex(t => t.id === actualTierId);
-                        if (foundIndex >= 0) {
-                            tierIndex = foundIndex;
-                        }
-                    }
-                }
             }
-            const baseCostEFLOPSDays = 100; // Tier 1 base cost: 100 EFLOPS-days
-            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(2, tierIndex); // 2x scaling per tier
+            const baseCostEFLOPSDays = 1000; // Tier 1 base cost: 1000 EFLOPS-days
+            // Each tier costs 150x more than the previous tier
+            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(150, tierIndex);
         }
         
         // Convert to FLOP-days cost (same units as progress: FLOPS * days)
@@ -567,27 +554,7 @@ class TechTree {
         const tree = this.treeLookup[treeId];
         if (!tree) return;
         
-        // Check if this is a subcategory tier (format: "subcatId_tierId")
-        if (completedTierId.includes('_') && tree.subcategories) {
-            const parts = completedTierId.split('_');
-            if (parts.length >= 2) {
-                const subcatId = parts[0];
-                const actualTierId = parts.slice(1).join('_');
-                const subcatData = tree.subcategories[subcatId];
-                
-                if (subcatData && subcatData.tiers) {
-                    const currentIndex = subcatData.tiers.findIndex(t => t.id === actualTierId);
-                    if (currentIndex >= 0 && currentIndex < subcatData.tiers.length - 1) {
-                        const nextTier = subcatData.tiers[currentIndex + 1];
-                        const nextTierKey = subcatId + '_' + nextTier.id;
-                        this.enableTier(treeId, nextTierKey);
-                    }
-                    return;
-                }
-            }
-        }
-        
-        // Regular tree with direct tiers
+        // All trees now have direct tiers (no subcategory handling needed)
         if (!tree.tiers) return;
         
         const currentIndex = tree.tiers.findIndex(t => t.id === completedTierId);
@@ -642,26 +609,8 @@ class TechTree {
             for (const [tierId, tierState] of Object.entries(treeState)) {
                 if (!tierState.enabled || tierState.completed) continue;
                 
-                let tierDef = null;
-                
-                // Check if this is a subcategory tier (format: "subcatId_tierId")
-                if (tierId.includes('_') && tree.subcategories) {
-                    const parts = tierId.split('_');
-                    if (parts.length >= 2) {
-                        const subcatId = parts[0];
-                        const actualTierId = parts.slice(1).join('_');
-                        const subcatData = tree.subcategories[subcatId];
-                        
-                        if (subcatData && subcatData.tiers) {
-                            tierDef = subcatData.tiers.find(t => t.id === actualTierId);
-                        }
-                    }
-                }
-                
-                // If not found in subcategories, check regular tiers
-                if (!tierDef && tree.tiers) {
-                    tierDef = tree.tiers.find(t => t.id === tierId);
-                }
+                // All trees now have direct tiers (no subcategory handling needed)
+                let tierDef = tree.tiers?.find(t => t.id === tierId) || null;
                 
                 if (tierDef) {
                     projects.push({ treeId, tierId, tierState, tierDef });
@@ -697,7 +646,7 @@ class TechTree {
      * Load research state from game state
      * @param {Object} state - Game state object
      */
-    loadFromState(state) {
+    loadFromState(state, isInitialLoad = false) {
         // Load from new tech_tree format if available
         if (state.tech_tree?.research_state) {
             this.researchState = JSON.parse(JSON.stringify(state.tech_tree.research_state));
@@ -707,8 +656,12 @@ class TechTree {
             this.researchState = JSON.parse(JSON.stringify(state.research));
         }
         
-        // Ensure first incomplete tier is enabled for each tree (for continuous research)
-        this.ensureFirstIncompleteTiersEnabled();
+        // Only auto-enable on initial load, not during gameplay
+        // During gameplay, user controls what's enabled via toggles
+        // The autoEnableNextTier() method handles tier completion -> next tier
+        if (isInitialLoad) {
+            this.ensureFirstIncompleteTiersEnabled();
+        }
         
         this.updateSkillsCache();
         this.updateCategoryFactors();
@@ -720,16 +673,8 @@ class TechTree {
      */
     ensureFirstIncompleteTiersEnabled() {
         for (const [treeId, tree] of Object.entries(this.treeLookup)) {
-            // Handle trees with subcategories (like computer_systems)
-            if (tree.subcategories) {
-                for (const [subcatId, subcatData] of Object.entries(tree.subcategories)) {
-                    if (!subcatData.tiers) continue;
-                    
-                    this.ensureFirstIncompleteTierEnabled(treeId, subcatData.tiers, subcatId);
-                }
-            }
-            // Handle regular trees
-            else if (tree.tiers) {
+            // All trees now have direct tiers (no subcategory handling needed)
+            if (tree.tiers) {
                 this.ensureFirstIncompleteTierEnabled(treeId, tree.tiers);
             }
         }
@@ -739,16 +684,15 @@ class TechTree {
      * Ensure the first incomplete tier in a tier list is enabled
      * @param {string} treeId - Tree ID
      * @param {Array} tiers - Array of tier definitions
-     * @param {string} subcatId - Subcategory ID (optional, for subcategory tiers)
      */
-    ensureFirstIncompleteTierEnabled(treeId, tiers, subcatId = null) {
+    ensureFirstIncompleteTierEnabled(treeId, tiers) {
         if (!this.researchState[treeId]) {
             this.researchState[treeId] = {};
         }
         
         for (let i = 0; i < tiers.length; i++) {
             const tier = tiers[i];
-            const tierKey = subcatId ? `${subcatId}_${tier.id}` : tier.id;
+            const tierKey = tier.id;
             const tierState = this.researchState[treeId][tierKey];
             
             // Initialize tier state if not exists

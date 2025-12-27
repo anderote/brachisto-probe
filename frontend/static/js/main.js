@@ -12,6 +12,21 @@ class App {
         this.leaderboard = null;
         this.isAuthenticated = false;
         this.currentUser = null;
+        
+        // Skill allocation state
+        this.selectedDifficulty = 'medium';
+        this.selectedPlanet = 'earth';
+        this.skillPoints = {
+            mass_driver: 0,
+            probe_dv: 0,
+            mining: 0,
+            replication: 0,
+            compute: 0,
+            energy: 0,
+            dexterity: 0
+        };
+        this.totalSkillPoints = 10;
+        
         this.init();
     }
 
@@ -99,6 +114,13 @@ class App {
                         this.transferViz = new TransferVisualization(this.sceneManager.getScene(), this.solarSystem, this.structuresViz);
                         // Set transfer viz reference in scene manager for line toggling
                         this.sceneManager.setTransferViz(this.transferViz);
+                        
+                        // Wire up transfer arrival callback to add particles to zone clouds
+                        if (this.solarSystem && this.solarSystem.zoneClouds) {
+                            this.transferViz.setArrivalCallback((arrivalInfo) => {
+                                this.solarSystem.zoneClouds.handleTransferArrival(arrivalInfo);
+                            });
+                        }
                     }
                 }
             } catch (e) {
@@ -194,6 +216,14 @@ class App {
                     new VisualEffectsPanel('visual-effects-panel') : null;
             } catch (e) {
                 console.error('Failed to initialize VisualEffectsPanel:', e);
+            }
+            
+            // Initialize summary plot panel
+            try {
+                this.summaryPlotPanel = typeof SummaryPlotPanel !== 'undefined' ? 
+                    new SummaryPlotPanel('summary-plot-panel') : null;
+            } catch (e) {
+                console.error('Failed to initialize SummaryPlotPanel:', e);
             }
 
             try {
@@ -435,14 +465,272 @@ class App {
         }
         
         // Set up new game button
-        const newGameBtn = document.getElementById('new-game-btn');
-        if (newGameBtn) {
-            // Remove any existing handlers and add new one
-            newGameBtn.onclick = null;
-            newGameBtn.addEventListener('click', () => {
-                this.startNewGame();
-            });
+        // Difficulty buttons - now open skill allocation modal
+        const easyBtn = document.getElementById('easy-game-btn');
+        const mediumBtn = document.getElementById('medium-game-btn');
+        const hardBtn = document.getElementById('hard-game-btn');
+        
+        if (easyBtn) {
+            easyBtn.onclick = null;
+            easyBtn.addEventListener('click', () => this.showSkillAllocationModal('easy'));
         }
+        if (mediumBtn) {
+            mediumBtn.onclick = null;
+            mediumBtn.addEventListener('click', () => this.showSkillAllocationModal('medium'));
+        }
+        if (hardBtn) {
+            hardBtn.onclick = null;
+            hardBtn.addEventListener('click', () => this.showSkillAllocationModal('hard'));
+        }
+    }
+    
+    /**
+     * Show skill allocation modal after difficulty selection
+     */
+    showSkillAllocationModal(difficulty) {
+        this.selectedDifficulty = difficulty;
+        this.selectedPlanet = 'earth';
+        this.skillPoints = {
+            mass_driver: 0,
+            probe_dv: 0,
+            mining: 0,
+            replication: 0,
+            compute: 0,
+            energy: 0,
+            dexterity: 0
+        };
+        
+        // Hide game menu, show skill allocation
+        const gameMenu = document.getElementById('game-menu-modal');
+        const skillModal = document.getElementById('skill-allocation-modal');
+        
+        if (gameMenu) gameMenu.style.display = 'none';
+        if (skillModal) skillModal.style.display = 'flex';
+        
+        // Update difficulty label
+        const difficultyLabel = document.getElementById('difficulty-label');
+        if (difficultyLabel) {
+            const labels = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+            difficultyLabel.textContent = `${labels[difficulty]} Difficulty`;
+        }
+        
+        // Reset planet selection
+        this.updatePlanetSelection('earth');
+        
+        // Reset sliders
+        this.resetSkillSliders();
+        
+        // Set up event listeners
+        this.setupSkillAllocationListeners();
+    }
+    
+    /**
+     * Set up skill allocation modal event listeners
+     */
+    setupSkillAllocationListeners() {
+        // Planet buttons
+        const planetBtns = document.querySelectorAll('.planet-btn');
+        planetBtns.forEach(btn => {
+            btn.onclick = () => {
+                const planet = btn.dataset.planet;
+                this.updatePlanetSelection(planet);
+            };
+        });
+        
+        // Skill sliders
+        const sliderIds = ['mass-driver', 'probe-dv', 'mining', 'replication', 'compute', 'energy', 'dexterity'];
+        sliderIds.forEach(id => {
+            const slider = document.getElementById(`skill-${id}`);
+            if (slider) {
+                slider.oninput = () => this.updateSkillValue(id, parseInt(slider.value));
+            }
+        });
+        
+        // Back button
+        const backBtn = document.getElementById('skill-back-btn');
+        if (backBtn) {
+            backBtn.onclick = () => {
+                const gameMenu = document.getElementById('game-menu-modal');
+                const skillModal = document.getElementById('skill-allocation-modal');
+                if (skillModal) skillModal.style.display = 'none';
+                if (gameMenu) gameMenu.style.display = 'flex';
+            };
+        }
+        
+        // Start button
+        const startBtn = document.getElementById('skill-start-btn');
+        if (startBtn) {
+            startBtn.onclick = () => {
+                const skillModal = document.getElementById('skill-allocation-modal');
+                if (skillModal) skillModal.style.display = 'none';
+                this.startNewGameWithSkills();
+            };
+        }
+    }
+    
+    /**
+     * Update planet selection
+     */
+    updatePlanetSelection(planet) {
+        this.selectedPlanet = planet;
+        
+        const planetBtns = document.querySelectorAll('.planet-btn');
+        planetBtns.forEach(btn => {
+            if (btn.dataset.planet === planet) {
+                btn.classList.add('selected');
+                btn.style.borderColor = '#4a9eff';
+            } else {
+                btn.classList.remove('selected');
+                btn.style.borderColor = 'transparent';
+            }
+        });
+    }
+    
+    /**
+     * Reset skill sliders to 0
+     */
+    resetSkillSliders() {
+        const sliderConfigs = [
+            { id: 'mass-driver', key: 'mass_driver' },
+            { id: 'probe-dv', key: 'probe_dv' },
+            { id: 'mining', key: 'mining' },
+            { id: 'replication', key: 'replication' },
+            { id: 'compute', key: 'compute' },
+            { id: 'energy', key: 'energy' },
+            { id: 'dexterity', key: 'dexterity' }
+        ];
+        
+        sliderConfigs.forEach(config => {
+            const slider = document.getElementById(`skill-${config.id}`);
+            if (slider) {
+                slider.value = 0;
+                slider.disabled = false;
+            }
+            this.skillPoints[config.key] = 0;
+            this.updateSkillValueDisplay(config.id, 0);
+        });
+        
+        this.updatePointsRemaining();
+    }
+    
+    /**
+     * Update skill value when slider changes
+     */
+    updateSkillValue(sliderId, value) {
+        // Map slider ID to skill key
+        const keyMap = {
+            'mass-driver': 'mass_driver',
+            'probe-dv': 'probe_dv',
+            'mining': 'mining',
+            'replication': 'replication',
+            'compute': 'compute',
+            'energy': 'energy',
+            'dexterity': 'dexterity'
+        };
+        
+        const key = keyMap[sliderId];
+        const currentUsed = Object.values(this.skillPoints).reduce((a, b) => a + b, 0);
+        const currentValue = this.skillPoints[key];
+        const maxAllowed = this.totalSkillPoints - (currentUsed - currentValue);
+        
+        // Clamp value to max allowed
+        const clampedValue = Math.min(value, maxAllowed);
+        
+        this.skillPoints[key] = clampedValue;
+        
+        // Update slider if clamped
+        const slider = document.getElementById(`skill-${sliderId}`);
+        if (slider && slider.value !== String(clampedValue)) {
+            slider.value = clampedValue;
+        }
+        
+        this.updateSkillValueDisplay(sliderId, clampedValue);
+        this.updatePointsRemaining();
+    }
+    
+    /**
+     * Update skill value display text
+     */
+    updateSkillValueDisplay(sliderId, value) {
+        const valueEl = document.getElementById(`skill-${sliderId}-value`);
+        if (!valueEl) return;
+        
+        switch (sliderId) {
+            case 'mass-driver':
+            case 'probe-dv':
+                valueEl.textContent = `+${(value * 0.5).toFixed(1)} km/s`;
+                break;
+            case 'mining':
+                valueEl.textContent = `+${value * 10} kg/day`;
+                break;
+            case 'replication':
+                valueEl.textContent = `+${value * 5} kg/day`;
+                break;
+            case 'compute':
+            case 'energy':
+            case 'dexterity':
+                valueEl.textContent = `+${value * 10}%`;
+                break;
+        }
+    }
+    
+    /**
+     * Update points remaining display
+     */
+    updatePointsRemaining() {
+        const used = Object.values(this.skillPoints).reduce((a, b) => a + b, 0);
+        const remaining = this.totalSkillPoints - used;
+        
+        const pointsEl = document.getElementById('points-remaining');
+        if (pointsEl) {
+            pointsEl.textContent = `${remaining} point${remaining !== 1 ? 's' : ''} remaining`;
+            
+            // Update styling
+            pointsEl.classList.remove('warning', 'depleted');
+            if (remaining === 0) {
+                pointsEl.classList.add('depleted');
+            } else if (remaining <= 2) {
+                pointsEl.classList.add('warning');
+            }
+        }
+        
+        // Disable sliders at max if remaining is 0
+        const sliderIds = ['mass-driver', 'probe-dv', 'mining', 'replication', 'compute', 'energy', 'dexterity'];
+        sliderIds.forEach(id => {
+            const slider = document.getElementById(`skill-${id}`);
+            if (slider) {
+                // Calculate max this slider can go
+                const keyMap = {
+                    'mass-driver': 'mass_driver',
+                    'probe-dv': 'probe_dv',
+                    'mining': 'mining',
+                    'replication': 'replication',
+                    'compute': 'compute',
+                    'energy': 'energy',
+                    'dexterity': 'dexterity'
+                };
+                const currentValue = this.skillPoints[keyMap[id]];
+                slider.max = Math.min(10, currentValue + remaining);
+            }
+        });
+    }
+    
+    /**
+     * Start game with skill allocations
+     */
+    async startNewGameWithSkills() {
+        // Calculate skill bonuses
+        const skillBonuses = {
+            mass_driver_dv_bonus: this.skillPoints.mass_driver * 0.5,  // km/s
+            probe_dv_bonus: this.skillPoints.probe_dv * 0.5,           // km/s
+            mining_rate_bonus: this.skillPoints.mining * 10,           // kg/day bonus (base is 100 kg/day)
+            replication_rate_bonus: this.skillPoints.replication * 5,  // kg/day bonus (base is 20 kg/day)
+            compute_bonus: 1 + (this.skillPoints.compute * 0.1),       // Multiplier (1.0 + 10% per point)
+            energy_bonus: 1 + (this.skillPoints.energy * 0.1),         // Multiplier
+            dexterity_bonus: 1 + (this.skillPoints.dexterity * 0.1)    // Multiplier
+        };
+        
+        await this.startNewGame(this.selectedDifficulty, this.selectedPlanet, skillBonuses);
     }
     
     hideGameMenu() {
@@ -563,11 +851,62 @@ class App {
         }
     }
 
-    async startNewGame() {
+    async startNewGame(difficulty = 'medium', startingPlanet = 'earth', skillBonuses = null) {
         const loadingScreen = document.getElementById('loading-screen');
         
+        // Define difficulty configurations
+        const difficultyConfigs = {
+            easy: {
+                initial_probes: 100,
+                initial_metal: 100,
+                initial_energy: 100000,
+                initial_structures: {
+                    power_station: 10,
+                    data_center: 10,
+                    mass_driver: 1
+                },
+                initial_zone_resources: {
+                    methalox: 1000
+                }
+            },
+            medium: {
+                initial_probes: 10,
+                initial_metal: 100,
+                initial_energy: 100000,
+                initial_structures: {
+                    power_station: 2,
+                    data_center: 2
+                },
+                initial_zone_resources: {
+                    methalox: 200
+                }
+            },
+            hard: {
+                initial_probes: 1,
+                initial_metal: 100,
+                initial_energy: 100000,
+                initial_structures: {}
+            }
+        };
+        
+        const baseConfig = difficultyConfigs[difficulty] || difficultyConfigs.medium;
+        
+        // Apply starting planet
+        const config = {
+            ...baseConfig,
+            default_zone: startingPlanet,
+            initial_structures: {
+                [startingPlanet]: baseConfig.initial_structures
+            }
+        };
+        
+        // Apply skill bonuses if provided
+        if (skillBonuses) {
+            config.skill_bonuses = skillBonuses;
+        }
+        
         try {
-            console.log('Starting new game...');
+            console.log(`Starting new game (${difficulty} mode)...`);
             
             // Stop any existing game engine first
             if (window.gameEngine && window.gameEngine.isRunning) {
@@ -603,7 +942,7 @@ class App {
             // Optionally create backend session for saving/leaderboards (non-blocking)
             let sessionId = newSessionId;
             try {
-                const response = await api.startGame({});
+                const response = await api.startGame({ difficulty, ...config });
                 if (response && response.session_id) {
                     sessionId = response.session_id;
                     console.log('Backend session created:', sessionId);
@@ -614,14 +953,8 @@ class App {
                 sessionId = newSessionId;
             }
             
-            // Start local game engine with unique session ID and fresh config
-            // Pass config to ensure we get proper initial state
-            await window.gameEngine.start(sessionId, {
-                initial_probes: 1,
-                initial_metal: 1000,
-                initial_energy: 100000,  // 100kW initial energy supply
-                default_zone: 'earth'     // Start probes at Earth
-            });
+            // Start local game engine with unique session ID and difficulty config
+            await window.gameEngine.start(sessionId, config);
             
             // Update loading message
             if (loadingScreen) {
@@ -792,6 +1125,9 @@ class App {
         if (this.orbitalZoneSelector) {
             this.orbitalZoneSelector.update(gameState);
         }
+        if (this.summaryPlotPanel) {
+            this.summaryPlotPanel.update(gameState);
+        }
     }
 
     // updateDysonProgress removed - Dyson progress is displayed in resource display panel
@@ -883,6 +1219,12 @@ class App {
         // Update structures visualization
         if (this.structuresViz) {
             this.structuresViz.update(baseDeltaTime); // Structures don't need to speed up
+        }
+        
+        // Animate transfer dots smoothly every frame (60fps)
+        // This provides smooth motion between game state updates
+        if (this.transferViz) {
+            this.transferViz.animate(baseDeltaTime);
         }
     }
 }

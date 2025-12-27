@@ -207,11 +207,9 @@ class DysonSphereVisualization {
             if (this.solarSystem.dysonOrbitRadius) {
                 return this.solarSystem.dysonOrbitRadius;
             }
-            // Fallback: calculate from Mercury's orbit (75% of Mercury's visual orbit)
-            if (this.solarSystem.scaleRockyPlanetOrbit && this.solarSystem.planetData?.mercury) {
-                const mercuryOrbitKm = this.solarSystem.planetData.mercury.orbit_km || 173700000;
-                const mercuryOrbit = this.solarSystem.scaleRockyPlanetOrbit(mercuryOrbitKm);
-                return mercuryOrbit * 0.75;
+            // Fallback: Dyson sphere at 0.29 AU
+            if (this.solarSystem.scaleAUToVisual) {
+                return this.solarSystem.scaleAUToVisual(0.29);
             }
             return 2.0;
         } catch (e) {

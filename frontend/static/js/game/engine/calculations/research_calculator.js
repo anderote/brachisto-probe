@@ -12,6 +12,7 @@ class ResearchCalculator {
         this.dataLoader = dataLoader;
         this.researchTrees = null;
         this.techTree = null; // Reference to TechTree if available
+        this.GEOMETRIC_SCALING_EXPONENT = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
     }
     
     /**
@@ -64,8 +65,8 @@ class ResearchCalculator {
                     // Apply computer skill (geometric mean of sub-skills)
                     const computerSkill = skills.computer?.total || 1.0;
                     
-                    // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                    const geometricFactor = Math.pow(count, 2.1);
+                    // Apply geometric scaling to benefits (same exponent as cost scaling)
+                    const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                     const effectiveFLOPS = baseComputeFLOPS * geometricFactor * perfFactor * computerSkill;
                     totalFLOPS += effectiveFLOPS;
                 } else if (building.effects?.intelligence_flops || building.effects?.intelligence_production_per_second) {
@@ -73,8 +74,8 @@ class ResearchCalculator {
                     const baseFLOPS = building.effects?.intelligence_flops || 
                                      building.effects?.intelligence_production_per_second || 0;
                     const computerSkill = skills.computer?.total || 1.0;
-                    // Apply geometric scaling to benefits (same as cost scaling: count^2.1)
-                    const geometricFactor = Math.pow(count, 2.1);
+                    // Apply geometric scaling to benefits (same exponent as cost scaling)
+                    const geometricFactor = Math.pow(count, this.GEOMETRIC_SCALING_EXPONENT);
                     const effectiveFLOPS = baseFLOPS * geometricFactor * computerSkill;
                     totalFLOPS += effectiveFLOPS;
                 }

@@ -81,6 +81,11 @@ class RecyclingSystem {
      * Base rate: 5 kg/day per probe assigned to self-recycling
      * Output: metal and slag based on salvage efficiency
      * 
+     * Mass limit behavior:
+     * - If slider is at X%, recycle until probes are no more than (100-X)% of zone mass
+     * - At 100%, recycle all probes (target 0% probe mass)
+     * - At 0%, don't recycle any probes
+     * 
      * @param {Object} state - Game state
      * @param {number} deltaTime - Time delta in days
      * @param {Object} skills - Current skills
@@ -92,6 +97,7 @@ class RecyclingSystem {
         const zones = newState.zones || {};
         const probesByZone = newState.probes_by_zone || {};
         const probeAllocationsByZone = newState.probe_allocations_by_zone || {};
+        const zoneMassLimits = newState.zone_mass_limits || {};
         
         for (const zoneId in probesByZone) {
             const zoneProbes = probesByZone[zoneId] || {};
@@ -104,13 +110,53 @@ class RecyclingSystem {
             
             if (recycleProbesAllocation <= 0) continue;
             
+            // Check mass limit for probe recycling
+            // recycle_probes limit: recycle until probes are <= (1 - limit) % of zone mass
+            const recycleProbesLimit = zoneMassLimits[zoneId]?.recycle_probes || 0;
+            let massThrottle = 1.0;
+            
+            if (recycleProbesLimit > 0) {
+                // Ensure zone exists for mass calculation
+                const zone = zones[zoneId] || {};
+                const massRemaining = zone.mass_remaining || 0;
+                const storedMetal = zone.stored_metal || 0;
+                const probeMass = zone.probe_mass || (probeCount * this.PROBE_MASS);
+                const structureMass = zone.structure_mass || 0;
+                const slagMass = zone.slag_mass || 0;
+                const totalZoneMass = massRemaining + storedMetal + probeMass + structureMass + slagMass;
+                
+                if (totalZoneMass > 0) {
+                    const currentProbeRatio = probeMass / totalZoneMass;
+                    // Target probe ratio = 1 - recycle_probes_limit
+                    // e.g., if limit=0.2 (20%), target is 0.8 (80% probes)
+                    // If limit=1.0 (100%), target is 0 (0% probes - recycle all)
+                    const targetProbeRatio = 1 - recycleProbesLimit;
+                    
+                    if (currentProbeRatio <= targetProbeRatio) {
+                        // Already at or below target - stop recycling
+                        massThrottle = 0;
+                    } else {
+                        // Above target - recycle to get to target
+                        // Throttle as we approach the target
+                        const excess = currentProbeRatio - targetProbeRatio;
+                        // If within 10% of the gap, start throttling smoothly
+                        const throttleThreshold = recycleProbesLimit * 0.1;
+                        if (excess < throttleThreshold && throttleThreshold > 0) {
+                            massThrottle = excess / throttleThreshold;
+                        }
+                    }
+                }
+            }
+            
+            if (massThrottle === 0) continue;
+            
             // Number of probes assigned to self-recycling
             const recyclingProbes = probeCount * recycleProbesAllocation;
             
             // Calculate self-recycling rate (kg/day)
             // Base rate is 5 kg/day per probe, scaled by skills
             const selfRecycleSpeed = this.compositeSkillsCalculator.calculateProbeSelfRecycleSpeed(skills);
-            const totalRecycleRate = selfRecycleSpeed * recyclingProbes;
+            const totalRecycleRate = selfRecycleSpeed * recyclingProbes * massThrottle;
             
             // Calculate mass to recycle this tick
             const currentProbeMass = probeCount * this.PROBE_MASS;
@@ -144,6 +190,7 @@ class RecyclingSystem {
                     probe_mass: 0,
                     structure_mass: 0,
                     slag_mass: 0,
+                    methalox: 0,
                     depleted: false
                 };
             }
