@@ -9,6 +9,7 @@
       "power_output_mw": 100000,
       "uses_solar": true,
       "energy_cost_multiplier": 0,
+      "geometric_scaling_exponent": 4.0,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
       "research_skills": {
         "power_output": ["solar_pv", "energy_converter", "radiator"],
@@ -24,6 +25,7 @@
       "power_output_mw": 10000,
       "uses_solar": true,
       "base_power_consumption_mw": 10000,
+      "geometric_scaling_exponent": 4.0,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
       "research_skills": {
         "compute": ["cpu", "gpu", "interconnect", "io_bandwidth"],
@@ -35,7 +37,7 @@
       "id": "mass_driver",
       "name": "Mass Driver",
       "description": "Electromagnetic launcher for orbital mass transfers. Reduces travel time for probes and metal leaving this zone. Required for metal transfers. Each mass driver can launch up to 100 GT/day. Speed improves dramatically with energy converter, propulsion, and thrust research.",
-      "mass_multiplier": 500,
+      "mass_multiplier": 10000000000,
       "base_capacity_kg": 10000,
       "base_delta_v": 5000,
       "metal_launch_capacity_kg_per_day": 100000000000000,
@@ -148,7 +150,7 @@
       "id": "methalox_refinery",
       "name": "Methalox Refinery",
       "description": "Produces methalox fuel for probe transfers. 100 kg/day base output. Requires 10 GW to operate.",
-      "mass_multiplier": 100,
+      "mass_multiplier": 100000,
       "energy_cost_multiplier": 40000,
       "production_rate_kg_per_day": 100,
       "allowed_orbital_zones": ["earth", "venus", "mars", "asteroid_belt", "jupiter", "saturn", "neptune"],

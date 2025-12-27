@@ -294,6 +294,7 @@ class GameEngine:
                     tier_id = tier['id']
                     self.research[tree_id][tier_id] = {
                         'tranches_completed': 0,
+                        'progress': 0.0,  # Cumulative progress in FLOP-days
                         'enabled': False,
                         'start_time': None,  # Time when research started (in days)
                         'completion_time': None  # Time when research completed (in days)
@@ -387,7 +388,7 @@ class GameEngine:
             'solar_concentrators': 1.0,  # solar concentration multiplier
             'energy_storage': 1.0,  # storage capacity multiplier
             'energy_transport': 1.0,  # transport efficiency multiplier
-            'energy_matter_conversion': 0.0,  # conversion rate (starts at 0)
+            'energy_conversion': 1.0,  # energy conversion efficiency multiplier
             'dyson_swarm_construction': 1.0,  # construction rate multiplier
         }
         
@@ -433,7 +434,7 @@ class GameEngine:
         
         The penalty_per_doubling is interpolated based on compute skill:
         - At base compute (1.0): 40% penalty per doubling (so doubling only gives 20% more output)
-        - At max compute (6.19x): 1% penalty per doubling (so doubling gives ~98% more output)
+        - At max compute (3.18x): 1% penalty per doubling (so doubling gives ~98% more output)
         
         Args:
             probe_count: Total number of probes in the zone
@@ -452,7 +453,7 @@ class GameEngine:
         
         base_penalty = probe_count_scaling.get('base_penalty_per_doubling', 0.0)
         min_penalty = probe_count_scaling.get('min_penalty_per_doubling', 0.0)
-        compute_threshold = probe_count_scaling.get('compute_skill_threshold', 6.19)
+        compute_threshold = probe_count_scaling.get('compute_skill_threshold', 3.18)
         
         # Get compute skill (geometric mean of cpu, gpu, interconnect, io_bandwidth)
         compute_skill = self.get_compute_power()
@@ -473,6 +474,49 @@ class GameEngine:
         
         # Clamp to reasonable minimum (0.1% efficiency minimum)
         return max(0.001, efficiency)
+    
+    def calculate_global_replication_scaling_penalty(self):
+        """Calculate global replication scaling penalty (diminishing returns for total probe count).
+        
+        After threshold, each order of magnitude (10x) growth halves replication rate.
+        Formula: efficiency = halving_factor^max(0, log10(totalProbes) - log10(threshold))
+        
+        At 1e12 threshold with 0.5 halving factor:
+        - At 1e12: efficiency = 1.0 (no penalty)
+        - At 1e13: efficiency = 0.5 (50% rate)
+        - At 1e14: efficiency = 0.25 (25% rate)
+        - At 5e12: efficiency ≈ 0.62 (smooth interpolation)
+        
+        Returns:
+            Efficiency factor (0-1), where 1 = no penalty
+        """
+        # Calculate total probes across all zones
+        total_probes = 0
+        for zone_id, zone_probes in self.probes_by_zone.items():
+            for probe_type, count in zone_probes.items():
+                total_probes += count
+        
+        # Load global replication scaling parameters from economic rules
+        economic_rules = self.data_loader.load_economic_rules()
+        global_scaling = economic_rules.get('global_replication_scaling', {})
+        
+        threshold = global_scaling.get('threshold', 1e12)
+        halving_factor = global_scaling.get('halving_factor', 0.5)
+        
+        # No penalty if below threshold
+        if total_probes <= threshold:
+            return 1.0
+        
+        # Calculate orders of magnitude above threshold
+        threshold_log = math.log10(threshold)
+        current_log = math.log10(total_probes)
+        orders_above_threshold = current_log - threshold_log
+        
+        # Efficiency = halving_factor^ordersAboveThreshold
+        efficiency = math.pow(halving_factor, orders_above_threshold)
+        
+        # Clamp to reasonable minimum (0.01% efficiency minimum)
+        return max(0.0001, efficiency)
     
     def get_dyson_target_mass(self):
         """Calculate effective Dyson sphere target mass with research modifiers.
@@ -1000,10 +1044,14 @@ class GameEngine:
                         # Replication uses dexterity capacity (kg/s)
                         replication_capacity = replicate_count * Config.PROBE_BUILD_RATE
                         
-                        # Apply probe count scaling penalty (diminishing returns)
+                        # Apply probe count scaling penalty (diminishing returns per zone)
                         total_zone_probes = sum(self.probes_by_zone.get(zone_id, {}).values())
                         probe_count_scaling_efficiency = self.calculate_probe_count_scaling_penalty(total_zone_probes, zone_id)
                         replication_capacity *= probe_count_scaling_efficiency
+                        
+                        # Apply global replication scaling penalty (diminishing returns for total probe count)
+                        global_scaling_efficiency = self.calculate_global_replication_scaling_penalty()
+                        replication_capacity *= global_scaling_efficiency
                         
                         zone_replication_capacity[zone_id] = replication_capacity
                         total_replication_capacity += replication_capacity
@@ -2186,25 +2234,24 @@ class GameEngine:
             # Exponential cost: first tier = 1000 EFLOPS-days, each tier is 150x more expensive
             # Cost is in FLOP-days (FLOPS * days)
             base_cost_eflops_days = 1000.0  # 1000 EFLOPS-days for first tier
-            tier_cost_eflops_days = base_cost_eflops_days * (100.0 ** tier_index)
+            tier_cost_eflops_days = base_cost_eflops_days * (150.0 ** tier_index)
             tier_cost_flops = tier_cost_eflops_days * 1e18  # Convert EFLOPS-days to FLOP-days
+            flops_per_tranche = tier_cost_flops / max_tranches
             
-            # Progress: FLOPS allocated * time / total cost = fraction complete
+            # Accumulate progress (FLOPS * delta_time = FLOP-days)
             progress_flops = intelligence_per_project * delta_time
-            progress_fraction = progress_flops / tier_cost_flops
+            old_progress = tier_data.get('progress', 0.0)
+            new_progress = old_progress + progress_flops
+            tier_data['progress'] = new_progress
             
-            # Convert to tranches (each tranche is 1/max_tranches of total progress)
-            tranche_progress = progress_fraction * max_tranches
-            new_tranches = int(tranche_progress)
+            # Calculate tranches based on cumulative progress
+            new_tranches = int(new_progress / flops_per_tranche) if flops_per_tranche > 0 else 0
+            tier_data['tranches_completed'] = min(new_tranches, max_tranches)
             
-            if new_tranches > 0:
-                old_tranches = tranches_completed
-                tier_data['tranches_completed'] = min(
-                    tranches_completed + new_tranches,
-                    max_tranches
-                )
-                # Set completion_time when tier completes
-                if tier_data['tranches_completed'] >= max_tranches and tier_data.get('completion_time') is None:
+            # Set completion_time when tier completes
+            if tier_data['tranches_completed'] >= max_tranches:
+                tier_data['progress'] = tier_cost_flops  # Cap progress at total cost
+                if tier_data.get('completion_time') is None:
                     tier_data['completion_time'] = self.time
     
     def _calculate_dyson_construction_rate(self):
@@ -3338,10 +3385,12 @@ class GameEngine:
         
         # Map category to tree IDs
         category_trees = {
-            'energy': ['energy_collection', 'solar_concentrators', 'energy_storage', 'energy_transport', 'energy_matter_conversion'],
+            'energy': ['energy_collection', 'energy_storage', 'energy_transport', 'energy_conversion', 'thermal_management', 'heat_pump_systems'],
             'dexterity': ['propulsion_systems', 'locomotion_systems', 'acds', 'robotic_systems', 
-                         'dyson_swarm_construction', 'production_efficiency', 'recycling_efficiency'],
-            'intelligence': ['research_rate_efficiency']
+                         'dyson_swarm_construction', 'production_efficiency', 'recycling_efficiency',
+                         'thrust_systems', 'materials_science', 'actuator_systems'],
+            'intelligence': ['research_rate_efficiency', 'computer_gpu', 'computer_interconnect', 
+                             'computer_interface', 'computer_processing', 'machine_learning', 'sensor_systems']
         }
         
         # Toggle all tiers in category trees

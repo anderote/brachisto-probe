@@ -540,14 +540,9 @@ class ZoneInfoPanel {
             // Methalox
             const zones = this.gameState.zones || {};
             const zoneMethalox = zones[zoneId]?.methalox || 0;
-            const methaloxProductionRate = zoneData.methalox_production_rate || 0;
             html += '<div class="probe-summary-item">';
             html += '<div class="probe-summary-label">Methalox</div>';
-            html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(zoneMethalox)} kg`;
-            if (methaloxProductionRate > 0) {
-                html += ` <span style="color: rgba(255, 255, 255, 0.5); font-size: 10px;">(+${this.formatRateWithPenalty(methaloxProductionRate, 'kg', penalties.effectivePenalty)})</span>`;
-            }
-            html += '</div>';
+            html += `<div class="probe-summary-value">${this.formatMassWithSigFigs(zoneMethalox)} kg</div>`;
             html += '</div>';
         }
         

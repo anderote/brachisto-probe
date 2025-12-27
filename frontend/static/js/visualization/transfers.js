@@ -31,8 +31,8 @@ class TransferVisualization {
             metal: new THREE.Color(0xC0C0C0)   // Silver
         };
         
-        // Interval for metal transfers (monthly = 30 days)
-        this.METAL_VISUALIZATION_INTERVAL = 30.0; // days
+        // Interval for metal transfers (weekly = 7 days)
+        this.METAL_VISUALIZATION_INTERVAL = 7.0; // days
         
         // Geometry cache for ellipse arcs (keyed by zone pair)
         this.ellipseCache = new Map();
@@ -240,7 +240,7 @@ class TransferVisualization {
     
     /**
      * Get transfer velocity with probe capacity boost (visual linear velocity)
-     * Formula: visual_velocity = base_velocity * (1 + excess_delta_v / orbital_velocity_km_s)
+     * Uses logarithmic scaling for excess delta-v (matches game physics)
      * @param {string} zoneId - Zone ID
      * @param {number} probeDeltaVCapacity - Probe's delta-v capacity in km/s (optional)
      * @returns {number} Linear velocity in visual units/day (game time)
@@ -258,19 +258,172 @@ class TransferVisualization {
         if (!zone) return baseVelocity;
         
         const escapeVelocity = zone.escape_delta_v_km_s || 0;
-        const orbitalVelocityKmS = this.getPhysicalOrbitalVelocityKmS(zoneId);
         
-        if (orbitalVelocityKmS <= 0) return baseVelocity;
-        
-        // Calculate speed boost: excess delta-v adds directly to speed
-        // Speed = orbital_velocity + (probe_delta_v - escape_velocity)
+        // Calculate excess delta-v (beyond what's needed for escape)
         const excessDeltaV = Math.max(0, probeDeltaVCapacity - escapeVelocity);
-        const transferSpeedKmS = orbitalVelocityKmS + excessDeltaV;
         
-        // Calculate speed multiplier for visual velocity
-        const speedMultiplier = transferSpeedKmS / orbitalVelocityKmS;
+        // Calculate speed multiplier using logarithmic scaling
+        // This matches the game physics in orbital_mechanics.js
+        // With 0 excess: multiplier = 1.0
+        // With 7.5 km/s excess: multiplier ≈ 1.7
+        // With 15 km/s excess: multiplier ≈ 2.1
+        const EXCESS_DV_SCALE = 7.5; // km/s that gives ~2x speed bonus
+        let speedMultiplier = 1.0;
+        if (excessDeltaV > 0) {
+            speedMultiplier = 1.0 + Math.log(1 + excessDeltaV / EXCESS_DV_SCALE);
+        }
         
         return baseVelocity * speedMultiplier;
+    }
+    
+    /**
+     * Calculate Hohmann transfer ellipse velocity with detailed info
+     * 
+     * Uses the vis-viva equation for elliptical orbits:
+     * - At periapsis (inner): v = v_circular × sqrt(2 × r_outer / (r_inner + r_outer))
+     * - At apoapsis (outer): v = v_circular × sqrt(2 × r_inner / (r_inner + r_outer))
+     * 
+     * For outbound transfers (inner to outer): probe starts FASTER than circular velocity
+     * For inbound transfers (outer to inner): probe starts SLOWER than circular velocity
+     * 
+     * Excess delta-v is used to:
+     * - At origin: Speed up departure (logarithmic scaling)
+     * - At destination: Blend toward circular orbital velocity (exponential approach)
+     * 
+     * @param {string} fromZoneId - Origin zone ID
+     * @param {string} toZoneId - Destination zone ID
+     * @param {boolean} atOrigin - True to get velocity at origin, false for destination
+     * @param {number} probeDeltaVCapacity - Probe's delta-v capacity in km/s (optional, for speed bonus)
+     * @returns {Object} Velocity info with fields:
+     *   - velocity: Final velocity in visual units/day
+     *   - circularVelocity: Circular orbital velocity at this position
+     *   - hohmannMultiplier: Raw Hohmann velocity ratio (before bonuses)
+     *   - finalMultiplier: Final velocity ratio after all bonuses
+     *   - excessDeltaV: Excess delta-v available (km/s)
+     *   - speedMultiplier: Speed bonus multiplier (origin only)
+     *   - blendFactor: Blend toward circular (destination only, 0-1)
+     *   - isOutbound: Whether transfer is going outward
+     */
+    getHohmannTransferVelocityInfo(fromZoneId, toZoneId, atOrigin, probeDeltaVCapacity = null) {
+        // Get visual radii for both zones
+        const fromRadius = this.getVisualOrbitRadius(fromZoneId);
+        const toRadius = this.getVisualOrbitRadius(toZoneId);
+        
+        // Default result for fallback cases
+        const defaultResult = {
+            velocity: 0,
+            circularVelocity: 0,
+            hohmannMultiplier: 1.0,
+            finalMultiplier: 1.0,
+            excessDeltaV: 0,
+            speedMultiplier: 1.0,
+            blendFactor: 0,
+            isOutbound: toRadius > fromRadius
+        };
+        
+        if (!fromRadius || !toRadius || fromRadius === 0 || toRadius === 0) {
+            // Fallback to circular orbital velocity
+            const zoneId = atOrigin ? fromZoneId : toZoneId;
+            const velocity = this.getTransferVelocity(zoneId, atOrigin ? probeDeltaVCapacity : null);
+            return { ...defaultResult, velocity, circularVelocity: velocity };
+        }
+        
+        // Determine inner and outer radii
+        const rInner = Math.min(fromRadius, toRadius);
+        const rOuter = Math.max(fromRadius, toRadius);
+        const isOutbound = toRadius > fromRadius;
+        
+        // Determine if we're at periapsis (inner) or apoapsis (outer) of the transfer ellipse
+        const currentRadius = atOrigin ? fromRadius : toRadius;
+        const isAtPeriapsis = currentRadius <= rInner * 1.001; // Small tolerance for floating point
+        
+        // Get circular orbital velocity at the current position
+        const zoneId = atOrigin ? fromZoneId : toZoneId;
+        const circularVelocity = this.getOrbitalVelocity(zoneId);
+        
+        // Calculate raw Hohmann velocity multiplier using vis-viva equation
+        // At periapsis: v/v_circ = sqrt(2 × r_outer / (r_inner + r_outer))
+        // At apoapsis: v/v_circ = sqrt(2 × r_inner / (r_inner + r_outer))
+        let hohmannMultiplier;
+        if (isAtPeriapsis) {
+            // At inner orbit (periapsis): faster than circular
+            hohmannMultiplier = Math.sqrt(2 * rOuter / (rInner + rOuter));
+        } else {
+            // At outer orbit (apoapsis): slower than circular
+            hohmannMultiplier = Math.sqrt(2 * rInner / (rInner + rOuter));
+        }
+        
+        // Calculate excess delta-v
+        let excessDeltaV = 0;
+        let speedMultiplier = 1.0;
+        let blendFactor = 0;
+        let finalMultiplier = hohmannMultiplier;
+        
+        if (probeDeltaVCapacity !== null && probeDeltaVCapacity !== undefined) {
+            // Get escape velocity from origin zone
+            const originZone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === fromZoneId);
+            const escapeVelocity = originZone?.escape_delta_v_km_s || 0;
+            
+            // Get Hohmann transfer delta-v (approximate from zone radii)
+            // This is a simplified estimate; actual value comes from transfer_delta_v.json
+            const fromZoneData = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === fromZoneId);
+            const toZoneData = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === toZoneId);
+            let hohmannDeltaV = 5.0; // Default estimate
+            if (fromZoneData && toZoneData) {
+                // Rough estimate: delta-v scales with orbit ratio
+                const orbitRatio = Math.max(fromZoneData.radius_au, toZoneData.radius_au) / 
+                                   Math.min(fromZoneData.radius_au, toZoneData.radius_au);
+                hohmannDeltaV = Math.log(orbitRatio) * 5; // Rough approximation
+            }
+            
+            const requiredDeltaV = escapeVelocity + hohmannDeltaV;
+            excessDeltaV = Math.max(0, probeDeltaVCapacity - requiredDeltaV);
+        }
+        
+        if (atOrigin) {
+            // Origin: Apply speed boost from excess delta-v (logarithmic scaling)
+            const EXCESS_DV_SCALE = 7.5; // km/s for ~2x speed bonus
+            if (excessDeltaV > 0) {
+                speedMultiplier = 1.0 + Math.log(1 + excessDeltaV / EXCESS_DV_SCALE);
+            }
+            finalMultiplier = hohmannMultiplier * speedMultiplier;
+        } else {
+            // Destination: Blend toward circular velocity based on excess delta-v
+            // This represents using excess delta-v for circularization burn
+            const BLEND_SCALE = 5.0; // km/s for ~63% blend toward circular
+            if (excessDeltaV > 0) {
+                blendFactor = 1 - Math.exp(-excessDeltaV / BLEND_SCALE);
+            }
+            // Blend from Hohmann multiplier toward 1.0 (circular)
+            finalMultiplier = hohmannMultiplier + (1.0 - hohmannMultiplier) * blendFactor;
+        }
+        
+        const velocity = circularVelocity * finalMultiplier;
+        
+        return {
+            velocity,
+            circularVelocity,
+            hohmannMultiplier,
+            finalMultiplier,
+            excessDeltaV,
+            speedMultiplier,
+            blendFactor,
+            isOutbound
+        };
+    }
+    
+    /**
+     * Calculate Hohmann transfer ellipse velocity at origin or destination
+     * Simple wrapper that returns just the velocity value
+     * 
+     * @param {string} fromZoneId - Origin zone ID
+     * @param {string} toZoneId - Destination zone ID
+     * @param {boolean} atOrigin - True to get velocity at origin, false for destination
+     * @param {number} probeDeltaVCapacity - Probe's delta-v capacity in km/s (optional, for speed bonus)
+     * @returns {number} Linear velocity in visual units/day (game time)
+     */
+    getHohmannTransferVelocity(fromZoneId, toZoneId, atOrigin, probeDeltaVCapacity = null) {
+        return this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, atOrigin, probeDeltaVCapacity).velocity;
     }
     
     /**
@@ -808,7 +961,7 @@ class TransferVisualization {
     /**
      * Create cargo icon(s) for a transfer
      * Metal transfers use a single silver square
-     * Probes use a single sphere
+     * Probes use a single dot (Points) matching the probe particle system
      */
     createCargoDot(resourceType) {
         const color = this.colors[resourceType] || this.colors.probe;
@@ -826,17 +979,40 @@ class TransferVisualization {
             const icon = new THREE.Mesh(geometry, material);
             return icon;
         } else {
-            // Create a single sphere for probe transfers
-            const geometry = new THREE.SphereGeometry(0.05, 8, 8);
-            const material = new THREE.MeshBasicMaterial({
+            // Create a single dot (Points) for probe transfers
+            // Uses same dot style as probe particles in the solar system
+            const transferSize = this.getProbeTransferSize();
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+            
+            const material = new THREE.PointsMaterial({
                 color: color,
-                emissive: color,
-                emissiveIntensity: 0.5
+                size: transferSize,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 1.0,
+                depthWrite: false
             });
             
-            const icon = new THREE.Mesh(geometry, material);
+            const icon = new THREE.Points(geometry, material);
             return icon;
         }
+    }
+    
+    /**
+     * Get probe transfer dot size from config
+     * Falls back to default if solarSystem config not available
+     */
+    getProbeTransferSize() {
+        // Try to get from solarSystem's loaded config
+        if (this.solarSystem && 
+            this.solarSystem.probeParticleConfig && 
+            this.solarSystem.probeParticleConfig.transferSize !== undefined) {
+            return this.solarSystem.probeParticleConfig.transferSize;
+        }
+        // Fallback default
+        return 0.4;
     }
     
     /**
@@ -844,6 +1020,93 @@ class TransferVisualization {
      */
     isMultiDot(dot) {
         return Array.isArray(dot);
+    }
+    
+    /**
+     * Calculate number of dots for a mass stream based on mass
+     * Uses logarithmic scaling: 1 dot at 100k kg, 5 dots at 1M kg, 10 dots at 10M kg
+     * @param {number} massKg - Mass in kg
+     * @returns {number} Number of dots (1-30)
+     */
+    calculateMassStreamDotCount(massKg) {
+        const MIN_MASS_KG = 100000; // 100k kg minimum for 1 dot
+        const MAX_DOTS = 30; // Performance limit
+        
+        if (massKg < MIN_MASS_KG) {
+            return 0;
+        }
+        
+        // Logarithmic scaling: dots = 1 + log10(mass / 100k) * scale_factor
+        // At 100k: 1 dot
+        // At 1M: ~5 dots
+        // At 10M: ~10 dots
+        // At 100M: ~15 dots
+        const logMass = Math.log10(massKg / MIN_MASS_KG);
+        const dots = 1 + logMass * 4; // Scale factor tuned for visual appeal
+        
+        return Math.min(MAX_DOTS, Math.max(1, Math.floor(dots)));
+    }
+    
+    /**
+     * Calculate dot size based on mass per dot
+     * Larger mass per dot = larger visual size
+     * @param {number} massPerDotKg - Mass represented by each dot
+     * @returns {number} Dot size (0.03 to 0.12)
+     */
+    calculateMassStreamDotSize(massPerDotKg) {
+        const MIN_SIZE = 0.03;
+        const MAX_SIZE = 0.12;
+        const BASE_SIZE = 0.04;
+        
+        // Scale size logarithmically with mass per dot
+        // At 100k per dot: MIN_SIZE
+        // At 1M per dot: BASE_SIZE
+        // At 10M per dot: MAX_SIZE
+        const logMass = Math.log10(Math.max(100000, massPerDotKg) / 100000);
+        const size = BASE_SIZE + logMass * 0.02; // Scale factor
+        
+        return Math.min(MAX_SIZE, Math.max(MIN_SIZE, size));
+    }
+    
+    /**
+     * Create a mass stream - cluster of dots representing mass being transferred
+     * All dots follow the same trajectory, spread along the path
+     * @param {number} massKg - Total mass in kg
+     * @param {number} arcLength - Arc length of the transfer path in visual units
+     * @returns {Array<THREE.Mesh>} Array of dot meshes
+     */
+    createMassStream(massKg, arcLength) {
+        const color = this.colors.metal;
+        const dots = [];
+        
+        // Calculate dot count and size
+        const dotCount = this.calculateMassStreamDotCount(massKg);
+        if (dotCount === 0) {
+            return dots;
+        }
+        
+        const massPerDot = massKg / dotCount;
+        const dotSize = this.calculateMassStreamDotSize(massPerDot);
+        
+        // Create dots with spacing along the trajectory
+        // Dot spacing: 0.8% of arc length between dots
+        const dotSpacing = arcLength * 0.008;
+        
+        for (let i = 0; i < dotCount; i++) {
+            const geometry = new THREE.BoxGeometry(dotSize, dotSize, dotSize);
+            const material = new THREE.MeshBasicMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.5
+            });
+            
+            const dot = new THREE.Mesh(geometry, material);
+            // Store spacing offset for animation
+            dot.userData.spacingOffset = i * dotSpacing;
+            dots.push(dot);
+        }
+        
+        return dots;
     }
     
     /**
@@ -890,9 +1153,17 @@ class TransferVisualization {
     
     /**
      * Create periodic visualization for continuous transfer
-     * Creates a new ellipse and dot every 7 days
+     * Creates a new ellipse and dot every 7 days (metal) or 120 days (probes)
+     * @param {Object} transfer - Transfer object
+     * @param {string} fromZoneId - Origin zone ID
+     * @param {string} toZoneId - Destination zone ID
+     * @param {string} resourceType - 'probe' or 'metal'
+     * @param {number} departureTime - Departure time (chunk start time)
+     * @param {number} transferTime - Transfer time in days
+     * @param {Object} gameState - Game state (optional)
+     * @param {number} batchMassKg - Total mass for this chunk (optional, for metal transfers)
      */
-    createPeriodicVisualization(transfer, fromZoneId, toZoneId, resourceType, departureTime, transferTime, gameState = null) {
+    createPeriodicVisualization(transfer, fromZoneId, toZoneId, resourceType, departureTime, transferTime, gameState = null, batchMassKg = null) {
         const batchId = this.getBatchId(transfer.id, departureTime);
         
         // Check if visualization already exists
@@ -907,7 +1178,21 @@ class TransferVisualization {
             return null;
         }
         
-        const dot = this.createCargoDot(resourceType);
+        // Calculate visual arc length for mass stream creation
+        const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
+        const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
+        let arcLength = 0;
+        if (fromVisualRadius && toVisualRadius && ellipseData.params) {
+            arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
+        }
+        
+        // For metal transfers, create mass stream; for probes, use single dot
+        let dot;
+        if (resourceType === 'metal' && batchMassKg !== null && batchMassKg > 0 && arcLength > 0) {
+            dot = this.createMassStream(batchMassKg, arcLength);
+        } else {
+            dot = this.createCargoDot(resourceType);
+        }
         
         this.scene.add(ellipseData.line);
         // Add dot(s) to scene - handle both single dot and array of dots
@@ -925,9 +1210,11 @@ class TransferVisualization {
             probeDeltaVCapacity = this.calculateProbeDeltaVCapacity(gameState.skills);
         }
         
-        // Calculate orbital velocities with probe capacity boost
-        const fromVelocityBase = this.getTransferVelocity(fromZoneId, probeDeltaVCapacity);
-        const toVelocity = this.getTransferVelocity(toZoneId, null); // Destination doesn't affect starting speed
+        // Calculate Hohmann transfer velocities with detailed info
+        // At periapsis (inner): faster than circular, at apoapsis (outer): slower than circular
+        // Excess delta-v provides speed bonus at origin and blend toward circular at destination
+        const fromVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, true, probeDeltaVCapacity);
+        const toVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, false, probeDeltaVCapacity);
         
         // Check if mass driver exists at origin zone
         let hasMassDriver = false;
@@ -937,24 +1224,19 @@ class TransferVisualization {
         }
         
         // Apply mass driver boost: 1.5x origin velocity if mass driver exists
-        const fromVelocity = hasMassDriver ? fromVelocityBase * 1.5 : fromVelocityBase;
+        const massDriverMultiplier = hasMassDriver ? 1.5 : 1.0;
+        const fromVelocity = fromVelocityInfo.velocity * massDriverMultiplier;
+        const toVelocity = toVelocityInfo.velocity;
         const avgVelocity = (fromVelocity + toVelocity) / 2;
         
-        // Calculate visual arc length and visual transfer time
-        const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
-        const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
-        let arcLength = 0;
+        // Calculate visual transfer time (arcLength already calculated above)
         let visualTransferTimeDays = transferTime; // Fallback to game time
-        
-        if (fromVisualRadius && toVisualRadius && ellipseData.params) {
-            arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
-            if (arcLength > 0 && avgVelocity > 0) {
-                // Calculate visual transfer time using average velocity
-                // Units: arcLength (visual units) / avgVelocity (visual units/day) = days
-                // This ensures progress reaches exactly 1.0 at completion
-                // Visual speed varies linearly from fromVelocity to toVelocity
-                visualTransferTimeDays = arcLength / avgVelocity;
-            }
+        if (arcLength > 0 && avgVelocity > 0) {
+            // Calculate visual transfer time using average velocity
+            // Units: arcLength (visual units) / avgVelocity (visual units/day) = days
+            // This ensures progress reaches exactly 1.0 at completion
+            // Visual speed varies linearly from fromVelocity to toVelocity
+            visualTransferTimeDays = arcLength / avgVelocity;
         }
         
         const arrivalTime = departureTime + transferTime;
@@ -979,8 +1261,21 @@ class TransferVisualization {
             toVelocity: toVelocity,
             avgVelocity: avgVelocity,
             hasMassDriver: hasMassDriver,
+            massDriverMultiplier: massDriverMultiplier,
             arcLength: arcLength,
-            visualTransferTimeDays: visualTransferTimeDays
+            visualTransferTimeDays: visualTransferTimeDays,
+            // Velocity detail info
+            probeDeltaVCapacity: probeDeltaVCapacity,
+            excessDeltaV: fromVelocityInfo.excessDeltaV,
+            isOutbound: fromVelocityInfo.isOutbound,
+            // Origin velocity breakdown
+            fromCircularVelocity: fromVelocityInfo.circularVelocity,
+            fromHohmannMultiplier: fromVelocityInfo.hohmannMultiplier,
+            fromSpeedMultiplier: fromVelocityInfo.speedMultiplier,
+            // Destination velocity breakdown
+            toCircularVelocity: toVelocityInfo.circularVelocity,
+            toHohmannMultiplier: toVelocityInfo.hohmannMultiplier,
+            toBlendFactor: toVelocityInfo.blendFactor
         };
         
         // Respect current visibility state (Tab toggle)
@@ -1065,16 +1360,31 @@ class TransferVisualization {
             
             if (transfer.type === 'continuous') {
                 // Continuous transfer: create visualizations periodically, accumulating batches
-                // Metal: monthly (30 days), Probes: every 120 days
+                // Metal: weekly (7 days), Probes: every 120 days
                 if (!transfer.paused) {
                     // Get transfer time (in days)
                     const transferTime = transfer.transfer_time || 0;
                     if (transferTime > 0) {
                         // Process batches in transit and group them into chunks
                         if (transfer.in_transit && transfer.in_transit.length > 0) {
-                            // Track which chunks we've seen
+                            // Track which chunks we've seen and accumulate mass per chunk
                             const seenChunks = new Set();
+                            const chunkMasses = new Map(); // {chunkId: totalMassKg}
                             
+                            // First pass: accumulate masses per chunk
+                            for (const batch of transfer.in_transit) {
+                                const batchDepartureTime = batch.departure_time || 0;
+                                const chunkStartTime = this.getChunkStartTime(batchDepartureTime, resourceType);
+                                const chunkId = this.getBatchId(transferId, chunkStartTime);
+                                
+                                // Accumulate mass for metal transfers
+                                if (resourceType === 'metal' && batch.mass_kg) {
+                                    const currentMass = chunkMasses.get(chunkId) || 0;
+                                    chunkMasses.set(chunkId, currentMass + batch.mass_kg);
+                                }
+                            }
+                            
+                            // Second pass: create visualizations
                             for (const batch of transfer.in_transit) {
                                 const batchDepartureTime = batch.departure_time || 0;
                                 const chunkStartTime = this.getChunkStartTime(batchDepartureTime, resourceType);
@@ -1084,7 +1394,10 @@ class TransferVisualization {
                                 
                                 // Create visualization for this chunk if it doesn't exist
                                 if (!this.continuousBatches.has(chunkId)) {
-                                    // Create visualization for this chunk (monthly for metal, 120 days for probes)
+                                    // Get accumulated mass for this chunk (metal transfers only)
+                                    const batchMassKg = resourceType === 'metal' ? (chunkMasses.get(chunkId) || 0) : null;
+                                    
+                                    // Create visualization for this chunk (weekly for metal, 120 days for probes)
                                     // Use chunk start time as departure time
                                     const batchViz = this.createPeriodicVisualization(
                                         transfer,
@@ -1093,7 +1406,8 @@ class TransferVisualization {
                                         resourceType,
                                         chunkStartTime,
                                         transferTime,
-                                        gameState
+                                        gameState,
+                                        batchMassKg
                                     );
                                     
                                     if (batchViz) {
@@ -1197,9 +1511,11 @@ class TransferVisualization {
             probeDeltaVCapacity = this.calculateProbeDeltaVCapacity(gameState.skills);
         }
         
-        // Calculate orbital velocities with probe capacity boost
-        const fromVelocityBase = this.getTransferVelocity(fromZoneId, probeDeltaVCapacity);
-        const toVelocity = this.getTransferVelocity(toZoneId, null); // Destination doesn't affect starting speed
+        // Calculate Hohmann transfer velocities with detailed info
+        // At periapsis (inner): faster than circular, at apoapsis (outer): slower than circular
+        // Excess delta-v provides speed bonus at origin and blend toward circular at destination
+        const fromVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, true, probeDeltaVCapacity);
+        const toVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, false, probeDeltaVCapacity);
         
         // Check if mass driver exists at origin zone
         let hasMassDriver = false;
@@ -1209,7 +1525,9 @@ class TransferVisualization {
         }
         
         // Apply mass driver boost: 1.5x origin velocity if mass driver exists
-        const fromVelocity = hasMassDriver ? fromVelocityBase * 1.5 : fromVelocityBase;
+        const massDriverMultiplier = hasMassDriver ? 1.5 : 1.0;
+        const fromVelocity = fromVelocityInfo.velocity * massDriverMultiplier;
+        const toVelocity = toVelocityInfo.velocity;
         const avgVelocity = (fromVelocity + toVelocity) / 2;
                     
                     // Calculate visual arc length and visual transfer time
@@ -1247,8 +1565,21 @@ class TransferVisualization {
                         toVelocity: toVelocity,
                         avgVelocity: avgVelocity,
                         hasMassDriver: hasMassDriver,
+                        massDriverMultiplier: massDriverMultiplier,
                         arcLength: arcLength,
-                        visualTransferTimeDays: visualTransferTimeDays
+                        visualTransferTimeDays: visualTransferTimeDays,
+                        // Velocity detail info
+                        probeDeltaVCapacity: probeDeltaVCapacity,
+                        excessDeltaV: fromVelocityInfo.excessDeltaV,
+                        isOutbound: fromVelocityInfo.isOutbound,
+                        // Origin velocity breakdown
+                        fromCircularVelocity: fromVelocityInfo.circularVelocity,
+                        fromHohmannMultiplier: fromVelocityInfo.hohmannMultiplier,
+                        fromSpeedMultiplier: fromVelocityInfo.speedMultiplier,
+                        // Destination velocity breakdown
+                        toCircularVelocity: toVelocityInfo.circularVelocity,
+                        toHohmannMultiplier: toVelocityInfo.hohmannMultiplier,
+                        toBlendFactor: toVelocityInfo.blendFactor
                     };
                     
                     // Respect current visibility state (Tab toggle)
@@ -1340,14 +1671,47 @@ class TransferVisualization {
         const positions = [];
         if (viz.dot) {
             if (this.isMultiDot(viz.dot)) {
+                // Mass stream: calculate final positions for all dots
+                // Each dot arrives at progress=1.0, accounting for spacing offset
+                const arcLength = viz.arcLength || 0;
                 for (const d of viz.dot) {
-                    if (d.visible && d.position) {
-                        positions.push(d.position.clone());
-                    }
+                    const spacingOffset = d.userData.spacingOffset || 0;
+                    // Calculate final progress for this dot (1.0 minus offset)
+                    const progressOffset = arcLength > 0 ? spacingOffset / arcLength : 0;
+                    const finalProgress = Math.max(0, Math.min(1.0, 1.0 - progressOffset));
+                    
+                    // Calculate position at final progress (ensures smooth arrival)
+                    const destPos = this.calculatePositionOnEllipse(
+                        viz.params,
+                        viz.fromAngle,
+                        viz.toAngle,
+                        viz.transferAngle,
+                        viz.fromAU,
+                        viz.toAU,
+                        finalProgress,
+                        viz.fromZoneId,
+                        viz.toZoneId
+                    );
+                    positions.push(destPos);
                 }
             } else {
+                // Single dot: use current position or calculate destination
                 if (viz.dot.visible && viz.dot.position) {
                     positions.push(viz.dot.position.clone());
+                } else {
+                    // Calculate destination position from ellipse
+                    const destPos = this.calculatePositionOnEllipse(
+                        viz.params,
+                        viz.fromAngle,
+                        viz.toAngle,
+                        viz.transferAngle,
+                        viz.fromAU,
+                        viz.toAU,
+                        1.0, // At destination (progress = 1.0)
+                        viz.fromZoneId,
+                        viz.toZoneId
+                    );
+                    positions.push(destPos);
                 }
             }
         }
@@ -1491,17 +1855,18 @@ class TransferVisualization {
             
             // Update dot position(s)
             if (this.isMultiDot(viz.dot)) {
-                // Metal transfer: spread dots along the trajectory
-                const spacing = 0.006;
-                const visualTripTime = tripTime;
+                // Mass stream: spread dots along the trajectory based on spacing offset
+                // Each dot has a spacingOffset stored in userData (distance along arc)
                 for (let i = 0; i < viz.dot.length; i++) {
-                    const trailingElapsed = viz.animElapsed - (i * spacing * visualTripTime);
-                    let dotProgress;
-                    if (trailingElapsed > 0 && trailingElapsed <= visualTripTime) {
-                        dotProgress = this.calculateVelocityIntegratedProgress(v0, vEnd, trailingElapsed, visualTripTime, arcLength);
-                    } else {
-                        dotProgress = progress - (i * spacing);
-                    }
+                    const dot = viz.dot[i];
+                    const spacingOffset = dot.userData.spacingOffset || 0;
+                    
+                    // Calculate progress offset based on spacing
+                    // Convert spacing offset (visual units) to progress offset
+                    // Progress offset = spacingOffset / arcLength
+                    const progressOffset = arcLength > 0 ? spacingOffset / arcLength : 0;
+                    const dotProgress = progress - progressOffset;
+                    
                     if (dotProgress >= 0 && dotProgress <= 1) {
                         const position = this.calculatePositionOnEllipse(
                             viz.params,
@@ -1514,10 +1879,10 @@ class TransferVisualization {
                             viz.fromZoneId,
                             viz.toZoneId
                         );
-                        viz.dot[i].position.copy(position);
-                        viz.dot[i].visible = true;
+                        dot.position.copy(position);
+                        dot.visible = true;
                     } else {
-                        viz.dot[i].visible = false;
+                        dot.visible = false;
                     }
                 }
             } else {

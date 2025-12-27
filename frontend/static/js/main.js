@@ -218,6 +218,20 @@ class App {
                 console.error('Failed to initialize VisualEffectsPanel:', e);
             }
             
+            // Set up debug panel with visualization references
+            try {
+                if (window.debugPanel) {
+                    window.debugPanel.setReferences(
+                        this.solarSystem,
+                        this.dysonViz,
+                        this.sceneManager,
+                        this.starfield
+                    );
+                }
+            } catch (e) {
+                console.error('Failed to set up debug panel:', e);
+            }
+            
             // Initialize summary plot panel
             try {
                 this.summaryPlotPanel = typeof SummaryPlotPanel !== 'undefined' ? 
@@ -658,7 +672,7 @@ class App {
         switch (sliderId) {
             case 'mass-driver':
             case 'probe-dv':
-                valueEl.textContent = `+${(value * 0.5).toFixed(1)} km/s`;
+                valueEl.textContent = `+${(value * 0.05).toFixed(2)} km/s`;
                 break;
             case 'mining':
                 valueEl.textContent = `+${value * 10} kg/day`;
@@ -721,8 +735,8 @@ class App {
     async startNewGameWithSkills() {
         // Calculate skill bonuses
         const skillBonuses = {
-            mass_driver_dv_bonus: this.skillPoints.mass_driver * 0.5,  // km/s
-            probe_dv_bonus: this.skillPoints.probe_dv * 0.5,           // km/s
+            mass_driver_dv_bonus: this.skillPoints.mass_driver * 0.05,  // km/s (0.05 km/s per skill point)
+            probe_dv_bonus: this.skillPoints.probe_dv * 0.05,           // km/s (0.05 km/s per skill point)
             mining_rate_bonus: this.skillPoints.mining * 10,           // kg/day bonus (base is 100 kg/day)
             replication_rate_bonus: this.skillPoints.replication * 5,  // kg/day bonus (base is 20 kg/day)
             compute_bonus: 1 + (this.skillPoints.compute * 0.1),       // Multiplier (1.0 + 10% per point)

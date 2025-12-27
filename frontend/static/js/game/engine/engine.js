@@ -88,8 +88,18 @@ class GameEngine {
             this.energyCalculator.initializeEconomicRules(this.economicRules);
         }
         
+        // Initialize transfer system with buildings data (for base muzzle velocity, power, etc.)
+        if (this.buildings) {
+            this.transferSystem.initializeBuildingsData(this.buildings);
+        }
+        
         // Initialize TechTree with categories data
         if (this.techTree) {
+            // Initialize with economic rules (for decay factor, etc.)
+            if (this.economicRules) {
+                this.techTree.initializeEconomicRules(this.economicRules);
+            }
+            
             if (this.researchCategories) {
                 this.techTree.initialize(this.researchCategories);
             } else if (this.researchTrees) {
@@ -1411,6 +1421,23 @@ class GameEngine {
         // Create the enabled key (zone::building format)
         const enabledKey = `${zone_id}::${structureId}`;
         
+        // Check max_per_zone limit for methalox refineries and other limited buildings
+        if (building.max_per_zone) {
+            const zoneLimit = building.max_per_zone[zone_id];
+            if (zoneLimit !== undefined && zoneLimit > 0) {
+                const structuresByZone = this.state.structures_by_zone || {};
+                const zoneStructures = structuresByZone[zone_id] || {};
+                const currentCount = zoneStructures[structureId] || 0;
+                
+                if (currentCount >= zoneLimit && enabled !== false) {
+                    return { 
+                        success: false, 
+                        error: `Zone limit reached: ${currentCount}/${zoneLimit} ${building.name || structureId} in this zone` 
+                    };
+                }
+            }
+        }
+        
         // Toggle enabled state - NO RESOURCE CHECK - buildings start consuming immediately
         if (enabled === undefined || enabled === null) {
             // Toggle if not specified
@@ -1701,11 +1728,11 @@ class GameEngine {
                 
                 return { success: true, transfer };
             } else if (resource_type === 'metal') {
-                // Rate is kg/day
-                const rateKgPerDay = rate || 100e12; // Default 100 GT/day
+                // Rate is power allocation percentage (0-100, fractional values allowed)
+                const powerAllocationPct = rate || 10; // Default 10%
                 
-                if (rateKgPerDay <= 0) {
-                    return { success: false, error: 'Invalid transfer rate' };
+                if (powerAllocationPct <= 0 || powerAllocationPct > 100) {
+                    return { success: false, error: 'Invalid power allocation percentage (must be 0-100)' };
                 }
                 
                 // Create continuous transfer with current propulsion skill
@@ -1718,7 +1745,7 @@ class GameEngine {
                     0, // resource_count not used for continuous
                     this.state.skills,
                     'continuous',
-                    rateKgPerDay
+                    powerAllocationPct // Power allocation percentage
                 );
                 
                 if (!transferResult.success) {

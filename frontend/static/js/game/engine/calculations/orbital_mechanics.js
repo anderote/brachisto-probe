@@ -240,8 +240,8 @@ class OrbitalMechanics {
     }
     
     /**
-     * Calculate transfer time based on Hohmann ellipse arc length and physics-based speed
-     * Speed = orbital_velocity + (probe_delta_v - escape_velocity)
+     * Calculate transfer time based on Kepler's third law for Hohmann transfers
+     * Uses the physics-correct formula: T = 0.5 * sqrt(a³) years
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
      * @param {Object|number} skillsOrPropulsionSkill - Skills object or propulsion skill multiplier (for backward compatibility)
@@ -261,23 +261,13 @@ class OrbitalMechanics {
         
         if (r1_au === r2_au) return 0;
         
-        // Calculate Hohmann transfer ellipse parameters
-        const rInner = Math.min(r1_au, r2_au);
-        const rOuter = Math.max(r1_au, r2_au);
-        const semiMajorAxis = (rInner + rOuter) / 2;
-        const eccentricity = (rOuter - rInner) / (rOuter + rInner);
-        const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity * eccentricity);
+        // Calculate Hohmann transfer ellipse semi-major axis
+        const semiMajorAxisAU = (r1_au + r2_au) / 2;
         
-        // Calculate arc length of half-ellipse using Ramanujan's approximation
-        // Full ellipse circumference ≈ π * (3(a+b) - sqrt((3a+b)(a+3b)))
-        const a = semiMajorAxis;
-        const b = semiMinorAxis;
-        const h = Math.pow((a - b) / (a + b), 2);
-        const fullCircumference = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-        const arcLengthAU = fullCircumference / 2; // Half-orbit for Hohmann transfer
-        
-        // Convert arc length to km
-        const arcLengthKm = arcLengthAU * AU_KM;
+        // Calculate BASE Hohmann transfer time using Kepler's third law
+        // T_transfer = 0.5 * sqrt(a³) years (half orbital period of transfer ellipse)
+        const baseTransferTimeYears = 0.5 * Math.sqrt(Math.pow(semiMajorAxisAU, 3));
+        const baseTransferTimeDays = baseTransferTimeYears * 365.25;
         
         // Get probe delta-v capacity from skills (including starting skill point bonus)
         let probeDeltaVCapacity = 1.0; // Default base capacity
@@ -288,22 +278,19 @@ class OrbitalMechanics {
             probeDeltaVCapacity = (skillsOrPropulsionSkill || 1.0) + probeDvBonus;
         }
         
-        // Calculate transfer speed using physics-based formula
-        // Speed = orbital_velocity + (probe_delta_v - escape_velocity)
-        const transferSpeedKmS = this.calculateTransferSpeedKmS(fromZoneId, probeDeltaVCapacity);
+        // Calculate excess delta-v for speed bonus
+        const escapeVelocity = fromZone.escape_delta_v_km_s || 0;
+        const excessDeltaV = Math.max(0, probeDeltaVCapacity - escapeVelocity);
         
-        if (transferSpeedKmS <= 0) {
-            // Fallback to old calculation if speed calculation fails
-            const EARTH_MARS_ARC = 3.9; // AU (approximate)
-            const EARTH_MARS_TIME = 243; // days (8 months)
-            const BASE_SPEED_AU_PER_DAY = EARTH_MARS_ARC / EARTH_MARS_TIME;
-            return arcLengthAU / BASE_SPEED_AU_PER_DAY;
+        // Apply speed bonus from excess delta-v (logarithmic scaling)
+        const EXCESS_DV_SCALE = 7.5; // km/s that gives ~2x speed bonus
+        let speedMultiplier = 1.0;
+        if (excessDeltaV > 0) {
+            speedMultiplier = 1.0 + Math.log(1 + excessDeltaV / EXCESS_DV_SCALE);
         }
         
-        // Calculate time: distance / speed
-        // Convert km/s to km/day: km/s * 86400 s/day = km/day
-        const transferSpeedKmPerDay = transferSpeedKmS * 86400;
-        const transferTimeDays = arcLengthKm / transferSpeedKmPerDay;
+        // Final transfer time (reduced by speed bonus)
+        const transferTimeDays = baseTransferTimeDays / speedMultiplier;
         
         return transferTimeDays;
     }
@@ -412,11 +399,11 @@ class OrbitalMechanics {
     }
     
     /**
-     * Calculate transfer speed in km/s based on probe delta-v capacity
-     * Formula: speed = orbital_velocity + (probe_delta_v - escape_velocity)
+     * Calculate transfer speed multiplier based on probe delta-v capacity
+     * Used for visualization - returns a factor to multiply base orbital velocity by
      * @param {string} fromZoneId - Source zone
      * @param {number} probeDeltaVCapacity - Probe's delta-v capacity in km/s
-     * @returns {number} Transfer speed in km/s
+     * @returns {number} Transfer speed in km/s (base orbital velocity * speed multiplier)
      */
     calculateTransferSpeedKmS(fromZoneId, probeDeltaVCapacity) {
         const zone = this.getZone(fromZoneId);
@@ -425,10 +412,18 @@ class OrbitalMechanics {
         const escapeVelocity = zone.escape_delta_v_km_s || 0;
         const orbitalVelocity = this.getOrbitalVelocityKmS(fromZoneId);
         
-        // Speed = orbital velocity + (probe capacity - escape velocity)
-        // Excess delta-v beyond escape velocity adds directly to speed
+        // Calculate excess delta-v (beyond what's needed for escape)
         const excessDeltaV = Math.max(0, probeDeltaVCapacity - escapeVelocity);
-        return orbitalVelocity + excessDeltaV;
+        
+        // Calculate speed multiplier using logarithmic scaling (matches transfer time calculation)
+        const EXCESS_DV_SCALE = 7.5; // km/s that gives ~2x speed
+        let speedMultiplier = 1.0;
+        if (excessDeltaV > 0) {
+            speedMultiplier = 1.0 + Math.log(1 + excessDeltaV / EXCESS_DV_SCALE);
+        }
+        
+        // Return orbital velocity scaled by the speed multiplier
+        return orbitalVelocity * speedMultiplier;
     }
     
     /**
@@ -594,13 +589,55 @@ class OrbitalMechanics {
     }
     
     /**
+     * Calculate net delta-v (delta-v capacity minus escape velocity)
+     * 
+     * Net delta-v represents the delta-v available for the Hohmann transfer
+     * after accounting for escaping the origin body's gravity well.
+     * 
+     * Transfer is possible when: net_delta_v >= hohmann_delta_v
+     * Which is equivalent to: capacity >= hohmann_delta_v + escape_delta_v
+     * 
+     * @param {number} totalCapacity - Total delta-v capacity (probe + mass driver) in km/s
+     * @param {number} escapeDeltaV - Escape velocity from origin in km/s
+     * @returns {number} Net delta-v in km/s (can be negative if insufficient capacity)
+     */
+    getNetDeltaV(totalCapacity, escapeDeltaV) {
+        return totalCapacity - escapeDeltaV;
+    }
+    
+    /**
+     * Check if transfer is possible by comparing net delta-v to Hohmann transfer delta-v
+     * 
+     * The transfer decision uses: net_delta_v >= hohmann_delta_v
+     * Where: net_delta_v = total_capacity - escape_velocity
+     * 
+     * This is equivalent to: total_capacity >= hohmann_delta_v + escape_delta_v
+     * 
+     * @param {number} totalCapacity - Total delta-v capacity in km/s
+     * @param {number} escapeDeltaV - Escape velocity from origin in km/s
+     * @param {number} hohmannDeltaV - Hohmann transfer delta-v in km/s
+     * @returns {boolean} True if transfer is possible
+     */
+    canTransferWithNetDeltaV(totalCapacity, escapeDeltaV, hohmannDeltaV) {
+        const netDeltaV = this.getNetDeltaV(totalCapacity, escapeDeltaV);
+        return netDeltaV >= hohmannDeltaV;
+    }
+    
+    /**
      * Calculate transfer time with speed bonus from excess delta-v
-     * Excess delta-v provides a speed boost: each km/s of excess reduces transfer time
+     * Uses Kepler's third law for correct Hohmann transfer time, then applies speed bonus.
+     * 
+     * Base Hohmann transfer time: T = 0.5 * sqrt(a³) years, where a is semi-major axis in AU
+     * This gives the physically correct transfer time for minimum energy trajectory.
+     * 
+     * Speed bonus: excess delta-v reduces transfer time (faster trajectory than Hohmann)
+     * 
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
      * @param {Object} skills - Current skills
      * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s (0 if no mass driver)
      * @param {number} fromZoneMass - Current mass of source zone in kg (optional)
+     * @param {number} probeDvBonus - Probe delta-v bonus from starting skill points (km/s)
      * @returns {number} Transfer time in days (reduced by excess delta-v speed bonus)
      */
     calculateTransferTimeWithBoost(fromZoneId, toZoneId, skills, massDriverMuzzleVelocity = 0, fromZoneMass = null, probeDvBonus = 0) {
@@ -631,102 +668,135 @@ class OrbitalMechanics {
         
         if (r1_au === r2_au) return 0;
         
-        // Calculate Hohmann transfer ellipse parameters
-        const rInner = Math.min(r1_au, r2_au);
-        const rOuter = Math.max(r1_au, r2_au);
-        const semiMajorAxis = (rInner + rOuter) / 2;
-        const eccentricity = (rOuter - rInner) / (rOuter + rInner);
-        const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity * eccentricity);
+        // Calculate Hohmann transfer ellipse semi-major axis
+        const semiMajorAxisAU = (r1_au + r2_au) / 2;
         
-        // Calculate arc length of half-ellipse using Ramanujan's approximation
-        const a = semiMajorAxis;
-        const b = semiMinorAxis;
-        const h = Math.pow((a - b) / (a + b), 2);
-        const fullCircumference = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-        const arcLengthAU = fullCircumference / 2; // Half-orbit for Hohmann transfer
+        // Calculate BASE Hohmann transfer time using Kepler's third law
+        // For orbital period: T² = 4π²a³/μ, where μ = 4π² in AU³/year² (normalized to Earth)
+        // So T = sqrt(a³) years for full orbit
+        // Hohmann transfer is half an orbit: T_transfer = 0.5 * sqrt(a³) years
+        const baseTransferTimeYears = 0.5 * Math.sqrt(Math.pow(semiMajorAxisAU, 3));
+        const baseTransferTimeDays = baseTransferTimeYears * 365.25;
         
-        // Convert arc length to km
-        const arcLengthKm = arcLengthAU * AU_KM;
-        
-        // Calculate base transfer speed: orbital velocity + excess delta-v
-        // Excess delta-v directly adds to transfer speed (probe goes faster than minimum energy transfer)
-        const orbitalVelocityKmS = this.getOrbitalVelocityKmS(fromZoneId);
-        const escapeVelocityKmS = fromZone.escape_delta_v_km_s || 0;
-        
-        // Base speed is orbital velocity (minimum for Hohmann transfer)
-        // Excess delta-v adds directly to this (more energy = faster transfer)
-        // Note: excessDeltaV is the remaining delta-v after overcoming escape + Hohmann requirements
-        const transferSpeedKmS = orbitalVelocityKmS + excessDeltaV;
-        
-        if (transferSpeedKmS <= 0) {
-            // Fallback to old calculation
-            const EARTH_MARS_ARC = 3.9;
-            const EARTH_MARS_TIME = 243;
-            const BASE_SPEED_AU_PER_DAY = EARTH_MARS_ARC / EARTH_MARS_TIME;
-            return arcLengthAU / BASE_SPEED_AU_PER_DAY;
+        // Apply speed bonus from excess delta-v
+        // Each km/s of excess delta-v provides a percentage speed increase
+        // Using a logarithmic scaling so the bonus doesn't become too extreme
+        // With 0 excess: speed multiplier = 1.0
+        // With 5 km/s excess: speed multiplier ≈ 1.7
+        // With 10 km/s excess: speed multiplier ≈ 2.3
+        // With 20 km/s excess: speed multiplier ≈ 3.0
+        const EXCESS_DV_SCALE = 7.5; // km/s that gives ~2x speed bonus
+        let speedMultiplier = 1.0;
+        if (excessDeltaV > 0) {
+            speedMultiplier = 1.0 + Math.log(1 + excessDeltaV / EXCESS_DV_SCALE);
         }
         
-        // Calculate time: distance / speed
-        const transferSpeedKmPerDay = transferSpeedKmS * 86400;
-        const transferTimeDays = arcLengthKm / transferSpeedKmPerDay;
+        // Final transfer time (reduced by speed bonus)
+        const transferTimeDays = baseTransferTimeDays / speedMultiplier;
         
         return transferTimeDays;
     }
     
     /**
      * Check if probe can reach destination based on combined delta-v capacity
-     * Combines probe delta-v + mass driver muzzle velocity (if available)
+     * 
+     * Uses the net delta-v comparison:
+     *   net_delta_v >= hohmann_delta_v
+     * Where:
+     *   net_delta_v = total_capacity - escape_velocity
+     *   total_capacity = probe_delta_v + mass_driver_muzzle_velocity
+     * 
+     * This is equivalent to: total_capacity >= hohmann_delta_v + escape_velocity
+     * 
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
      * @param {Object} skills - Current skills
      * @param {number} fromZoneMass - Current mass of source zone in kg (optional)
      * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s (0 if no mass driver)
+     * @param {number} probeDvBonus - Probe delta-v bonus from starting skill points (km/s)
      * @returns {boolean} True if probe can reach destination
      */
     canProbeReach(fromZoneId, toZoneId, skills, fromZoneMass = null, massDriverMuzzleVelocity = 0, probeDvBonus = 0) {
-        // Get required delta-v (fixed physics, not affected by upgrades)
-        let requiredDeltaV;
-        if (fromZoneMass !== null && fromZoneMass !== undefined) {
-            requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
-        } else {
-            const fromZone = this.getZone(fromZoneId);
-            const toZone = this.getZone(toZoneId);
-            if (!fromZone || !toZone) return false;
-            
-            const fromZoneMassLegacy = fromZone.total_mass_kg || 0;
-            requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMassLegacy);
-        }
+        const fromZone = this.getZone(fromZoneId);
+        const toZone = this.getZone(toZoneId);
+        if (!fromZone || !toZone) return false;
+        
+        // Get zone mass for escape velocity calculation
+        const zoneMass = (fromZoneMass !== null && fromZoneMass !== undefined)
+            ? fromZoneMass
+            : (fromZone.total_mass_kg || 0);
+        
+        // Get escape velocity from origin (scales with planetary mass)
+        const escapeDeltaV = this.calculateEscapeDeltaV(fromZoneId, zoneMass);
+        
+        // Get Hohmann transfer delta-v (fixed physics)
+        const hohmannDeltaV = this.getHohmannDeltaVKmS(fromZoneId, toZoneId);
         
         // Get combined capacity (probe + mass driver + probe dv bonus)
         const totalCapacity = this.getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity, probeDvBonus);
         
-        // Compare combined capacity vs requirement
-        return totalCapacity >= requiredDeltaV;
+        // Compare net delta-v to Hohmann delta-v:
+        // net_delta_v = total_capacity - escape_velocity
+        // Can reach if: net_delta_v >= hohmann_delta_v
+        return this.canTransferWithNetDeltaV(totalCapacity, escapeDeltaV, hohmannDeltaV);
     }
     
     /**
      * Get reachability info with detailed breakdown
+     * 
+     * Returns all components needed for the transfer decision:
+     * - escapeDeltaV: Delta-v needed to escape origin's gravity well
+     * - hohmannDeltaV: Delta-v for Hohmann transfer between orbits
+     * - totalCapacity: Combined probe + mass driver delta-v capacity
+     * - netDeltaV: Capacity remaining after escape (totalCapacity - escapeDeltaV)
+     * 
+     * Transfer is possible when: netDeltaV >= hohmannDeltaV
+     * Which is equivalent to: totalCapacity >= hohmannDeltaV + escapeDeltaV
+     * 
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
      * @param {Object} skills - Current skills
      * @param {number} fromZoneMass - Current mass of source zone in kg
      * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s
-     * @returns {Object} {canReach, requiredDeltaV, probeCapacity, massDriverBoost, totalCapacity, excessDeltaV}
+     * @param {number} probeDvBonus - Probe delta-v bonus from starting skill points (km/s)
+     * @returns {Object} Detailed reachability breakdown
      */
     getReachabilityInfo(fromZoneId, toZoneId, skills, fromZoneMass, massDriverMuzzleVelocity = 0, probeDvBonus = 0) {
-        const requiredDeltaV = this.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
+        // Get escape velocity from origin (scales with current zone mass)
+        const escapeDeltaV = this.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+        
+        // Get Hohmann transfer delta-v (fixed physics, doesn't change with upgrades)
+        const hohmannDeltaV = this.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+        
+        // Total required = escape + Hohmann (for backward compatibility)
+        const requiredDeltaV = escapeDeltaV + hohmannDeltaV;
+        
+        // Get probe and combined capacities
         const probeCapacity = this.getProbeDeltaVCapacity(skills, probeDvBonus);
         const totalCapacity = this.getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity, probeDvBonus);
+        
+        // Net delta-v = capacity available for Hohmann transfer after escaping
+        const netDeltaV = this.getNetDeltaV(totalCapacity, escapeDeltaV);
+        
+        // Can reach if net delta-v >= Hohmann delta-v
+        const canReach = this.canTransferWithNetDeltaV(totalCapacity, escapeDeltaV, hohmannDeltaV);
+        
+        // Excess delta-v provides speed bonus (if any capacity beyond minimum required)
         const excessDeltaV = this.getExcessDeltaV(totalCapacity, requiredDeltaV);
-        const canReach = totalCapacity >= requiredDeltaV;
         
         return {
             canReach,
-            requiredDeltaV,
+            // Individual components
+            escapeDeltaV,
+            hohmannDeltaV,
+            // Capacity info
             probeCapacity,
             massDriverBoost: massDriverMuzzleVelocity,
             totalCapacity,
-            excessDeltaV
+            // Derived values
+            netDeltaV,           // totalCapacity - escapeDeltaV
+            requiredDeltaV,      // escapeDeltaV + hohmannDeltaV (for backward compat)
+            excessDeltaV         // totalCapacity - requiredDeltaV (for speed bonus)
         };
     }
 }

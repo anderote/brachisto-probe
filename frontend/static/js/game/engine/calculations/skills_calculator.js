@@ -308,7 +308,7 @@ class SkillsCalculator {
      * @param {Object} tree - Research tree definition
      * @param {number} currentTime - Current time in days (not used, kept for compatibility)
      * @param {string} treeId - Tree ID (key in research_trees object)
-     * @returns {number} Total multiplier (1.0 to ~6.19x when fully researched)
+     * @returns {number} Total multiplier (1.0 to ~3.18x when fully researched)
      */
     calculateBonusFromTree(researchState, tree, currentTime, treeId = null) {
         if (!tree || !tree.tiers) return 1.0; // Return 1.0 (no change) instead of 0.0
@@ -318,11 +318,17 @@ class SkillsCalculator {
         const treeState = researchState[lookupKey] || {};
         let totalMultiplier = 1.0; // Start at 1.0 for multiplicative compounding
         
-        // Default tier multiplier: 1.2x (20% per tier)
-        const DEFAULT_TIER_MULTIPLIER = 1.2;
+        // Default tier multiplier: 1.1228x (~12.3% per tier)
+        // At 8/10 tiers with all skills maxed: mass driver muzzle velocity ≈ 45 km/s
+        const DEFAULT_TIER_MULTIPLIER = 1.1228;
         const DEFAULT_TRANCHES_PER_TIER = 10;
         
-        for (const tier of tree.tiers) {
+        // Research exponential decay factor: each tier's benefit is multiplied by this
+        // At tier 9 (index 8): 0.857^8 ≈ 0.30 (30% of tier 1's benefit)
+        const RESEARCH_EXPONENTIAL_DECAY_FACTOR = 0.857;
+        
+        for (let tierIndex = 0; tierIndex < tree.tiers.length; tierIndex++) {
+            const tier = tree.tiers[tierIndex];
             const tierState = treeState[tier.id];
             if (!tierState || !tierState.enabled) continue;
             
@@ -330,11 +336,21 @@ class SkillsCalculator {
             if (tranchesCompleted === 0) continue;
             
             const totalTranches = tier.tranches || DEFAULT_TRANCHES_PER_TIER;
-            // Get tier multiplier (default 1.2x = 20% per tier)
-            const tierMultiplier = tier.tier_multiplier || DEFAULT_TIER_MULTIPLIER;
+            
+            // Get base tier multiplier (default 1.1228x = ~12.3% per tier)
+            const baseTierMultiplier = tier.tier_multiplier || DEFAULT_TIER_MULTIPLIER;
+            
+            // Apply exponential decay: higher tiers give less benefit
+            // Tier 1 (index 0): full benefit, Tier 9 (index 8): ~30% benefit
+            const decayFactor = Math.pow(RESEARCH_EXPONENTIAL_DECAY_FACTOR, tierIndex);
+            
+            // The benefit portion (multiplier - 1) is decayed, then added back to 1
+            const baseBenefit = baseTierMultiplier - 1.0;
+            const decayedBenefit = baseBenefit * decayFactor;
+            const tierMultiplier = 1.0 + decayedBenefit;
             
             if (tranchesCompleted >= totalTranches) {
-                // Tier completed: full multiplier (1.2x)
+                // Tier completed: full multiplier
                 totalMultiplier *= tierMultiplier;
             } else {
                 // Tier in progress: compound per tranche

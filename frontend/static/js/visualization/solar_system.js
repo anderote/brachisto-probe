@@ -15,6 +15,7 @@ class SolarSystem {
         this.comets = [];
         this.cometOrbits = {};
         this.time = 0;
+        this.gameTime = 0; // Game time in days (from gameState.time) - used for particle animations
         this.zoneClouds = null; // ZoneClouds instance
         this.initialZoneMasses = {}; // Store initial mass for each zone
         
@@ -31,31 +32,37 @@ class SolarSystem {
         this.maxResourceParticles = 50000; // Max particles per planet (metal + slag combined)
         
         // Resource size tiers with progressive filling limits (separate for metal and slag)
+        // Scaled so Jupiter (1.8982e27 kg) converts to ~800,000 particles
         this.resourceSizes = {
-            small:  { mass: 1e9,  size: 0.15 },
-            medium: { mass: 1e12,  size: 0.275 },
-            large:  { mass: 1e15, size: 0.4 },
-            xlarge: { mass: 1e22, size: 0.45 }
+            small:  { mass: 1e9,  size: 0.15 },    // 1 Gkg (gigakilogram)
+            medium: { mass: 1e12,  size: 0.275 },  // 1 Tkg (terakilogram)
+            large:  { mass: 1e15, size: 0.4 },     // 1 Pkg (petakilogram)
+            xlarge: { mass: 1e18, size: 0.5 },     // 1 Ekg (exakilogram)
+            huge:   { mass: 2.5e21, size: 0.65 }   // 2.5 Zkg (zettakilogram) - for gas giant scale
         };
         // Separate max particles per resource type
+        // Huge tier sized for gas giants (~800k total particles for Jupiter)
         this.maxParticlesByType = {
             metal: {
                 small: 50000,
                 medium: 20000,
                 large: 8000,
-                xlarge: 2000
+                xlarge: 2000,
+                huge: 800000
             },
             slag: {
                 small: 20000,
                 medium: 10000,
                 large: 5000,
-                xlarge: 2000
+                xlarge: 2000,
+                huge: 200000
             },
             methalox: {
                 small: 20000,
                 medium: 10000,
                 large: 5000,
-                xlarge: 2000
+                xlarge: 2000,
+                huge: 200000
             }
         };
         this.maxDotsPerZone = 15000; // Maximum dots per zone (metal + slag combined) - kept for compatibility
@@ -72,9 +79,27 @@ class SolarSystem {
             methalox: new THREE.Color(0x7EC8E3) // Pale blue
         };
         
-        // Particle drift settings
-        this.particleDriftDuration = 3.0; // Seconds for particle to drift from spawn to orbit
+        // Particle drift settings (in game days)
+        this.particleDriftDuration = 0.2; // Game days for particle to drift from spawn to orbit
         this.particleSpawnRadius = 0.1; // Initial spawn offset from planet center
+        
+        // UNIFIED particle size distribution config
+        // Loaded from game_data/economic_rules.json (particle_visualization section)
+        // Uses power-law (Pareto) distribution: many small particles, few large ones
+        // Consistent scaling across ALL particle types: metal, slag, methalox, probes
+        // These are defaults - will be overwritten by loadParticleConfig()
+        this.particleDistribution = null;
+        this.probeParticleConfig = null;
+        this.particleDriftConfig = null;
+        
+        // Apply default config (will be updated from JSON when loaded)
+        this.applyDefaultParticleConfig();
+        
+        // Probe particle data tracking (per zone)
+        this.probeParticles = {};        // {zoneId: [...particle objects]}
+        this.previousProbeCount = {};    // {zoneId: count} - track changes
+        this.pendingProbeMass = {};      // {zoneId: mass} - accumulated mass waiting to become particles
+        this.individualProbes = {};      // {zoneId: [...individual probe positions]}
 
         // Real-world planet data (radii in km, orbital distances in km)
         // 1 AU = 149,600,000 km
@@ -127,6 +152,147 @@ class SolarSystem {
         
         // Gas giants list - for resource particle placement near planet instead of zone-wide
         this.gasGiants = ['jupiter', 'saturn', 'uranus', 'neptune'];
+    }
+
+    /**
+     * Apply default particle configuration (fallback values)
+     * These match the JSON config and are used until loadParticleConfig() completes
+     */
+    applyDefaultParticleConfig() {
+        // Default mass distribution (Pareto)
+        this.particleDistribution = {
+            minMass: 1e6,               // 1 megakilogram - smallest visible particle
+            maxMass: 1e22,              // 10 zettakilograms - largest particle
+            shapeParameter: 1.15,       // Pareto alpha - heavy tail
+            minVisualSize: 0.05,        // Tiny dot for min mass
+            maxVisualSize: 3.5,         // Huge asteroid for max mass
+            sizeExponent: 0.4,          // Power transform: t^exponent. < 1 shifts toward larger sizes
+            minSpawnRate: 0.5,          // Min particles per game day
+            maxSpawnRate: 15,           // Max particles per game day
+            jupiterMass: 1.898e27       // Calibration reference
+        };
+        
+        // Default probe config
+        this.probeParticleConfig = {
+            probeMassKg: 100,
+            maxIndividualProbes: 300,
+            color: new THREE.Color(0x88FFFF),
+            individualProbeSize: 0.4,
+            transferSize: 0.4
+        };
+        
+        // Default drift animation config
+        this.particleDriftConfig = {
+            resourceBaseDurationDays: 90,
+            resourceDistanceScalingDays: 50,
+            probeIndividualDurationDays: 5,
+            probeMassDurationDays: 30,
+            massDriverDurationDays: 36
+        };
+        
+        // Default resource colors
+        this.resourceColors = {
+            metal: new THREE.Color(0xC0C0C0),    // Silver
+            slag: new THREE.Color(0x5C4033),     // Brown-grey
+            methalox: new THREE.Color(0x7EC8E3)  // Pale blue
+        };
+    }
+    
+    /**
+     * Load particle configuration from economic_rules.json via gameDataLoader
+     * Called during initialization; updates config from centralized JSON
+     */
+    async loadParticleConfig() {
+        try {
+            // Use gameDataLoader if available (preferred)
+            if (typeof gameDataLoader !== 'undefined') {
+                await gameDataLoader.loadEconomicRules();
+                const config = gameDataLoader.getParticleVisualization();
+                
+                if (config) {
+                    this.applyParticleConfig(config);
+                    console.log('Loaded particle visualization config from economic_rules.json');
+                    return;
+                }
+            }
+            
+            // Fallback: direct fetch
+            const response = await fetch('/game_data/economic_rules.json');
+            const rules = await response.json();
+            
+            if (rules.particle_visualization) {
+                this.applyParticleConfig(rules.particle_visualization);
+                console.log('Loaded particle visualization config (direct fetch)');
+            }
+        } catch (error) {
+            console.warn('Failed to load particle config, using defaults:', error);
+            // Defaults already applied in constructor
+        }
+    }
+    
+    /**
+     * Apply particle configuration from JSON structure
+     * @param {Object} config - particle_visualization section from economic_rules.json
+     */
+    applyParticleConfig(config) {
+        // Mass distribution
+        if (config.mass_distribution) {
+            const md = config.mass_distribution;
+            this.particleDistribution.minMass = md.min_mass_kg || this.particleDistribution.minMass;
+            this.particleDistribution.maxMass = md.max_mass_kg || this.particleDistribution.maxMass;
+            this.particleDistribution.shapeParameter = md.shape_parameter || this.particleDistribution.shapeParameter;
+        }
+        
+        // Visual size scaling
+        if (config.visual_size) {
+            const vs = config.visual_size;
+            this.particleDistribution.minVisualSize = vs.min_size || this.particleDistribution.minVisualSize;
+            this.particleDistribution.maxVisualSize = vs.max_size || this.particleDistribution.maxVisualSize;
+            // Size exponent: power transform applied to normalized log position
+            // Values < 1 shift distribution toward larger visual sizes
+            if (vs.size_exponent !== undefined) {
+                this.particleDistribution.sizeExponent = vs.size_exponent;
+            }
+        }
+        
+        // Spawn rate control
+        if (config.spawn_rate) {
+            const sr = config.spawn_rate;
+            this.particleDistribution.minSpawnRate = sr.min_rate_per_day || this.particleDistribution.minSpawnRate;
+            this.particleDistribution.maxSpawnRate = sr.max_rate_per_day || this.particleDistribution.maxSpawnRate;
+        }
+        
+        // Calibration reference
+        if (config.calibration) {
+            this.particleDistribution.jupiterMass = config.calibration.jupiter_mass_kg || this.particleDistribution.jupiterMass;
+        }
+        
+        // Resource colors
+        if (config.colors) {
+            const c = config.colors;
+            if (c.metal) this.resourceColors.metal = new THREE.Color(c.metal);
+            if (c.slag) this.resourceColors.slag = new THREE.Color(c.slag);
+            if (c.methalox) this.resourceColors.methalox = new THREE.Color(c.methalox);
+            if (c.probe) this.probeParticleConfig.color = new THREE.Color(c.probe);
+        }
+        
+        // Probe individual settings
+        if (config.probe_individual) {
+            const pi = config.probe_individual;
+            this.probeParticleConfig.maxIndividualProbes = pi.max_individual_count || this.probeParticleConfig.maxIndividualProbes;
+            this.probeParticleConfig.individualProbeSize = pi.individual_size || this.probeParticleConfig.individualProbeSize;
+            this.probeParticleConfig.transferSize = pi.transfer_size || this.probeParticleConfig.transferSize;
+        }
+        
+        // Drift animation timing
+        if (config.drift_animation) {
+            const da = config.drift_animation;
+            this.particleDriftConfig.resourceBaseDurationDays = da.resource_base_duration_days || this.particleDriftConfig.resourceBaseDurationDays;
+            this.particleDriftConfig.resourceDistanceScalingDays = da.resource_distance_scaling_days || this.particleDriftConfig.resourceDistanceScalingDays;
+            this.particleDriftConfig.probeIndividualDurationDays = da.probe_individual_duration_days || this.particleDriftConfig.probeIndividualDurationDays;
+            this.particleDriftConfig.probeMassDurationDays = da.probe_mass_duration_days || this.particleDriftConfig.probeMassDurationDays;
+            this.particleDriftConfig.massDriverDurationDays = da.mass_driver_duration_days || this.particleDriftConfig.massDriverDurationDays;
+        }
     }
 
     logScaleRadius(radiusKm) {
@@ -378,6 +544,9 @@ class SolarSystem {
         try {
             const response = await fetch('/game_data/orbital_mechanics.json');
             this.orbitalData = await response.json();
+            
+            // Load particle visualization config from economic_rules.json
+            await this.loadParticleConfig();
             
             // Calculate scaling factors after loading data
             this.calculateScalingFactors();
@@ -1995,7 +2164,7 @@ class SolarSystem {
      * Determine particle size class based on mining rate
      * Higher mining rates produce larger particles
      * @param {number} miningRateKgPerDay - Mining/production rate in kg/day
-     * @returns {string} Size class: 'small', 'medium', 'large', or 'xlarge'
+     * @returns {string} Size class: 'small', 'medium', 'large', 'xlarge', or 'huge'
      */
     determineParticleSizeFromRate(miningRateKgPerDay) {
         if (!miningRateKgPerDay || miningRateKgPerDay <= 0) {
@@ -2003,10 +2172,13 @@ class SolarSystem {
         }
         
         // Use logarithmic scaling to determine size based on rate
-        // Thresholds: small < 1e9, medium < 1e12, large < 1e15, xlarge >= 1e15 kg/day
+        // Thresholds: small < 1e9, medium < 1e12, large < 1e15, xlarge < 1e18, huge >= 1e18 kg/day
         const logRate = Math.log10(miningRateKgPerDay);
         
-        if (logRate >= 15) {
+        if (logRate >= 18) {
+            // Extreme rate (gas giant scale): mostly huge, some xlarge
+            return Math.random() < 0.7 ? 'huge' : 'xlarge';
+        } else if (logRate >= 15) {
             // Very high rate: mostly xlarge, some large
             return Math.random() < 0.7 ? 'xlarge' : 'large';
         } else if (logRate >= 12) {
@@ -2022,16 +2194,381 @@ class SolarSystem {
     }
     
     /**
+     * Get the expected (mean) particle mass from the Pareto distribution
+     * For Pareto: E[X] = α * minMass / (α - 1) when α > 1
+     * This is calibrated so Jupiter → 800,000 particles
+     * @returns {number} Expected particle mass in kg
+     */
+    getExpectedParticleMass() {
+        const config = this.particleDistribution;
+        const alpha = config.shapeParameter;
+        // E[X] = α * minMass / (α - 1)
+        return alpha * config.minMass / (alpha - 1);
+    }
+    
+    /**
+     * Calculate expected particle count for a given total mass
+     * @param {number} totalMass - Total mass in kg
+     * @returns {number} Expected number of particles
+     */
+    getExpectedParticleCount(totalMass) {
+        return totalMass / this.getExpectedParticleMass();
+    }
+    
+    /**
+     * Sample a particle mass from Pareto distribution
+     * Produces natural "many small, few large" distribution like real asteroids
+     * Distribution is calibrated so Jupiter's mass → 800,000 particles on average
+     * @param {number} miningRate - Mining rate in kg/day (unused, kept for API compatibility)
+     * @returns {number} Sampled particle mass in kg
+     */
+    sampleParticleMassExponential(miningRate) {
+        const config = this.particleDistribution;
+        const alpha = config.shapeParameter;
+        
+        // Sample from Pareto distribution using inverse transform:
+        // If U ~ Uniform(0,1), then X = minMass / U^(1/α) ~ Pareto(minMass, α)
+        const u = Math.random();
+        
+        // Avoid division by zero and extreme values
+        const clampedU = Math.max(0.0001, u);
+        const sampledMass = config.minMass / Math.pow(clampedU, 1 / alpha);
+        
+        // Clamp to valid range (Pareto can produce very large values)
+        return Math.min(config.maxMass, sampledMass);
+    }
+    
+    /**
+     * Calculate visual size from particle mass using logarithmic/exponential scaling
+     * size = minSize * (maxSize/minSize)^(t^exponent) where t is normalized log position
+     * Power exponent < 1 shifts distribution toward larger visual sizes
+     * This gives strong visual differentiation across 16 orders of magnitude
+     * @param {number} mass - Particle mass in kg
+     * @returns {number} Visual size for THREE.js rendering
+     */
+    massToVisualSize(mass) {
+        const config = this.particleDistribution;
+        const logMass = Math.log10(Math.max(config.minMass, Math.min(config.maxMass, mass)));
+        const logMin = Math.log10(config.minMass);  // 6
+        const logMax = Math.log10(config.maxMass);  // 22
+        
+        // Normalize to [0, 1] in log-space
+        let t = (logMass - logMin) / (logMax - logMin);
+        
+        // Apply power transform to shift size distribution
+        // exponent < 1: pushes small masses toward larger visual sizes
+        // exponent = 0.4: most particles appear medium-sized instead of tiny
+        // exponent = 1.0: linear (original behavior)
+        const exponent = config.sizeExponent || 1.0;
+        t = Math.pow(t, exponent);
+        
+        // Exponential scaling: size = minSize * (maxSize/minSize)^t
+        // This gives logarithmic relationship: equal mass ratios → equal size ratios
+        const sizeRatio = config.maxVisualSize / config.minVisualSize; // 3.5 / 0.05 = 70
+        const size = config.minVisualSize * Math.pow(sizeRatio, t);
+        
+        return size;
+    }
+    
+    /**
+     * Calculate target spawn rate based on mining rate
+     * Uses the analytical expected value from the Pareto distribution
+     * @param {number} miningRate - Mining rate in kg/day
+     * @returns {number} Particles per game day to spawn
+     */
+    calculateParticleSpawnRate(miningRate) {
+        const config = this.particleDistribution;
+        
+        // Use the analytical expected mass from Pareto distribution
+        const expectedMass = this.getExpectedParticleMass();
+        
+        // Calculate ideal spawn rate: particles/day = miningRate / expectedMass
+        // This ensures that over time, spawned particles represent the mined mass correctly
+        const idealRate = miningRate / expectedMass;
+        
+        // Apply logarithmic scaling to prevent visual overload at extreme rates
+        // while maintaining proportionality at reasonable rates
+        let scaledRate;
+        if (idealRate <= 0) {
+            scaledRate = 0;
+        } else if (idealRate <= config.maxSpawnRate) {
+            // Linear scaling for reasonable rates
+            scaledRate = Math.max(config.minSpawnRate, idealRate);
+        } else {
+            // Logarithmic compression for very high rates
+            const excess = idealRate / config.maxSpawnRate;
+            const logCompression = 1 + Math.log10(excess) * 0.3;
+            scaledRate = config.maxSpawnRate * Math.min(1.5, logCompression);
+        }
+        
+        return Math.min(config.maxSpawnRate * 1.5, Math.max(0, scaledRate));
+    }
+    
+    // ============== PROBE PARTICLE METHODS ==============
+    
+    /**
+     * Get expected probe particle mass - uses unified distribution
+     * @returns {number} Expected particle mass in kg
+     */
+    getExpectedProbeParticleMass() {
+        // Use same distribution as resources for consistency
+        return this.getExpectedParticleMass();
+    }
+    
+    /**
+     * Sample probe particle mass - uses unified distribution
+     * @returns {number} Sampled mass in kg
+     */
+    sampleProbeParticleMass() {
+        // Use same distribution as resources for consistency
+        return this.sampleParticleMassExponential();
+    }
+    
+    /**
+     * Calculate visual size for probe particle - uses unified scaling
+     * @param {number} mass - Particle mass in kg
+     * @returns {number} Visual size
+     */
+    probeParticleMassToVisualSize(mass) {
+        // Use same logarithmic scaling as resources for consistency
+        return this.massToVisualSize(mass);
+    }
+    
+    /**
+     * Spawn an individual probe dot at a zone (for first 100 probes)
+     * @param {string} zoneId - Zone ID
+     * @param {number} index - Probe index (0-99)
+     * @returns {Object} Probe position data
+     */
+    spawnIndividualProbe(zoneId, index) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) return null;
+        
+        const userData = particleSystem.userData;
+        const planet = this.planets[zoneId];
+        
+        const planetAngle = planet?.userData?.orbitalAngle || 0;
+        const planetOrbitalSpeed = planet?.userData?.orbitalSpeed || 0.008;
+        
+        // Distribute probes evenly around the planet
+        const angleOffset = (index / this.probeParticleConfig.maxIndividualProbes) * Math.PI * 2;
+        const targetAngle = planetAngle + angleOffset;
+        
+        // Position close to planet (within ~1.5-2.5 planet radii)
+        const planetRadius = userData.planetRadius || 0.1;
+        const orbitDistance = userData.orbitRadius + planetRadius * (1.5 + Math.random());
+        
+        // Small vertical offset
+        const yOffset = (Math.random() - 0.5) * 0.08;
+        
+        // Calculate orbital speed (slightly slower than planet for trailing effect)
+        const earthAU = this.planetData.earth.orbit_km / this.AU_KM;
+        const earthOrbitRadius = this.scaleAUToVisual(earthAU);
+        const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / orbitDistance);
+        const orbitalSpeed = keplerSpeed * 0.95;
+        
+        return {
+            type: 'individual_probe',
+            index: index,
+            targetAngle: targetAngle,
+            targetDistance: orbitDistance,
+            yOffset: yOffset,
+            orbitalSpeed: orbitalSpeed,
+            planetOrbitalSpeed: planetOrbitalSpeed,
+            spawnAngle: planetAngle,
+            spawnDistance: userData.orbitRadius,
+            spawnTime: this.gameTime,
+            drifting: true,
+            driftDuration: this.particleDriftConfig.probeIndividualDurationDays,  // Quick drift for individual probes
+            visualSize: this.probeParticleConfig.individualProbeSize,  // Fixed size for individual probes
+            mass: this.probeParticleConfig.probeMassKg
+        };
+    }
+    
+    /**
+     * Spawn a probe mass particle (for probes beyond first 100)
+     * Uses same Pareto distribution as resources
+     * @param {string} zoneId - Zone ID
+     * @param {number} mass - Particle mass in kg
+     * @param {number} visualSize - Visual size
+     * @returns {Object} Particle data
+     */
+    spawnProbeParticle(zoneId, mass, visualSize) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) return null;
+        
+        const userData = particleSystem.userData;
+        const planet = this.planets[zoneId];
+        
+        const planetAngle = planet?.userData?.orbitalAngle || (Math.random() * Math.PI * 2);
+        const planetRadius = userData.planetRadius || 0.1;
+        const planetOrbitalSpeed = planet?.userData?.orbitalSpeed || 0.008;
+        
+        const spawnDistance = userData.orbitRadius;
+        const spawnAngle = planetAngle;
+        
+        // Target in orbital band (similar to resources but tighter grouping)
+        const ringInner = userData.ringInner || (userData.orbitRadius * 0.9);
+        const ringOuter = userData.ringOuter || (userData.orbitRadius * 1.1);
+        const targetDistance = ringInner + Math.random() * (ringOuter - ringInner);
+        
+        const angularSpread = (3 * planetRadius) / targetDistance;
+        const targetAngle = planetAngle + (Math.random() - 0.5) * 2 * angularSpread;
+        
+        const yOffset = (Math.random() - 0.5) * 0.1;
+        
+        const earthAU = this.planetData.earth.orbit_km / this.AU_KM;
+        const earthOrbitRadius = this.scaleAUToVisual(earthAU);
+        const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / targetDistance);
+        const orbitalSpeed = keplerSpeed * 0.85 * (0.97 + Math.random() * 0.06);
+        
+        const distanceRatio = Math.abs(targetDistance - spawnDistance) / earthOrbitRadius;
+        const baseDrift = this.particleDriftConfig.probeMassDurationDays;
+        const driftDuration = baseDrift + distanceRatio * (baseDrift * 0.5);
+        
+        return {
+            type: 'probe_particle',
+            mass: mass,
+            visualSize: visualSize * (0.85 + Math.random() * 0.30),
+            sizeClass: 'continuous',
+            spawnAngle: spawnAngle,
+            spawnDistance: spawnDistance,
+            targetAngle: targetAngle,
+            targetDistance: targetDistance,
+            yOffset: yOffset,
+            orbitalSpeed: orbitalSpeed,
+            planetOrbitalSpeed: planetOrbitalSpeed,
+            spawnTime: this.gameTime,
+            drifting: true,
+            driftDuration: driftDuration
+        };
+    }
+    
+    /**
+     * Update probe particles for all zones
+     * Shows up to 100 individual probes, rest as mass particles
+     * @param {Object} gameState - Current game state
+     */
+    updateProbeParticles(gameState) {
+        if (!gameState || !gameState.zones) return;
+        
+        const zones = gameState.zones;
+        const probeAllocations = gameState.probe_allocations || {};
+        const currentTime = gameState.time || 0;
+        const config = this.probeParticleConfig;
+        
+        Object.keys(this.resourceParticles).forEach(zoneId => {
+            const particleData = this.resourceParticleData[zoneId];
+            if (!particleData) return;
+            
+            // Initialize probe tracking for this zone
+            if (!this.probeParticles[zoneId]) {
+                this.probeParticles[zoneId] = [];
+            }
+            if (!this.individualProbes[zoneId]) {
+                this.individualProbes[zoneId] = [];
+            }
+            if (!this.pendingProbeMass[zoneId]) {
+                this.pendingProbeMass[zoneId] = 0;
+            }
+            
+            // Get current probe count for this zone
+            const currentProbeCount = probeAllocations[zoneId] || 0;
+            const prevProbeCount = this.previousProbeCount[zoneId] || 0;
+            
+            // Calculate how many individual probes to show (up to 100)
+            const individualCount = Math.min(currentProbeCount, config.maxIndividualProbes);
+            const excessProbes = Math.max(0, currentProbeCount - config.maxIndividualProbes);
+            const excessMass = excessProbes * config.probeMassKg;
+            
+            // Handle individual probes (first 100)
+            const currentIndividualProbes = this.individualProbes[zoneId];
+            
+            // Add new individual probes if count increased
+            while (currentIndividualProbes.length < individualCount) {
+                const newProbe = this.spawnIndividualProbe(zoneId, currentIndividualProbes.length);
+                if (newProbe) {
+                    currentIndividualProbes.push(newProbe);
+                }
+            }
+            
+            // Remove individual probes if count decreased
+            while (currentIndividualProbes.length > individualCount) {
+                currentIndividualProbes.pop();
+            }
+            
+            // Handle excess probes as mass particles
+            const probeParticles = this.probeParticles[zoneId];
+            const prevExcessProbes = Math.max(0, prevProbeCount - config.maxIndividualProbes);
+            const prevExcessMass = prevExcessProbes * config.probeMassKg;
+            const massChange = excessMass - prevExcessMass;
+            
+            if (massChange > 0) {
+                // Probes increased - add to pending mass
+                this.pendingProbeMass[zoneId] += massChange;
+            } else if (massChange < 0) {
+                // Probes decreased - remove particles
+                const toRemoveMass = Math.abs(massChange);
+                let remaining = toRemoveMass;
+                
+                // Remove largest particles first
+                probeParticles.sort((a, b) => (b.mass || 0) - (a.mass || 0));
+                while (remaining > 0 && probeParticles.length > 0) {
+                    const removed = probeParticles.shift();
+                    remaining -= removed.mass || config.minMass;
+                }
+            }
+            
+            // Spawn probe particles from pending mass
+            const pendingMass = this.pendingProbeMass[zoneId];
+            if (pendingMass >= config.minMass) {
+                // Calculate spawn rate
+                const expectedMass = this.getExpectedProbeParticleMass();
+                const probeProductionRate = (massChange > 0 ? massChange : 0) / Math.max(0.01, currentTime - (this.lastUpdateTime[zoneId] || 0));
+                
+                // Limit spawning to prevent bursts
+                const maxParticlesPerUpdate = 3;
+                let spawned = 0;
+                let remainingMass = pendingMass;
+                
+                while (remainingMass >= config.minMass && spawned < maxParticlesPerUpdate) {
+                    const particleMass = this.sampleProbeParticleMass();
+                    
+                    if (remainingMass >= particleMass) {
+                        const visualSize = this.probeParticleMassToVisualSize(particleMass);
+                        const particle = this.spawnProbeParticle(zoneId, particleMass, visualSize);
+                        
+                        if (particle) {
+                            probeParticles.push(particle);
+                            remainingMass -= particleMass;
+                            spawned++;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                
+                this.pendingProbeMass[zoneId] = remainingMass;
+            }
+            
+            // Update previous count
+            this.previousProbeCount[zoneId] = currentProbeCount;
+        });
+    }
+    
+    // ============== END PROBE PARTICLE METHODS ==============
+    
+    /**
      * Calculate target particle count based on mass and limits
      * Particles are spawned with sizes determined by mining rate
      * @param {number} massKg - Mass in kg (slag or metal)
      * @param {string} resourceType - 'metal' or 'slag' to determine limits
      * @param {number} maxDotsPerZone - Ignored, kept for API compatibility
-     * @returns {Object} {small: n, medium: n, large: n, xlarge: n} dot counts
+     * @returns {Object} {small: n, medium: n, large: n, xlarge: n, huge: n} dot counts
      */
     calculateDotDistribution(massKg, resourceType = 'metal', maxDotsPerZone = null) {
         if (massKg <= 0) {
-            return { small: 0, medium: 0, large: 0, xlarge: 0 };
+            return { small: 0, medium: 0, large: 0, xlarge: 0, huge: 0 };
         }
         
         // Get max particles for this resource type
@@ -2048,7 +2585,8 @@ class SolarSystem {
                 small: Math.floor(idealSmallCount),
                 medium: 0,
                 large: 0,
-                xlarge: 0
+                xlarge: 0,
+                huge: 0
             };
         }
         
@@ -2058,6 +2596,7 @@ class SolarSystem {
         let medium = 0;
         let large = 0;
         let xlarge = 0;
+        let huge = 0;
         
         // Fill small up to limit
         const maxSmall = maxParticles.small;
@@ -2067,7 +2606,7 @@ class SolarSystem {
             remaining -= smallMass;
         } else {
             small = Math.floor(remaining / this.resourceSizes.small.mass);
-            return { small, medium: 0, large: 0, xlarge: 0 };
+            return { small, medium: 0, large: 0, xlarge: 0, huge: 0 };
         }
         
         // Fill medium up to limit
@@ -2078,7 +2617,7 @@ class SolarSystem {
             remaining -= mediumMass;
         } else {
             medium = Math.floor(remaining / this.resourceSizes.medium.mass);
-            return { small, medium, large: 0, xlarge: 0 };
+            return { small, medium, large: 0, xlarge: 0, huge: 0 };
         }
         
         // Fill large up to limit
@@ -2089,7 +2628,7 @@ class SolarSystem {
             remaining -= largeMass;
         } else {
             large = Math.floor(remaining / this.resourceSizes.large.mass);
-            return { small, medium, large, xlarge: 0 };
+            return { small, medium, large, xlarge: 0, huge: 0 };
         }
         
         // Fill xlarge up to limit
@@ -2097,11 +2636,22 @@ class SolarSystem {
         const xlargeMass = maxXlarge * this.resourceSizes.xlarge.mass;
         if (remaining >= xlargeMass) {
             xlarge = maxXlarge;
+            remaining -= xlargeMass;
         } else {
             xlarge = Math.floor(remaining / this.resourceSizes.xlarge.mass);
+            return { small, medium, large, xlarge, huge: 0 };
         }
         
-        return { small, medium, large, xlarge };
+        // Fill huge up to limit (for gas giant scale masses)
+        const maxHuge = maxParticles.huge || 0;
+        const hugeMass = maxHuge * this.resourceSizes.huge.mass;
+        if (remaining >= hugeMass) {
+            huge = maxHuge;
+        } else {
+            huge = Math.floor(remaining / this.resourceSizes.huge.mass);
+        }
+        
+        return { small, medium, large, xlarge, huge };
     }
     
     /**
@@ -2137,7 +2687,7 @@ class SolarSystem {
      * in the zone's orbital band near the planet, forming a trailing debris cloud
      * @param {string} zoneId - Planet zone ID
      * @param {string} type - 'metal' or 'slag'
-     * @param {string} sizeClass - 'small', 'medium', 'large', or 'xlarge'
+     * @param {string} sizeClass - 'small', 'medium', 'large', 'xlarge', or 'huge'
      * @returns {Object} New particle data
      */
     spawnResourceParticle(zoneId, type, sizeClass = 'small') {
@@ -2200,13 +2750,45 @@ class SolarSystem {
         const orbitalSpeed = keplerSpeed * 0.80 * (0.97 + Math.random() * 0.06);
         
         // Drift duration scales with distance traveled (further = longer drift)
-        // Base duration is longer for a slow, gentle drift into orbit
+        // Duration is in game days for a slow, gentle drift into orbit
         const distanceRatio = Math.abs(targetDistance - spawnDistance) / earthOrbitRadius;
-        const driftDuration = 60.0 + distanceRatio * 60.0; // 45-69+ seconds for very slow drift
+        const baseDrift = this.particleDriftConfig.resourceBaseDurationDays;
+        const scalingDrift = this.particleDriftConfig.resourceDistanceScalingDays;
+        const driftDuration = baseDrift + distanceRatio * scalingDrift;
+        
+        // Generate size variance for visual variety while maintaining mass accuracy
+        // Smaller tiers get more variance for visual interest; larger tiers stay more consistent
+        // Use a distribution that favors the base size but allows for occasional outliers
+        let sizeVariance;
+        switch (sizeClass) {
+            case 'small':
+                // Wide variance for small particles: 0.4 to 2.0 (lots of dust to small rocks)
+                sizeVariance = 0.4 + Math.pow(Math.random(), 0.7) * 1.6;
+                break;
+            case 'medium':
+                // Moderate variance: 0.6 to 1.6
+                sizeVariance = 0.6 + Math.pow(Math.random(), 0.8) * 1.0;
+                break;
+            case 'large':
+                // Less variance: 0.75 to 1.35
+                sizeVariance = 0.75 + Math.random() * 0.6;
+                break;
+            case 'xlarge':
+                // Minimal variance for massive objects: 0.85 to 1.15
+                sizeVariance = 0.85 + Math.random() * 0.3;
+                break;
+            case 'huge':
+                // Very minimal variance for gas giant scale objects: 0.9 to 1.1
+                sizeVariance = 0.9 + Math.random() * 0.2;
+                break;
+            default:
+                sizeVariance = 1.0;
+        }
         
         return {
             type: type,
-            sizeClass: sizeClass, // 'small', 'medium', 'large', or 'xlarge'
+            sizeClass: sizeClass, // 'small', 'medium', 'large', 'xlarge', or 'huge'
+            sizeVariance: sizeVariance, // Visual size multiplier (doesn't affect mass accounting)
             // Spawn position (at planet)
             spawnAngle: spawnAngle,
             spawnDistance: spawnDistance,
@@ -2217,8 +2799,95 @@ class SolarSystem {
             orbitalSpeed: orbitalSpeed,
             // Planet's orbital speed at spawn time (particles inherit this and blend to their own speed)
             planetOrbitalSpeed: planetOrbitalSpeed,
-            // Animation state
-            spawnTime: this.time,
+            // Animation state (times in game days)
+            spawnTime: this.gameTime,
+            drifting: true,
+            driftDuration: driftDuration
+        };
+    }
+    
+    /**
+     * Spawn a resource particle with explicit mass and visual size (exponential distribution mode)
+     * This is the new preferred method using continuous size distribution
+     * @param {string} zoneId - Planet zone ID
+     * @param {string} type - 'metal', 'slag', or 'methalox'
+     * @param {number} mass - Particle mass in kg
+     * @param {number} visualSize - Visual size for rendering
+     * @returns {Object} New particle data with mass and size
+     */
+    spawnResourceParticleWithMass(zoneId, type, mass, visualSize) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) return null;
+        
+        const userData = particleSystem.userData;
+        const planet = this.planets[zoneId];
+        
+        // Get planet's current orbital angle (or random for belt zones)
+        const planetAngle = planet?.userData?.orbitalAngle || (Math.random() * Math.PI * 2);
+        const planetRadius = userData.planetRadius;
+        
+        // Get planet's orbital speed (particles inherit this initially)
+        const planetOrbitalSpeed = planet?.userData?.orbitalSpeed || 0.008;
+        
+        // Start position: at the planet/body location
+        const spawnDistance = userData.orbitRadius;
+        const spawnAngle = planetAngle;
+        
+        // Check if this is a gas giant
+        const isGasGiant = this.gasGiants?.includes(zoneId);
+        
+        let targetDistance, targetAngle;
+        
+        if (isGasGiant) {
+            const radiusSpread = planetRadius * (2 + Math.random() * 3);
+            const sign = Math.random() < 0.5 ? -1 : 1;
+            targetDistance = userData.orbitRadius + sign * radiusSpread;
+            const angularSpread = (4 * planetRadius) / targetDistance;
+            targetAngle = planetAngle + (Math.random() - 0.5) * 2 * angularSpread;
+        } else {
+            const ringInner = userData.ringInner || (userData.orbitRadius * 0.8);
+            const ringOuter = userData.ringOuter || (userData.orbitRadius * 1.2);
+            targetDistance = ringInner + Math.random() * (ringOuter - ringInner);
+            const angularSpread = (5 * planetRadius) / targetDistance;
+            targetAngle = planetAngle + (Math.random() - 0.5) * 2 * angularSpread;
+        }
+        
+        // Small vertical offset for disc thickness
+        const yOffset = (Math.random() - 0.5) * 0.15;
+        
+        // Orbital speed based on Kepler's law at target distance
+        const earthAU = this.planetData.earth.orbit_km / this.AU_KM;
+        const earthOrbitRadius = this.scaleAUToVisual(earthAU);
+        const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / targetDistance);
+        const orbitalSpeed = keplerSpeed * 0.80 * (0.97 + Math.random() * 0.06);
+        
+        // Drift duration scales with distance traveled
+        const distanceRatio = Math.abs(targetDistance - spawnDistance) / earthOrbitRadius;
+        const baseDrift = this.particleDriftConfig.resourceBaseDurationDays;
+        const scalingDrift = this.particleDriftConfig.resourceDistanceScalingDays;
+        const driftDuration = baseDrift + distanceRatio * scalingDrift;
+        
+        // Add small visual size variance for natural look (±15%)
+        const sizeVariance = 0.85 + Math.random() * 0.30;
+        
+        return {
+            type: type,
+            mass: mass,                    // Actual mass in kg
+            visualSize: visualSize * sizeVariance,  // Visual size for rendering
+            // For backwards compatibility with discrete tier system
+            sizeClass: 'continuous',
+            sizeVariance: 1.0,
+            // Spawn position (at planet)
+            spawnAngle: spawnAngle,
+            spawnDistance: spawnDistance,
+            // Target position
+            targetAngle: targetAngle,
+            targetDistance: targetDistance,
+            yOffset: yOffset,
+            orbitalSpeed: orbitalSpeed,
+            planetOrbitalSpeed: planetOrbitalSpeed,
+            // Animation state (times in game days)
+            spawnTime: this.gameTime,
             drifting: true,
             driftDuration: driftDuration
         };
@@ -2228,12 +2897,14 @@ class SolarSystem {
      * Create a "mass driver" particle that shoots out from a planet along a Hohmann transfer
      * This animation is used for launching material to the Dyson sphere
      * Particle shoots out from planet position and decelerates into target orbit
+     * Uses unified Pareto distribution for mass/size (same as mining/recycling)
      * @param {string} fromZoneId - Source planet zone ID
      * @param {number} targetOrbitRadius - Target orbital radius (e.g., Dyson sphere)
      * @param {string} type - 'metal' or 'slag'
+     * @param {number} massKg - Optional specific mass in kg (uses sampled if not provided)
      * @returns {Object} New particle data with Hohmann transfer parameters
      */
-    spawnMassDriverParticle(fromZoneId, targetOrbitRadius, type) {
+    spawnMassDriverParticle(fromZoneId, targetOrbitRadius, type, massKg = null) {
         const particleSystem = this.resourceParticles[fromZoneId];
         if (!particleSystem) return null;
         
@@ -2256,30 +2927,39 @@ class SolarSystem {
         const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / targetOrbitRadius);
         const orbitalSpeed = keplerSpeed * (0.95 + Math.random() * 0.1);
         
+        // Use unified Pareto distribution for mass and visual size (same as mining/recycling)
+        const mass = massKg !== null ? massKg : this.sampleParticleMassExponential();
+        const visualSize = this.massToVisualSize(mass);
+        // Add small variance for visual variety (±15%)
+        const sizeVariance = 0.85 + Math.random() * 0.30;
+        
         return {
             type: type,
-            sizeClass: 'medium', // Mass driver particles use medium size by default
+            mass: mass,                        // Actual mass in kg (for mass conservation)
+            visualSize: visualSize * sizeVariance,  // Visual size for rendering
+            sizeClass: 'continuous',           // Uses continuous distribution (not discrete tiers)
+            sizeVariance: 1.0,                 // Already applied above
             // Target orbital parameters (at Dyson sphere)
             targetAngle: targetAngle,
             targetDistance: targetOrbitRadius,
             yOffset: yOffset,
             orbitalSpeed: orbitalSpeed,
-            // Spawn state: starts at planet position
-            spawnTime: this.time,
+            // Spawn state: starts at planet position (times in game days)
+            spawnTime: this.gameTime,
             spawnAngle: planetAngle,
             spawnDistance: planetOrbitRadius,
             drifting: true, // Uses drift animation to simulate Hohmann transfer
-            driftDuration: 5.0 // Longer duration for dramatic effect
+            driftDuration: this.particleDriftConfig.massDriverDurationDays
         };
     }
     
     /**
      * Count particles by size class in an array
      * @param {Array} particles - Array of particle objects
-     * @returns {Object} {small: n, medium: n, large: n, xlarge: n}
+     * @returns {Object} {small: n, medium: n, large: n, xlarge: n, huge: n}
      */
     countParticlesBySize(particles) {
-        const counts = { small: 0, medium: 0, large: 0, xlarge: 0 };
+        const counts = { small: 0, medium: 0, large: 0, xlarge: 0, huge: 0 };
         particles.forEach(p => {
             const sizeClass = p.sizeClass || 'small';
             if (counts.hasOwnProperty(sizeClass)) {
@@ -2361,129 +3041,104 @@ class SolarSystem {
             const maxSlagParticles = this.maxParticlesByType.slag;
             const maxMethaloxParticles = this.maxParticlesByType.methalox;
             
-            // Helper function to gradually spawn particles from pending mass
-            // Uses time-based rate limiting to prevent bursts
+            // Helper function to gradually spawn particles using exponential distribution
+            // Produces natural "many small, few large" particle sizes
+            // Spawn rate is controlled to prevent visual overload
             const spawnParticlesGradually = (particles, pendingMass, miningRate, resourceType, maxParticles) => {
                 if (pendingMass <= 0) return pendingMass;
                 
-                // Determine particle size based on mining rate
-                const sizeClass = this.determineParticleSizeFromRate(miningRate);
-                const particleMass = this.resourceSizes[sizeClass].mass;
+                const config = this.particleDistribution;
                 
-                // Calculate spawn rate: at low mining rates, spawn less frequently
-                // Base spawn interval: how often to check for spawning (in days)
-                // Higher mining rate = more frequent spawns, but still gradual
-                const minSpawnInterval = 0.001; // Minimum 0.001 days (~1.4 minutes) between spawn checks
-                const maxSpawnInterval = 0.1;   // Maximum 0.1 days (~2.4 hours) between spawn checks
-                
-                // Scale spawn interval inversely with mining rate (higher rate = shorter interval)
-                // Use log scale to handle wide range of rates
-                let spawnInterval = maxSpawnInterval;
-                if (miningRate > 0) {
-                    const logRate = Math.log10(Math.max(1, miningRate));
-                    // Map logRate (0-20+) to interval (maxSpawnInterval to minSpawnInterval)
-                    const normalizedRate = Math.min(1, logRate / 15); // Normalize to 0-1
-                    spawnInterval = maxSpawnInterval - (maxSpawnInterval - minSpawnInterval) * normalizedRate;
-                }
+                // Calculate target spawn rate based on mining rate
+                const spawnRate = this.calculateParticleSpawnRate(miningRate);
+                const spawnInterval = 1.0 / spawnRate; // Days between spawns
                 
                 // Check if enough time has passed since last spawn
                 const lastSpawnKey = `${zoneId}_${resourceType}_lastSpawn`;
                 if (!this.lastSpawnTime) this.lastSpawnTime = {};
                 const lastSpawn = this.lastSpawnTime[lastSpawnKey] || 0;
+                const timeSinceSpawn = currentTime - lastSpawn;
                 
                 // Only spawn if enough time has passed (rate limiting)
-                if (deltaTime < spawnInterval && lastSpawn > 0) {
+                if (timeSinceSpawn < spawnInterval && lastSpawn > 0) {
                     return pendingMass; // Not time to spawn yet
                 }
                 
-                // Calculate how many particles we can spawn based on pending mass
-                const currentCounts = this.countParticlesBySize(particles);
-                const currentOfSize = currentCounts[sizeClass] || 0;
-                const maxOfSize = maxParticles[sizeClass] || 0;
-                
-                // Check if we can spawn particles of this size
-                if (currentOfSize >= maxOfSize) {
-                    // At max for this size, try smaller sizes
-                    const sizeOrder = ['small', 'medium', 'large', 'xlarge'];
-                    const sizeIndex = sizeOrder.indexOf(sizeClass);
-                    for (let i = sizeIndex - 1; i >= 0; i--) {
-                        const trySize = sizeOrder[i];
-                        const tryMax = maxParticles[trySize] || 0;
-                        const tryCurrent = currentCounts[trySize] || 0;
-                        const tryMass = this.resourceSizes[trySize].mass;
-                        
-                        if (tryCurrent < tryMax && pendingMass >= tryMass) {
-                            // Spawn one particle of this smaller size
-                            const particle = this.spawnResourceParticle(zoneId, resourceType, trySize);
-                            if (particle) {
-                                particles.push(particle);
-                                this.lastSpawnTime[lastSpawnKey] = currentTime;
-                                return pendingMass - tryMass; // Return remaining pending mass
-                            }
-                        }
-                    }
-                    // Can't spawn any particles (all sizes at max)
+                // Check total particle count limit
+                if (particles.length >= this.maxResourceParticles) {
                     return pendingMass;
                 }
                 
-                // Spawn particles if we have enough pending mass
-                // Limit to 1-3 particles per spawn to keep it gradual
-                const maxParticlesPerSpawn = Math.min(3, Math.ceil(miningRate / 1e9)); // More at higher rates, but capped
-                if (pendingMass >= particleMass) {
-                    const numParticles = Math.min(
-                        Math.floor(pendingMass / particleMass),
-                        maxOfSize - currentOfSize,
-                        maxParticlesPerSpawn // Rate limit per spawn
-                    );
+                // Calculate how many particles to spawn this update
+                // Allow catching up if we're behind, but cap to prevent bursts
+                const catchUpParticles = Math.floor(timeSinceSpawn / spawnInterval);
+                const maxParticlesPerUpdate = 3; // Cap to prevent sudden bursts
+                const particlesToSpawn = Math.min(maxParticlesPerUpdate, Math.max(1, catchUpParticles));
+                
+                let spawned = 0;
+                for (let i = 0; i < particlesToSpawn && pendingMass > config.minMass; i++) {
+                    // Sample mass from exponential distribution
+                    const particleMass = this.sampleParticleMassExponential(miningRate);
                     
-                    for (let i = 0; i < numParticles; i++) {
-                        const particle = this.spawnResourceParticle(zoneId, resourceType, sizeClass);
+                    // Only spawn if we have enough pending mass
+                    if (pendingMass >= particleMass) {
+                        // Calculate visual size from mass
+                        const visualSize = this.massToVisualSize(particleMass);
+                        
+                        // Spawn particle with sampled mass and size
+                        const particle = this.spawnResourceParticleWithMass(zoneId, resourceType, particleMass, visualSize);
+                        
                         if (particle) {
                             particles.push(particle);
                             pendingMass -= particleMass;
+                            spawned++;
                         }
                     }
-                    
-                    if (numParticles > 0) {
-                        this.lastSpawnTime[lastSpawnKey] = currentTime;
-                    }
+                }
+                
+                if (spawned > 0) {
+                    this.lastSpawnTime[lastSpawnKey] = currentTime;
                 }
                 
                 return pendingMass;
             };
             
             // Helper function to remove particles when mass decreases
+            // Handles both continuous mass particles and legacy discrete tier particles
             const removeParticlesForDecrease = (particles, massDecrease) => {
                 if (massDecrease >= 0) return;
                 
                 const toRemoveMass = Math.abs(massDecrease);
                 let remainingToRemove = toRemoveMass;
                 
-                // Remove largest particles first: xlarge -> large -> medium -> small
-                const sizeOrder = ['xlarge', 'large', 'medium', 'small'];
+                // Sort all particles by mass (largest first) for efficient removal
+                // For continuous particles, use actual mass; for discrete, use tier mass
+                const particlesWithMass = particles.map((p, idx) => ({
+                    particle: p,
+                    index: idx,
+                    mass: p.mass !== undefined ? p.mass : 
+                          (this.resourceSizes[p.sizeClass || 'small']?.mass || this.resourceSizes.small.mass),
+                    spawnTime: p.spawnTime || 0
+                }));
                 
-                for (const sizeClass of sizeOrder) {
+                // Sort by mass descending, then by spawn time ascending (oldest first within same mass)
+                particlesWithMass.sort((a, b) => {
+                    if (b.mass !== a.mass) return b.mass - a.mass;
+                    return a.spawnTime - b.spawnTime;
+                });
+                
+                // Remove particles until we've accounted for the mass decrease
+                const indicesToRemove = [];
+                for (const item of particlesWithMass) {
                     if (remainingToRemove <= 0) break;
-                    
-                    const particleMass = this.resourceSizes[sizeClass].mass;
-                    const particlesOfSize = particles.filter(p => (p.sizeClass || 'small') === sizeClass);
-                    
-                    if (particlesOfSize.length === 0) continue;
-                    
-                    // Sort by spawn time (oldest first)
-                    particlesOfSize.sort((a, b) => a.spawnTime - b.spawnTime);
-                    
-                    // Remove particles until we've accounted for the mass decrease
-                    while (remainingToRemove > 0 && particlesOfSize.length > 0) {
-                        const index = particles.indexOf(particlesOfSize[0]);
-                        if (index >= 0) {
-                            particles.splice(index, 1);
-                            particlesOfSize.shift();
-                            remainingToRemove -= particleMass;
-                        } else {
-                            break;
-                        }
-                    }
+                    indicesToRemove.push(item.index);
+                    remainingToRemove -= item.mass;
+                }
+                
+                // Remove in reverse index order to avoid shifting issues
+                indicesToRemove.sort((a, b) => b - a);
+                for (const idx of indicesToRemove) {
+                    particles.splice(idx, 1);
                 }
             };
             
@@ -2579,7 +3234,16 @@ class SolarSystem {
         
         if (!particleSystem || !particleData) return;
         
-        const allParticles = [...particleData.metal, ...particleData.slag, ...particleData.methalox];
+        // Combine all particle types: resources + individual probes + probe particles
+        const probeParticles = this.probeParticles[zoneId] || [];
+        const individualProbes = this.individualProbes[zoneId] || [];
+        const allParticles = [
+            ...particleData.metal, 
+            ...particleData.slag, 
+            ...particleData.methalox,
+            ...individualProbes,
+            ...probeParticles
+        ];
         const positions = particleSystem.geometry.attributes.position.array;
         const colors = particleSystem.geometry.attributes.color.array;
         const sizeAttr = particleSystem.geometry.attributes.size;
@@ -2587,7 +3251,7 @@ class SolarSystem {
         
         for (let i = 0; i < allParticles.length && i < this.maxResourceParticles; i++) {
             const p = allParticles[i];
-            const timeSinceSpawn = this.time - p.spawnTime;
+            const timeSinceSpawn = this.gameTime - p.spawnTime;
             let currentAngle, currentDistance;
             
             if (p.drifting) {
@@ -2617,12 +3281,12 @@ class SolarSystem {
                     // Store final position for orbiting and the time when drift ended
                     p.orbitAngle = currentAngle;
                     p.orbitDistance = p.targetDistance;
-                    p.driftEndTime = this.time; // Track when drift ended for continuous orbital motion
+                    p.driftEndTime = this.gameTime; // Track when drift ended for continuous orbital motion
                 }
             } else {
                 // Particle has settled into orbit - continues orbiting at target distance
                 // Only add orbital motion for time AFTER drift ended (avoid double-counting)
-                const timeSinceDriftEnd = this.time - (p.driftEndTime || p.spawnTime);
+                const timeSinceDriftEnd = this.gameTime - (p.driftEndTime || p.spawnTime);
                 const orbitalOffset = Math.max(0, timeSinceDriftEnd) * p.orbitalSpeed;
                 currentAngle = (p.orbitAngle || p.targetAngle) + orbitalOffset;
                 currentDistance = p.orbitDistance || p.targetDistance;
@@ -2643,6 +3307,8 @@ class SolarSystem {
                 color = this.resourceColors.metal;
             } else if (p.type === 'methalox') {
                 color = this.resourceColors.methalox;
+            } else if (p.type === 'individual_probe' || p.type === 'probe_particle') {
+                color = this.probeParticleConfig.color;
             } else {
                 color = this.resourceColors.slag;
             }
@@ -2653,10 +3319,18 @@ class SolarSystem {
             colors[i * 3 + 1] = Math.max(0, Math.min(1, color.g + (varSeed - 0.5) * variation));
             colors[i * 3 + 2] = Math.max(0, Math.min(1, color.b + (varSeed - 0.5) * variation));
             
-            // Set size based on sizeClass
+            // Set size: use visualSize for continuous distribution, or sizeClass for discrete tiers
             if (sizes) {
-                const sizeClass = p.sizeClass || 'small';
-                sizes[i] = this.resourceSizes[sizeClass]?.size || this.resourceSizes.small.size;
+                if (p.visualSize !== undefined) {
+                    // New continuous distribution mode
+                    sizes[i] = p.visualSize;
+                } else {
+                    // Legacy discrete tier mode
+                    const sizeClass = p.sizeClass || 'small';
+                    const baseSize = this.resourceSizes[sizeClass]?.size || this.resourceSizes.small.size;
+                    const variance = p.sizeVariance || 1.0;
+                    sizes[i] = baseSize * variance;
+                }
             }
         }
         
@@ -2670,6 +3344,12 @@ class SolarSystem {
 
     update(deltaTime) {
         this.time += deltaTime;
+        
+        // Interpolate game time for smooth particle animation between game state updates
+        // deltaTime is in render seconds (0.016 * timeSpeed), game time is in days
+        // At 1x speed: 60 ticks = 1 day = ~1 real second, so 1 day ≈ 0.96 render seconds
+        // Convert: gameTimeDelta = deltaTime / 0.96 ≈ deltaTime * 1.04
+        this.gameTime += deltaTime * 1.04;
 
         // Update sun rays animation
         if (this.sunRays && this.sunRays.material.uniforms) {
@@ -2918,6 +3598,9 @@ class SolarSystem {
     updateZoneDepletion(gameState) {
         if (!gameState || !gameState.zones) return;
 
+        // Update game time for particle animations (proportional to in-game ticks)
+        this.gameTime = gameState.time || 0;
+
         const zones = gameState.zones || {};
         
         // Update zone clouds
@@ -2931,6 +3614,10 @@ class SolarSystem {
         // Update resource particles (metal and slag orbiting planets)
         // Spawns new particles when resources increase, removes when consumed
         this.updateResourceParticles(gameState);
+        
+        // Update probe particles (individual probes up to 100, then mass particles)
+        // Uses same Pareto distribution as resources for visual consistency
+        this.updateProbeParticles(gameState);
 
         // Update visual appearance based on mass remaining
         Object.keys(this.planets).forEach(zoneId => {

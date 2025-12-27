@@ -1,12 +1,17 @@
 {
   "description": "Consolidated economic rules for game balancing. All base rates, skill coefficients, and scaling factors in one place.",
   
+  "research": {
+    "exponential_decay_factor": 0.857,
+    "description": "Each subsequent tier's skill benefit is multiplied by this factor. At tier 9 (index 8), benefit is 0.857^8 ≈ 0.30 (30%) of tier 1's benefit. This creates diminishing returns for deep research in a single tree."
+  },
+  
   "probe": {
     "mass_kg": 100,
-    "base_mining_rate_kg_per_day": 100,
-    "base_build_rate_kg_per_day": 20,
+    "base_mining_rate_kg_per_day": 80,
+    "base_build_rate_kg_per_day": 10,
     "base_energy_production_w": 250000,
-    "base_energy_cost_mining_w": 250000,
+    "base_energy_cost_mining_w": 500000,
     "base_energy_cost_recycle_slag_w": 250000,
     "base_compute_pflops": 100,
     "base_compute_description": "Each probe has 100 PFLOPs of onboard compute, upgradeable through intelligence research"
@@ -236,49 +241,43 @@
     "probe_delta_v_capacity": {
       "description": "Probe delta-v capacity for orbital transfers",
       "propulsion": 1.2,
-      "materials": 0.5,
-      "thrust": 0.6,
-      "energy": 0.5,
-      "robotics": 0.5
+      "thrust": 0.8,
+      "materials": 0.3,
+      "energy": 0.3,
+      "robotics": 0.2
     },
     
     "mass_driver_muzzle_velocity": {
-      "description": "Mass driver muzzle velocity (delta-v capacity in km/s)",
-      "energy_converter": 1.0,
-      "propulsion": 0.9,
-      "thrust": 0.5,
-      "materials": 0.6,
+      "description": "Mass driver muzzle velocity (km/s)",
+      "energy_converter": 1.5,
       "energy_storage": 1.0,
-      "thermal_management": 0.4,
+      "thermal_management": 0.65,
       "strength": 0.5,
-      "sensors": 0.4,
-      "cpu": 0.3,
-      "production": 0.3
+      "materials": 0.35,
+      "propulsion": 0.2,
+      "thrust": 0.2,
+      "cpu": 0.15
     },
     
     "mass_driver_power": {
       "description": "Mass driver power capacity (MW)",
-      "solar_pv": 1.0,
-      "energy_transport": 0.9,
+      "energy_transport": 1.0,
       "energy_storage": 1.0,
-      "thermal_management": 0.5,
-      "robotics": 0.4,
-      "energy_converter": 0.7,
-      "strength": 0.4,
-      "cpu": 0.3,
-      "gpu": 0.2
+      "thermal_management": 0.3,
+      "energy_converter": 0.15,
+      "robotics": 0.15,
+      "strength": 0.15,
+      "cpu": 0.05,
+      "gpu": 0.05
     },
     
     "mass_driver_efficiency": {
       "description": "Mass driver energy efficiency (% of input energy converted to kinetic)",
       "energy_converter": 1.0,
-      "energy_transport": 0.8,
-      "energy_storage": 0.8,
-      "thermal_management": 0.5,
-      "radiator": 0.8,
-      "heat_pump": 0.5,
-      "sensors": 0.3,
-      "cpu": 0.3
+      "energy_transport": 0.6,
+      "energy_storage": 0.55,
+      "radiator": 0.6,
+      "heat_pump": 0.2
     },
     
     "methalox_production": {
@@ -306,7 +305,13 @@
     "description": "Diminishing returns for probe count within each zone. Each doubling of probe count reduces efficiency. Formula: efficiency = (1 - penalty_per_doubling)^log2(probe_count). Compute upgrades reduce the penalty from base to min.",
     "base_penalty_per_doubling": 0.005,
     "min_penalty_per_doubling": 0.001,
-    "compute_skill_threshold": 6.19
+    "compute_skill_threshold": 3.18
+  },
+  
+  "global_replication_scaling": {
+    "description": "Global penalty to probe replication rate based on total probe count. After threshold, each order of magnitude (10x) growth halves replication rate. Formula: efficiency = halving_factor^max(0, log10(totalProbes) - log10(threshold)). At 1e13: 50% rate, at 1e14: 25% rate, etc.",
+    "threshold": 1e12,
+    "halving_factor": 0.5
   },
   
   "time": {
@@ -316,6 +321,61 @@
   
   "propulsion": {
     "base_isp_seconds": 500
+  },
+
+  "particle_visualization": {
+    "description": "Unified Pareto distribution for all particle visualizations (mining, recycling, replication, mass transfers). Uses power-law distribution: many small particles, few large ones. Applied consistently across metal, slag, methalox, and probes.",
+    
+    "mass_distribution": {
+      "min_mass_kg": 1e6,
+      "max_mass_kg": 1e22,
+      "shape_parameter": 1.15,
+      "description": "Pareto distribution with α = 1.15 gives heavy tail. Range spans 16 orders of magnitude from 1 megakilogram (1000 tonnes) to 10 zettakilograms (planet-chunk scale). With truncation at max_mass, effective expected value ≈ 1e21 kg."
+    },
+    
+    "visual_size": {
+      "min_size": 0.05,
+      "max_size": 3.5,
+      "scaling": "logarithmic",
+      "size_exponent": 0.4,
+      "description": "Logarithmic scaling from mass to visual size. size = minSize * (maxSize/minSize)^(t^exponent) where t = (log₁₀(mass) - 6) / 16. Exponent < 1 shifts distribution toward larger sizes. Default 0.4 gives good visual presence for particles."
+    },
+    
+    "spawn_rate": {
+      "min_rate_per_day": 0.5,
+      "max_rate_per_day": 15,
+      "description": "Particles spawned per game day, capped to prevent visual overload while maintaining proportionality to production rates."
+    },
+    
+    "colors": {
+      "metal": "#C0C0C0",
+      "slag": "#5C4033",
+      "methalox": "#7EC8E3",
+      "probe": "#88FFFF",
+      "description": "metal=silver, slag=brown-grey, methalox=pale-blue, probe=light-cyan"
+    },
+    
+    "probe_individual": {
+      "max_individual_count": 300,
+      "individual_size": 0.4,
+      "transfer_size": 0.4,
+      "description": "First N probes at each zone are shown as individual dots with fixed size. Remaining probes are visualized as mass particles using the unified distribution. Transfer size is for probes in transit."
+    },
+    
+    "drift_animation": {
+      "resource_base_duration_days": 90,
+      "resource_distance_scaling_days": 50,
+      "probe_individual_duration_days": 5,
+      "probe_mass_duration_days": 30,
+      "mass_driver_duration_days": 36,
+      "description": "Duration in game days for particles to drift from spawn point to orbital position. driftDuration = base + distanceRatio * scaling"
+    },
+    
+    "calibration": {
+      "jupiter_mass_kg": 1.898e27,
+      "target_particle_count": 800000,
+      "description": "Distribution calibrated so Jupiter's full mass converts to approximately 800,000 particles. E[X] = α * minMass / (α - 1) with truncation."
+    }
   }
 }
 

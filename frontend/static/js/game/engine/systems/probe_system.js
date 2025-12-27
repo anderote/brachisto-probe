@@ -97,8 +97,13 @@ class ProbeSystem {
                 // Uses pre-calculated upgrade factors from state
                 // Applies zone crowding penalty and probe count scaling penalty
                 const replicationRate = this.productionCalculator.calculateBuildingRate(replicatingProbes, newState, zoneId, totalProbes);
-                // Apply energy throttle and mass throttle to replication rate
-                const throttledReplicationRate = replicationRate * energyThrottle * massThrottle;
+                
+                // Calculate global probe count for global replication scaling penalty
+                const globalProbeCount = this.calculateGlobalProbeCount(newState);
+                const globalScalingPenalty = this.productionCalculator.calculateGlobalReplicationScalingPenalty(globalProbeCount);
+                
+                // Apply energy throttle, mass throttle, and global scaling penalty to replication rate
+                const throttledReplicationRate = replicationRate * energyThrottle * massThrottle * globalScalingPenalty;
                 this.processReplication(newState, zoneId, throttledReplicationRate, deltaTime);
             }
         }
@@ -216,6 +221,25 @@ class ProbeSystem {
      */
     calculateTotalDexterity(state, skills) {
         return this.productionCalculator.calculateTotalDexterity(state.probes_by_zone || {}, skills);
+    }
+    
+    /**
+     * Calculate total probe count across all zones
+     * @param {Object} state - Game state
+     * @returns {number} Total probe count globally
+     */
+    calculateGlobalProbeCount(state) {
+        const probesByZone = state.probes_by_zone || {};
+        let totalProbes = 0;
+        
+        for (const zoneId in probesByZone) {
+            const zoneProbes = probesByZone[zoneId];
+            for (const probeType in zoneProbes) {
+                totalProbes += zoneProbes[probeType] || 0;
+            }
+        }
+        
+        return totalProbes;
     }
 }
 

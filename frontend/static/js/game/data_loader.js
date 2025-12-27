@@ -133,6 +133,56 @@ class GameDataLoader {
         return this.economicRules.crowding;
     }
 
+    /**
+     * Get particle visualization configuration
+     * Returns unified Pareto distribution parameters for all particle types
+     * (mining, recycling, replication, mass transfers)
+     */
+    getParticleVisualization() {
+        if (!this.economicRules || !this.economicRules.particle_visualization) {
+            // Fallback defaults matching the JSON config
+            return {
+                mass_distribution: {
+                    min_mass_kg: 1e6,
+                    max_mass_kg: 1e22,
+                    shape_parameter: 1.15
+                },
+                visual_size: {
+                    min_size: 0.05,
+                    max_size: 3.5,
+                    scaling: 'logarithmic'
+                },
+                spawn_rate: {
+                    min_rate_per_day: 0.5,
+                    max_rate_per_day: 15
+                },
+                colors: {
+                    metal: '#C0C0C0',
+                    slag: '#5C4033',
+                    methalox: '#7EC8E3',
+                    probe: '#88FFFF'
+                },
+                probe_individual: {
+                    max_individual_count: 300,
+                    individual_size: 0.25,
+                    transfer_size: 0.25
+                },
+                drift_animation: {
+                    resource_base_duration_days: 90,
+                    resource_distance_scaling_days: 50,
+                    probe_individual_duration_days: 5,
+                    probe_mass_duration_days: 30,
+                    mass_driver_duration_days: 36
+                },
+                calibration: {
+                    jupiter_mass_kg: 1.898e27,
+                    target_particle_count: 800000
+                }
+            };
+        }
+        return this.economicRules.particle_visualization;
+    }
+
     getZoneById(zoneId) {
         if (!this.orbitalZones) {
             return null;

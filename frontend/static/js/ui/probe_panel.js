@@ -791,16 +791,6 @@ class ProbePanel {
         massDriverContent += renderModifierBreakdown(massDriverData.efficiencyModifiers, 'Skill Modifiers (weight × bonus)');
         massDriverContent += '</div>';
         
-        // Transfer Speed (fixed benefit from mass drivers)
-        massDriverContent += '<div style="font-size: 9px; color: rgba(74, 158, 255, 0.9); margin-bottom: 6px; margin-top: 8px; font-weight: 600;">Transfer Time Reduction</div>';
-        massDriverContent += '<div class="probe-summary-breakdown-item" style="margin-bottom: 4px;">';
-        massDriverContent += `<span class="probe-summary-breakdown-label" style="font-size: 10px;">Speed Boost:</span> `;
-        massDriverContent += `<span class="probe-summary-breakdown-count" style="font-size: 10px; color: rgba(100, 200, 100, 0.9);">2x faster (50% travel time)</span>`;
-        massDriverContent += '</div>';
-        massDriverContent += '<div style="margin-left: 12px; margin-top: 4px;">';
-        massDriverContent += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">Fixed bonus when mass driver present in zone</div>`;
-        massDriverContent += '</div>';
-        
         html += this.renderCategorySection('mass_driver', 'Mass Driver Performance', massDriverContent);
 
         // Section 4: Onboard Compute Power

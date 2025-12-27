@@ -11,8 +11,8 @@ class OrbitalZoneSelector {
         this.currentTransferDialog = null; // Reference to open transfer dialog
         this.transferArcs = []; // Active transfer arcs: [{from, to, type, count, rate, ...}]
         
-        // Transfer menu mode: 'probe' (default, 1 probe one-time) or 'metal' (10% continuous)
-        this.transferMenuMode = null; // null = closed, 'probe' or 'metal' = open
+        // Transfer menu mode: 'probe' (default, 1 probe one-time), 'metal' (10% continuous), or 'methalox' (10% continuous)
+        this.transferMenuMode = null; // null = closed, 'probe', 'metal', or 'methalox' = open
         this.transferMenuOpen = false; // Whether transfer menu (delta-v window) is open
         
         // Local calculation instances for UI (loaded separately from worker thread)
@@ -36,6 +36,12 @@ class OrbitalZoneSelector {
         // Transfer arc animation interval (10 times per second = 100ms)
         this.transferArcAnimationInterval = null;
         this.transferArcUpdateRate = 100; // milliseconds (10 times per second)
+        
+        // Current mass rate for chart display (set by updateTransferDetails for metal/methalox)
+        this.currentMassRateKgPerDay = 0;
+        
+        // Current probe count for chart display (set by probe slider for probe transfers)
+        this.currentProbeTransferCount = 0;
         
         this.init();
         this.loadData();
@@ -394,6 +400,287 @@ class OrbitalZoneSelector {
     }
     
     /**
+     * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * @param {string} skillName - Skill name from economic rules
+     * @returns {string} Canonical skill name
+     */
+    resolveSkillAlias(skillName) {
+        const aliasMap = {
+            'energy_storage': 'battery_density',
+            'thermal_management': 'radiator',
+            'robotics': 'manipulation',
+            'robotic': 'manipulation',
+            'energy': 'solar_pv',
+            'energy_collection': 'solar_pv',
+            'materials_science': 'materials'
+        };
+        return aliasMap[skillName] || skillName;
+    }
+    
+    /**
+     * Get skill display name from SKILL_DEFINITIONS
+     * @param {string} skillName - Skill name
+     * @returns {string} Display name
+     */
+    getSkillDisplayName(skillName) {
+        if (typeof SKILL_DEFINITIONS !== 'undefined') {
+            const skillDef = SKILL_DEFINITIONS[skillName];
+            if (skillDef) return skillDef.displayName || skillName;
+        }
+        // Fallback to formatted name
+        return skillName.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+    
+    /**
+     * Calculate upgrade factor with detailed skill breakdown from economic rules
+     * @param {string} category - Category name from economic_rules.json
+     * @param {Object} skills - Current skills object
+     * @returns {Object} { upgradeFactor, modifiers[] }
+     */
+    calculateUpgradeFactorWithBreakdown(category, skills) {
+        const modifiers = [];
+        let totalBonus = 0;
+        
+        if (!this.economicRules || !this.economicRules.skill_coefficients) {
+            return { upgradeFactor: 1.0, modifiers: [] };
+        }
+        
+        const coefficients = this.economicRules.skill_coefficients[category];
+        if (!coefficients) {
+            return { upgradeFactor: 1.0, modifiers: [] };
+        }
+        
+        for (const [rawSkillName, weight] of Object.entries(coefficients)) {
+            if (rawSkillName === 'description') continue;
+            
+            // Resolve skill alias
+            const skillName = this.resolveSkillAlias(rawSkillName);
+            
+            // Get skill value with fallbacks
+            let skillValue = skills[skillName] || 1.0;
+            if (skillValue === 1.0 && skillName === 'manipulation') {
+                skillValue = skills.manipulation || skills.robotic || 1.0;
+            }
+            if (skillValue === 1.0 && skillName === 'solar_pv') {
+                skillValue = skills.solar_pv || skills.energy_collection || 1.0;
+            }
+            
+            const skillBonus = skillValue - 1.0;
+            const contribution = weight * skillBonus;
+            totalBonus += contribution;
+            
+            modifiers.push({
+                name: this.getSkillDisplayName(skillName),
+                skillName: skillName,
+                rawSkillName: rawSkillName,
+                value: skillValue,
+                weight: weight
+            });
+        }
+        
+        const upgradeFactor = 1.0 + totalBonus;
+        return { upgradeFactor, modifiers };
+    }
+    
+    /**
+     * Calculate propulsion stats with detailed skill breakdowns
+     * @returns {Object} Comprehensive propulsion stats with modifiers
+     */
+    calculatePropulsionStatsWithBreakdown() {
+        const skills = this.gameState?.skills || {};
+        
+        // Get base values from economic rules
+        const baseIspSeconds = this.economicRules?.propulsion?.base_isp_seconds ?? 500;
+        const baseProbeMassKg = this.economicRules?.probe?.mass_kg ?? 100;
+        const baseDeltaVKmS = this.economicRules?.probe_transfer?.base_delta_v_km_s ?? 7.5;
+        const g0 = 9.80665; // Standard gravity m/s²
+        
+        // Get individual skill values
+        const propulsionSkill = skills.propulsion || 1.0;
+        const thrustSkill = skills.thrust || 1.0;
+        const materialsSkill = skills.materials || 1.0;
+        
+        // ISP calculation: base × propulsion skill
+        const effectiveIspSeconds = baseIspSeconds * propulsionSkill;
+        const exhaustVelocityKmS = (effectiveIspSeconds * g0) / 1000;
+        
+        // Delta-V capacity uses the probe_delta_v_capacity coefficients
+        const deltaVResult = this.calculateUpgradeFactorWithBreakdown('probe_delta_v_capacity', skills);
+        const effectiveDeltaVKmS = baseDeltaVKmS * deltaVResult.upgradeFactor;
+        
+        // Probe mass - lighter with materials upgrades (inverse relationship)
+        // Better materials = stronger = can use less material for same structure
+        const probeMassFactor = 1.0 / (1.0 + (materialsSkill - 1.0) * 0.3); // 30% reduction per skill point
+        const effectiveProbeMassKg = baseProbeMassKg * probeMassFactor;
+        
+        // Calculate fuel efficiency (how much fuel per probe for a given delta-v)
+        const referenceDeltaVKmS = 5.0; // Use 5 km/s as reference
+        const referenceDeltaVMS = referenceDeltaVKmS * 1000;
+        const exhaustVelocityMS = effectiveIspSeconds * g0;
+        const massRatio = Math.exp(referenceDeltaVMS / exhaustVelocityMS);
+        const fuelPerProbeKg = effectiveProbeMassKg * (massRatio - 1);
+        
+        return {
+            // ISP
+            baseIspSeconds,
+            effectiveIspSeconds,
+            propulsionSkill,
+            
+            // Exhaust Velocity
+            exhaustVelocityKmS,
+            
+            // Delta-V Capacity
+            baseDeltaVKmS,
+            effectiveDeltaVKmS,
+            deltaVFactor: deltaVResult.upgradeFactor,
+            deltaVModifiers: deltaVResult.modifiers,
+            
+            // Thrust
+            thrustSkill,
+            
+            // Probe Mass
+            baseProbeMassKg,
+            effectiveProbeMassKg,
+            probeMassFactor,
+            materialsSkill,
+            
+            // Fuel Efficiency
+            referenceDeltaVKmS,
+            fuelPerProbeKg
+        };
+    }
+    
+    /**
+     * Render compact skill modifiers as a single line summary
+     * @param {Array} modifiers - Array of modifier objects
+     * @param {number} maxShow - Maximum skills to show (default 4)
+     * @returns {string} HTML string
+     */
+    renderCompactModifiers(modifiers, maxShow = 4) {
+        if (!modifiers || modifiers.length === 0) {
+            return '<span style="color: rgba(255,255,255,0.4);">No upgrades</span>';
+        }
+        
+        // Filter to only skills with non-zero contribution and sort by contribution
+        const activeModifiers = modifiers
+            .filter(mod => mod.value > 1.0)
+            .sort((a, b) => (b.value - 1.0) * b.weight - (a.value - 1.0) * a.weight);
+        
+        if (activeModifiers.length === 0) {
+            return '<span style="color: rgba(255,255,255,0.4);">No upgrades active</span>';
+        }
+        
+        const shown = activeModifiers.slice(0, maxShow);
+        const remaining = activeModifiers.length - shown.length;
+        
+        let html = shown.map(mod => {
+            const contribution = (mod.value - 1.0) * mod.weight * 100;
+            return `<span style="color: rgba(100, 200, 100, 0.8);">${mod.name.substring(0, 12)}</span>`;
+        }).join(', ');
+        
+        if (remaining > 0) {
+            html += ` <span style="color: rgba(255,255,255,0.4);">+${remaining} more</span>`;
+        }
+        
+        return html;
+    }
+    
+    /**
+     * Calculate mass driver stats with detailed skill breakdowns
+     * @returns {Object} Comprehensive mass driver stats with modifiers
+     */
+    calculateMassDriverStatsWithBreakdown() {
+        const skills = this.gameState?.skills || {};
+        
+        // Get base values from buildings.json
+        const massDriverBuilding = this.buildings?.mass_driver || {};
+        const baseMuzzleVelocityKmS = massDriverBuilding.base_muzzle_velocity_km_s ?? 4.5;
+        const basePowerMW = massDriverBuilding.power_draw_mw ?? 100;
+        const baseEfficiency = massDriverBuilding.energy_efficiency ?? 0.4;
+        
+        // Add mass driver delta-v bonus from starting skill points
+        const massDriverDvBonus = this.gameState?.skill_bonuses?.mass_driver_dv_bonus || 0;
+        const effectiveBaseMuzzleVelocity = baseMuzzleVelocityKmS + massDriverDvBonus;
+        
+        // Muzzle Velocity (delta-v capacity)
+        const muzzleResult = this.calculateUpgradeFactorWithBreakdown('mass_driver_muzzle_velocity', skills);
+        const effectiveMuzzleVelocityKmS = effectiveBaseMuzzleVelocity * muzzleResult.upgradeFactor;
+        
+        // Power Draw
+        const powerResult = this.calculateUpgradeFactorWithBreakdown('mass_driver_power', skills);
+        const effectivePowerMW = basePowerMW * powerResult.upgradeFactor;
+        
+        // Efficiency
+        const efficiencyResult = this.calculateUpgradeFactorWithBreakdown('mass_driver_efficiency', skills);
+        const effectiveEfficiency = Math.min(1.0, baseEfficiency * efficiencyResult.upgradeFactor);
+        
+        // Calculate mass rate at 10 km/s delta-v reference
+        const referenceDeltaVKmS = 10.0;
+        const secondsPerDay = 86400;
+        const netPowerW = effectivePowerMW * 1e6 * effectiveEfficiency;
+        const energyPerDayJ = netPowerW * secondsPerDay;
+        const deltaVMS = referenceDeltaVKmS * 1000;
+        const energyPerKgJ = 0.5 * deltaVMS * deltaVMS;
+        const massRateKgPerDay = energyPerKgJ > 0 ? energyPerDayJ / energyPerKgJ : 0;
+        
+        return {
+            // Muzzle Velocity
+            baseMuzzleVelocityKmS: effectiveBaseMuzzleVelocity,
+            effectiveMuzzleVelocityKmS,
+            muzzleVelocityFactor: muzzleResult.upgradeFactor,
+            muzzleVelocityModifiers: muzzleResult.modifiers,
+            massDriverDvBonus,
+            
+            // Power
+            basePowerMW,
+            effectivePowerMW,
+            powerFactor: powerResult.upgradeFactor,
+            powerModifiers: powerResult.modifiers,
+            
+            // Efficiency
+            baseEfficiency,
+            effectiveEfficiency,
+            efficiencyFactor: efficiencyResult.upgradeFactor,
+            efficiencyModifiers: efficiencyResult.modifiers,
+            
+            // Mass Rate (at 10 km/s reference)
+            referenceDeltaVKmS,
+            massRateKgPerDay
+        };
+    }
+    
+    /**
+     * Render skill modifier breakdown as HTML
+     * @param {Array} modifiers - Array of modifier objects
+     * @returns {string} HTML string
+     */
+    renderModifierBreakdown(modifiers) {
+        if (!modifiers || modifiers.length === 0) {
+            return '<div style="font-size: 9px; color: rgba(255,255,255,0.4); margin-left: 8px;">No skill modifiers</div>';
+        }
+        
+        let html = '';
+        for (const mod of modifiers) {
+            const skillBonus = mod.value - 1.0;
+            const contribution = mod.weight * skillBonus;
+            const bonusPercent = skillBonus * 100;
+            const contributionPercent = contribution * 100;
+            
+            html += `<div style="font-size: 9px; color: rgba(255,255,255,0.6); margin-left: 8px;">`;
+            html += `${mod.name}: `;
+            if (bonusPercent > 0) {
+                html += `<span style="color: rgba(100, 200, 100, 0.8);">+${bonusPercent.toFixed(1)}%</span>`;
+                html += ` × ${mod.weight.toFixed(1)} = `;
+                html += `<span style="color: rgba(100, 200, 100, 0.8);">+${contributionPercent.toFixed(1)}%</span>`;
+            } else {
+                html += `<span style="color: rgba(255,255,255,0.4);">+0%</span>`;
+            }
+            html += `</div>`;
+        }
+        return html;
+    }
+    
+    /**
      * Get Hohmann transfer delta-v between two zones
      * Uses pre-calculated data if available, otherwise calculates inline
      * @param {string} fromZoneId - Source zone
@@ -539,31 +826,86 @@ class OrbitalZoneSelector {
                 return;
             }
             
-            // Handle left/right arrow keys to switch transfer type (only when menu is open)
+            // Handle left/right arrow keys to navigate destination zones (only when menu is open)
             if (this.transferMenuOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                if (e.key === 'ArrowRight' && this.transferMenuMode === 'probe') {
-                    // Switch to metal transfer
+                // Get all zones sorted by radius (dyson, mercury, venus, etc.)
+                const allZones = [...(this.orbitalZones || [])].sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
+                
+                // Filter out the source zone
+                const availableZones = allZones.filter(z => z.id !== this.transferSourceZone);
+                
+                if (availableZones.length === 0) return;
+                
+                // Find current destination index
+                let currentIndex = -1;
+                if (this.transferDestinationZone) {
+                    currentIndex = availableZones.findIndex(z => z.id === this.transferDestinationZone);
+                }
+                
+                // Navigate left or right
+                let newIndex;
+                if (e.key === 'ArrowRight') {
+                    newIndex = currentIndex < availableZones.length - 1 ? currentIndex + 1 : 0;
+                } else {
+                    newIndex = currentIndex > 0 ? currentIndex - 1 : availableZones.length - 1;
+                }
+                
+                // Set new destination
+                this.transferDestinationZone = availableZones[newIndex].id;
+                
+                // Update the overlay chart, transfer details, and transfer controls
+                if (this.deltaVOverlayCanvas) {
+                    const resourceType = this.transferMenuMode || 'probe';
+                    this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+                    
+                    // Update transfer controls with new destination
+                    if (this.updateTransferControls) {
+                        this.updateTransferControls(this.transferSourceZone, this.transferDestinationZone, resourceType);
+                    }
+                    
+                    const upgradesDiv = document.getElementById('delta-v-upgrades');
+                    if (upgradesDiv) {
+                        this.updateTransferDetails(upgradesDiv, this.transferSourceZone, this.transferDestinationZone, resourceType);
+                    }
+                }
+                return;
+            }
+            
+            // Handle up/down arrow keys to switch transfer type (only when menu is open)
+            if (this.transferMenuOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Resource types in order: probe, metal, methalox
+                const resourceTypes = ['probe', 'metal', 'methalox'];
+                const currentIndex = resourceTypes.indexOf(this.transferMenuMode);
+                
+                let newIndex;
+                if (e.key === 'ArrowDown') {
+                    newIndex = currentIndex < resourceTypes.length - 1 ? currentIndex + 1 : 0;
+                } else {
+                    newIndex = currentIndex > 0 ? currentIndex - 1 : resourceTypes.length - 1;
+                }
+                
+                const newMode = resourceTypes[newIndex];
+                
+                // Check if mass driver is available for metal/methalox transfers
+                if (newMode === 'metal' || newMode === 'methalox') {
                     const structuresByZone = this.gameState?.structures_by_zone || {};
                     const zoneStructures = structuresByZone[this.transferSourceZone] || {};
                     const hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
                     
                     if (!hasMassDriver) {
-                        this.showQuickMessage('Mass Driver required for metal transfers');
+                        this.showQuickMessage('Mass Driver required for ' + newMode + ' transfers');
                         return;
                     }
-                    
-                    this.transferMenuMode = 'metal';
-                    this.transferDestinationZone = null; // Reset destination when switching types
-                    this.updateTransferMenu();
-                } else if (e.key === 'ArrowLeft' && this.transferMenuMode === 'metal') {
-                    // Switch to probe transfer
-                    this.transferMenuMode = 'probe';
-                    this.transferDestinationZone = null; // Reset destination when switching types
-                    this.updateTransferMenu();
                 }
+                
+                this.transferMenuMode = newMode;
+                this.updateTransferMenu();
                 return;
             }
             
@@ -1975,11 +2317,11 @@ class OrbitalZoneSelector {
         
         // Get the compact resources bar to position below it
         const compactResources = document.getElementById('compact-resources');
-        let topOffset = 60; // Default offset if bar not found
+        let topOffset = -90; // Default offset - moved up 100px
         
         if (compactResources) {
             const rect = compactResources.getBoundingClientRect();
-            topOffset = rect.bottom + 15; // 15px below the bar
+            topOffset = rect.bottom - 85; // Moved up 100px (was +15, now -85)
             console.log('[Delta-V Overlay] Compact resources bar found, positioning at:', topOffset);
         } else {
             console.warn('[Delta-V Overlay] Compact resources bar not found, using default offset');
@@ -1994,7 +2336,7 @@ class OrbitalZoneSelector {
             left: 50%;
             transform: translateX(-50%);
             width: 800px;
-            height: 720px;
+            height: 900px;
             background: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(5px);
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -2008,24 +2350,46 @@ class OrbitalZoneSelector {
             opacity: 1;
         `;
         
-        // Create header with title and close button (matching compact resources style)
+        // Determine title and color based on resource type
+        let headerTitle, headerColor;
+        if (resourceType === 'probe') {
+            headerTitle = 'PROBE TRANSFER';
+            headerColor = '#00ffff'; // Cyan for probes
+        } else if (resourceType === 'metal') {
+            headerTitle = 'METAL TRANSFER';
+            headerColor = '#c0c0c0'; // Silver for metal
+        } else if (resourceType === 'methalox') {
+            headerTitle = 'FUEL TRANSFER';
+            headerColor = '#87ceeb'; // Light blue for methalox/fuel
+        } else {
+            headerTitle = 'TRANSFER';
+            headerColor = '#00ffff';
+        }
+        
+        // Create header with colored title bar (styled like the launch button)
         const header = document.createElement('div');
+        header.id = 'transfer-window-header';
         header.style.cssText = `
-            padding: 8px 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 16px;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
-            background: rgba(0, 0, 0, 0.2);
+            background: ${headerColor};
+            border-radius: 4px 4px 0 0;
+            position: relative;
         `;
         
         const title = document.createElement('div');
-        title.textContent = this.transferMenuOpen ? 'Transfer Menu' : 'Delta-V Chart';
+        title.id = 'transfer-window-title';
+        title.textContent = headerTitle;
         title.style.cssText = `
             font-family: monospace;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: bold;
-            color: rgba(255, 255, 255, 0.9);
+            color: #000;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
         `;
         
         const closeBtn = document.createElement('button');
@@ -2033,7 +2397,7 @@ class OrbitalZoneSelector {
         closeBtn.style.cssText = `
             background: transparent;
             border: none;
-            color: rgba(255, 255, 255, 0.7);
+            color: rgba(0, 0, 0, 0.6);
             font-size: 20px;
             cursor: pointer;
             padding: 0;
@@ -2041,9 +2405,13 @@ class OrbitalZoneSelector {
             height: 20px;
             line-height: 1;
             transition: color 0.2s;
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
         `;
-        closeBtn.onmouseover = () => closeBtn.style.color = 'rgba(255, 255, 255, 1)';
-        closeBtn.onmouseout = () => closeBtn.style.color = 'rgba(255, 255, 255, 0.7)';
+        closeBtn.onmouseover = () => closeBtn.style.color = 'rgba(0, 0, 0, 1)';
+        closeBtn.onmouseout = () => closeBtn.style.color = 'rgba(0, 0, 0, 0.6)';
         closeBtn.onclick = () => {
             if (this.transferMenuOpen) {
                 this.closeTransferMenu();
@@ -2143,6 +2511,35 @@ class OrbitalZoneSelector {
                 this.transferMenuMode = newType;
                 this.transferDestinationZone = null; // Reset destination when switching types
             }
+            // Reset transfer-specific values when switching modes
+            if (newType === 'probe') {
+                this.currentMassRateKgPerDay = 0;
+            } else {
+                this.currentProbeTransferCount = 0;
+            }
+            
+            // Update header title and color based on resource type
+            const header = document.getElementById('transfer-window-header');
+            const titleEl = document.getElementById('transfer-window-title');
+            if (header && titleEl) {
+                let headerTitle, headerColor;
+                if (newType === 'probe') {
+                    headerTitle = 'PROBE TRANSFER';
+                    headerColor = '#00ffff';
+                } else if (newType === 'metal') {
+                    headerTitle = 'METAL TRANSFER';
+                    headerColor = '#c0c0c0';
+                } else if (newType === 'methalox') {
+                    headerTitle = 'FUEL TRANSFER';
+                    headerColor = '#87ceeb';
+                } else {
+                    headerTitle = 'TRANSFER';
+                    headerColor = '#00ffff';
+                }
+                header.style.background = headerColor;
+                titleEl.textContent = headerTitle;
+            }
+            
             // Redraw chart with new resource type
             this.drawOverlayChart(canvas, sourceZone, resourceType);
             // Update upgrades section
@@ -2172,6 +2569,31 @@ class OrbitalZoneSelector {
         metalInput.addEventListener('change', () => {
             if (metalInput.checked) {
                 updateResourceType('metal');
+            }
+        });
+        
+        // Create methalox radio button
+        const methaloxRadio = document.createElement('label');
+        methaloxRadio.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.9);
+            user-select: none;
+        `;
+        const methaloxInput = document.createElement('input');
+        methaloxInput.type = 'radio';
+        methaloxInput.name = 'delta-v-resource-type';
+        methaloxInput.value = 'methalox';
+        methaloxInput.checked = (resourceType === 'methalox');
+        methaloxInput.style.cssText = `cursor: pointer;`;
+        methaloxRadio.appendChild(methaloxInput);
+        methaloxRadio.appendChild(document.createTextNode('Methalox'));
+        
+        methaloxInput.addEventListener('change', () => {
+            if (methaloxInput.checked) {
+                updateResourceType('methalox');
             }
         });
         
@@ -2210,6 +2632,36 @@ class OrbitalZoneSelector {
         
         radioContainer.appendChild(probeRadio);
         radioContainer.appendChild(metalRadio);
+        radioContainer.appendChild(methaloxRadio);
+        
+        // Add keyboard hints if in transfer menu mode
+        if (this.transferMenuOpen) {
+            const hintsDiv = document.createElement('div');
+            hintsDiv.style.cssText = `
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+                background: rgba(0, 0, 0, 0.7);
+                padding: 6px 10px;
+                border-radius: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                font-family: monospace;
+                font-size: 9px;
+                color: rgba(255, 255, 255, 0.6);
+                z-index: 10;
+            `;
+            hintsDiv.innerHTML = `
+                <div><span style="color: rgba(255,255,255,0.8);">←/→</span> Change destination</div>
+                <div><span style="color: rgba(255,255,255,0.8);">↑/↓</span> Change resource type</div>
+                <div><span style="color: rgba(255,255,255,0.8);">Space</span> Launch transfer</div>
+                <div><span style="color: rgba(255,255,255,0.8);">Esc</span> Close</div>
+            `;
+            canvasContainer.appendChild(hintsDiv);
+        }
+        
         canvasContainer.appendChild(canvas);
         canvasContainer.appendChild(radioContainer);
         
@@ -2280,6 +2732,18 @@ class OrbitalZoneSelector {
         
         // Function to update transfer controls visibility and content
         this.updateTransferControls = (fromZoneId, toZoneId, resType) => {
+            // Try to acquire engine instances if not already available
+            if (!this.orbitalMechanics || !this.transferSystem) {
+                if (window.gameEngine && window.gameEngine.engine) {
+                    if (window.gameEngine.engine.orbitalMechanics && !this.orbitalMechanics) {
+                        this.orbitalMechanics = window.gameEngine.engine.orbitalMechanics;
+                    }
+                    if (window.gameEngine.engine.transferSystem && !this.transferSystem) {
+                        this.transferSystem = window.gameEngine.engine.transferSystem;
+                    }
+                }
+            }
+            
             // Always show controls when in transfer menu mode (for probe transfers)
             // This allows users to see the slider immediately when pressing spacebar
             transferControlsDiv.style.display = 'block';
@@ -2325,13 +2789,9 @@ class OrbitalZoneSelector {
                 const maxProbes = Math.min(probeCount, 100); // Cap at 100 for practical UI
                 const defaultValue = Math.min(1, Math.max(1, maxProbes));
                 
-                // Calculate propulsion-related values for display
+                // Calculate propulsion-related values with full breakdown
+                const propStats = this.calculatePropulsionStatsWithBreakdown();
                 const skills = this.gameState?.skills || {};
-                const propulsionSkill = skills?.propulsion || 1.0;
-                const baseIsp = 500; // Base ISP in seconds
-                const effectiveIsp = baseIsp * propulsionSkill;
-                const g0 = 9.80665; // Standard gravity m/s²
-                const exhaustVelocityKmS = (effectiveIsp * g0) / 1000; // Convert to km/s
                 
                 // Get mass driver muzzle velocity
                 let massDriverDeltaV = 0;
@@ -2343,6 +2803,75 @@ class OrbitalZoneSelector {
                 
                 const hasDestination = !!toZoneId;
                 const destinationLabel = hasDestination ? toName : '<span style="color: rgba(255,255,255,0.5);">Click a zone on the chart</span>';
+                
+                // Format mass for display
+                const formatMassKg = (kg) => {
+                    if (kg >= 1000) return `${(kg / 1000).toFixed(1)} t`;
+                    return `${kg.toFixed(0)} kg`;
+                };
+                
+                // Build propulsion stats HTML with detailed breakdown
+                let propStatsHTML = '';
+                
+                // ISP with breakdown
+                propStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                propStatsHTML += `<span style="color: rgba(74, 158, 255, 0.9); font-weight: 600;">Isp: </span>`;
+                propStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${propStats.effectiveIspSeconds.toFixed(0)} s</span>`;
+                propStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">= ${propStats.baseIspSeconds}s × ${propStats.propulsionSkill.toFixed(2)}</span>`;
+                propStatsHTML += `</div>`;
+                
+                // Exhaust Velocity
+                propStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                propStatsHTML += `<span style="color: rgba(74, 158, 255, 0.9); font-weight: 600;">Exhaust Vel: </span>`;
+                propStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${propStats.exhaustVelocityKmS.toFixed(2)} km/s</span>`;
+                propStatsHTML += `</div>`;
+                
+                // Delta-V Capacity with breakdown
+                propStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                propStatsHTML += `<span style="color: rgba(74, 158, 255, 0.9); font-weight: 600;">Δv Capacity: </span>`;
+                propStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${propStats.effectiveDeltaVKmS.toFixed(2)} km/s</span>`;
+                propStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">= ${propStats.baseDeltaVKmS.toFixed(1)} × ${propStats.deltaVFactor.toFixed(2)}</span>`;
+                propStatsHTML += `</div>`;
+                // Show skills contributing to delta-v
+                propStatsHTML += `<div style="margin-left: 8px; margin-bottom: 4px; font-size: 9px; color: rgba(255,255,255,0.5);">`;
+                propStatsHTML += this.renderCompactModifiers(propStats.deltaVModifiers, 3);
+                propStatsHTML += `</div>`;
+                
+                // Probe Mass with breakdown
+                propStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                propStatsHTML += `<span style="color: rgba(74, 158, 255, 0.9); font-weight: 600;">Probe Mass: </span>`;
+                propStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${formatMassKg(propStats.effectiveProbeMassKg)}</span>`;
+                if (propStats.materialsSkill > 1.0) {
+                    const massReduction = (1 - propStats.probeMassFactor) * 100;
+                    propStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">= ${formatMassKg(propStats.baseProbeMassKg)} - ${massReduction.toFixed(0)}%</span>`;
+                } else {
+                    propStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">(base)</span>`;
+                }
+                propStatsHTML += `</div>`;
+                propStatsHTML += `<div style="margin-left: 8px; margin-bottom: 4px; font-size: 9px; color: rgba(255,255,255,0.5);">`;
+                if (propStats.materialsSkill > 1.0) {
+                    propStatsHTML += `<span style="color: rgba(100, 200, 100, 0.8);">Materials</span> skill: ${propStats.materialsSkill.toFixed(2)}`;
+                } else {
+                    propStatsHTML += `Materials skill reduces mass`;
+                }
+                propStatsHTML += `</div>`;
+                
+                // Thrust Skill
+                propStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                propStatsHTML += `<span style="color: rgba(74, 158, 255, 0.9); font-weight: 600;">Thrust: </span>`;
+                propStatsHTML += `<span style="color: ${propStats.thrustSkill > 1.0 ? 'rgba(100, 200, 100, 0.9)' : 'rgba(255,255,255,0.7)'};">${propStats.thrustSkill.toFixed(2)}×</span>`;
+                propStatsHTML += `</div>`;
+                
+                // Mass Driver boost if available
+                if (massDriverCount > 0 && massDriverDeltaV > 0) {
+                    propStatsHTML += `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 10px;">`;
+                    propStatsHTML += `<span style="color: #ffaa00; font-weight: 600;">Mass Driver Boost: </span>`;
+                    propStatsHTML += `<span style="color: #ffaa00;">${massDriverDeltaV.toFixed(2)} km/s</span>`;
+                    propStatsHTML += `</div>`;
+                    propStatsHTML += `<div style="margin-left: 8px; font-size: 9px; color: rgba(255,255,255,0.5);">`;
+                    propStatsHTML += `Reduces probe fuel by saving Δv`;
+                    propStatsHTML += `</div>`;
+                }
                 
                 controlsHTML = `
                     <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -2359,37 +2888,6 @@ class OrbitalZoneSelector {
                         <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px;">
                             <span style="color: rgba(255,255,255,0.5); font-size: 10px;">Available: ${probeCount} probes in ${fromName}</span>
                         </div>
-                        <div style="display: flex; gap: 20px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 8px; padding-top: 8px;">
-                            <div style="flex: 1; min-width: 0;">
-                                <div style="margin-bottom: 5px; color: #4a9eff; font-weight: bold;">Propulsion Stats</div>
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                                    <span style="color: rgba(255,255,255,0.7); min-width: 90px; font-size: 10px;">Isp:</span>
-                                    <span style="color: #fff; font-size: 10px;">${effectiveIsp.toFixed(0)} s</span>
-                                </div>
-                                <div style="margin-left: 10px; margin-bottom: 3px;">
-                                    <span style="color: rgba(255,255,255,0.5); font-size: 9px;">(${baseIsp}s × ${propulsionSkill.toFixed(2)})</span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                                    <span style="color: rgba(255,255,255,0.7); min-width: 90px; font-size: 10px;">Exhaust Vel:</span>
-                                    <span style="color: #fff; font-size: 10px;">${exhaustVelocityKmS.toFixed(2)} km/s</span>
-                                </div>
-                                ${massDriverCount > 0 ? `
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
-                                    <span style="color: rgba(255,255,255,0.7); min-width: 90px; font-size: 10px;">Mass Driver:</span>
-                                    <span style="color: #ffaa00; font-size: 10px;">${massDriverDeltaV.toFixed(2)} km/s</span>
-                                </div>
-                                <div style="margin-left: 10px;">
-                                    <span style="color: rgba(255,255,255,0.5); font-size: 9px;">(reduces Δv needed)</span>
-                                </div>
-                                ` : ''}
-                            </div>
-                            <div style="flex: 1; min-width: 0; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 15px;">
-                                <div style="margin-bottom: 5px; color: #87ceeb; font-weight: bold;">Fuel Cost</div>
-                                <div id="fuel-details-container" style="font-size: 10px;">
-                                    ${hasDestination ? '<span style="color: rgba(255,255,255,0.5);">Calculating...</span>' : '<span style="color: rgba(255,255,255,0.5);">Select destination...</span>'}
-                                </div>
-                            </div>
-                        </div>
                         <button id="transfer-execute-btn" style="
                             margin-top: 8px;
                             padding: 8px 16px;
@@ -2402,42 +2900,158 @@ class OrbitalZoneSelector {
                             cursor: ${hasDestination && probeCount > 0 ? 'pointer' : 'not-allowed'};
                             transition: opacity 0.2s;
                         " ${!hasDestination || probeCount === 0 ? 'disabled' : ''}>LAUNCH TRANSFER</button>
+                        <div style="display: flex; gap: 20px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 8px; padding-top: 8px;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="margin-bottom: 8px; color: #4a9eff; font-weight: bold;">Propulsion Stats</div>
+                                ${propStatsHTML}
+                            </div>
+                            <div style="flex: 1; min-width: 0; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 15px;">
+                                <div style="margin-bottom: 5px; color: #87ceeb; font-weight: bold;">Fuel Cost</div>
+                                <div id="fuel-details-container" style="font-size: 10px;">
+                                    ${hasDestination ? '<span style="color: rgba(255,255,255,0.5);">Calculating...</span>' : '<span style="color: rgba(255,255,255,0.5);">Select destination...</span>'}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 `;
             } else {
-                // Metal/methalox transfer: slider for mass driver allocation percentage
+                // Metal/methalox transfer: slider for mass driver power allocation percentage
                 const defaultAllocation = 50; // Default 50%
+                
+                // Calculate detailed mass driver stats with current upgraded values from skills
+                const mdStats = this.calculateMassDriverStatsWithBreakdown();
+                
+                // Get total mass driver power from upgraded stats (per-driver × count)
+                // This ensures we're using the current skill-upgraded power values
+                const totalPowerMW = mdStats.effectivePowerMW * massDriverCount;
+                
+                // Get available power percentage (accounts for other active transfers)
+                let availablePowerPct = 100;
+                if (this.transferSystem && massDriverCount > 0) {
+                    availablePowerPct = this.transferSystem.getAvailableMassDriverPowerPct(this.gameState, fromZoneId);
+                }
+                
+                const hasDestination = !!toZoneId;
+                const destinationLabel = hasDestination ? toName : '<span style="color: rgba(255,255,255,0.5);">Click a zone on the chart</span>';
+                
+                // Format power for display
+                const formatPower = (mw) => {
+                    if (mw >= 1e6) return `${(mw / 1e6).toFixed(2)} TW`;
+                    if (mw >= 1e3) return `${(mw / 1e3).toFixed(2)} GW`;
+                    if (mw >= 1) return `${mw.toFixed(2)} MW`;
+                    if (mw >= 0.001) return `${(mw * 1e3).toFixed(2)} kW`;
+                    return `${(mw * 1e6).toFixed(2)} W`;
+                };
+                
+                // Format mass rate for display
+                const formatMassRate = (kgPerDay) => {
+                    if (kgPerDay >= 1e15) return `${(kgPerDay / 1e15).toFixed(2)} Pt/day`;
+                    if (kgPerDay >= 1e12) return `${(kgPerDay / 1e12).toFixed(2)} Gt/day`;
+                    if (kgPerDay >= 1e9) return `${(kgPerDay / 1e9).toFixed(2)} Mt/day`;
+                    if (kgPerDay >= 1e6) return `${(kgPerDay / 1e6).toFixed(2)} kt/day`;
+                    if (kgPerDay >= 1e3) return `${(kgPerDay / 1e3).toFixed(2)} t/day`;
+                    return `${kgPerDay.toFixed(0)} kg/day`;
+                };
+                
+                // Build mass driver stats HTML with detailed skill breakdowns
+                let massDriverStatsHTML = '';
+                
+                // Calculate bonus values for display
+                const muzzleVelocityBonus = mdStats.effectiveMuzzleVelocityKmS - mdStats.baseMuzzleVelocityKmS;
+                const powerBonus = mdStats.effectivePowerMW - mdStats.basePowerMW;
+                const efficiencyBonusPct = (mdStats.effectiveEfficiency - mdStats.baseEfficiency) * 100;
+                
+                // Delta-Vee (Muzzle Velocity) with skill breakdown
+                massDriverStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                massDriverStatsHTML += `<span style="color: rgba(255, 170, 0, 0.9); font-weight: 600;">Muzzle Velocity: </span>`;
+                massDriverStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${mdStats.effectiveMuzzleVelocityKmS.toFixed(2)} km/s</span>`;
+                massDriverStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">= ${mdStats.baseMuzzleVelocityKmS.toFixed(2)} × ${mdStats.muzzleVelocityFactor.toFixed(2)}</span>`;
+                massDriverStatsHTML += `</div>`;
+                // Show skills contributing to muzzle velocity
+                massDriverStatsHTML += `<div style="margin-left: 8px; margin-bottom: 6px; font-size: 9px; color: rgba(255,255,255,0.5);">`;
+                massDriverStatsHTML += this.renderCompactModifiers(mdStats.muzzleVelocityModifiers, 3);
+                massDriverStatsHTML += `</div>`;
+                
+                // Power Capacity with skill breakdown
+                massDriverStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                massDriverStatsHTML += `<span style="color: rgba(255, 170, 0, 0.9); font-weight: 600;">Power Capacity: </span>`;
+                massDriverStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${formatPower(mdStats.effectivePowerMW)}</span>`;
+                massDriverStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">= ${formatPower(mdStats.basePowerMW)} × ${mdStats.powerFactor.toFixed(2)}</span>`;
+                massDriverStatsHTML += `</div>`;
+                // Show skills contributing to power
+                massDriverStatsHTML += `<div style="margin-left: 8px; margin-bottom: 6px; font-size: 9px; color: rgba(255,255,255,0.5);">`;
+                massDriverStatsHTML += this.renderCompactModifiers(mdStats.powerModifiers, 3);
+                massDriverStatsHTML += `</div>`;
+                
+                // Energy Efficiency with skill breakdown
+                massDriverStatsHTML += `<div style="margin-bottom: 4px; font-size: 10px;">`;
+                massDriverStatsHTML += `<span style="color: rgba(255, 170, 0, 0.9); font-weight: 600;">Energy Efficiency: </span>`;
+                massDriverStatsHTML += `<span style="color: rgba(100, 200, 100, 0.9);">${(mdStats.effectiveEfficiency * 100).toFixed(1)}%</span>`;
+                massDriverStatsHTML += ` <span style="color: rgba(255,255,255,0.5);">= ${(mdStats.baseEfficiency * 100).toFixed(0)}% × ${mdStats.efficiencyFactor.toFixed(2)}</span>`;
+                massDriverStatsHTML += `</div>`;
+                // Show skills contributing to efficiency
+                massDriverStatsHTML += `<div style="margin-left: 8px; margin-bottom: 6px; font-size: 9px; color: rgba(255,255,255,0.5);">`;
+                massDriverStatsHTML += this.renderCompactModifiers(mdStats.efficiencyModifiers, 3);
+                massDriverStatsHTML += `</div>`;
+                
+                // Reference throughput at 10 km/s delta-v
+                if (mdStats.massRateKgPerDay > 0) {
+                    massDriverStatsHTML += `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 10px;">`;
+                    massDriverStatsHTML += `<span style="color: rgba(255, 170, 0, 0.9); font-weight: 600;">Ref Throughput: </span>`;
+                    massDriverStatsHTML += `<span style="color: rgba(255,255,255,0.7);">${formatMassRate(mdStats.massRateKgPerDay)}</span>`;
+                    massDriverStatsHTML += ` <span style="color: rgba(255,255,255,0.4); font-size: 9px;">(@ 10 km/s Δv)</span>`;
+                    massDriverStatsHTML += `</div>`;
+                }
+                
+                // Calculate power in MW for display (using upgraded values)
+                const initialAllocationPct = Math.min(defaultAllocation, availablePowerPct);
+                const allocatedPowerMW = totalPowerMW * (initialAllocationPct / 100);
                 
                 controlsHTML = `
                     <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 15px;">
-                            <label style="color: ${transferColor}; min-width: 140px;">Mass Driver Allocation:</label>
-                            <input type="range" id="transfer-allocation-slider" min="1" max="100" value="${defaultAllocation}" 
-                                style="flex: 1; accent-color: ${transferColor};" ${massDriverCount === 0 ? 'disabled' : ''}>
-                            <span id="transfer-allocation-pct" style="color: #fff; min-width: 40px; text-align: right;">${defaultAllocation}%</span>
+                        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 5px;">
+                            <span style="color: rgba(255,255,255,0.7); min-width: 120px;">Destination:</span>
+                            <span style="color: ${hasDestination ? '#fff' : 'rgba(255,255,255,0.5)'};">${destinationLabel}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 15px;">
-                            <span style="color: rgba(255,255,255,0.7); min-width: 140px;">Throughput:</span>
-                            <span id="transfer-throughput" style="color: ${transferColor};">Calculating...</span>
+                            <label style="color: ${transferColor}; min-width: 120px;">Power Allocation:</label>
+                            <input type="range" id="transfer-allocation-slider" min="0.1" max="${availablePowerPct.toFixed(1)}" step="0.1" value="${initialAllocationPct.toFixed(1)}" 
+                                style="flex: 1; accent-color: ${transferColor};" ${massDriverCount === 0 ? 'disabled' : ''}>
+                            <span id="transfer-allocation-pct" style="color: #fff; min-width: 60px; text-align: right;">${initialAllocationPct.toFixed(1)}%</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 15px; margin-top: 2px;">
+                            <span style="color: rgba(255,255,255,0.5); font-size: 10px; min-width: 120px;"></span>
+                            <span id="transfer-allocation-power" style="color: rgba(255,255,255,0.7); font-size: 10px;">= ${formatPower(allocatedPowerMW)} of ${formatPower(totalPowerMW)}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px;">
                             <span style="color: rgba(255,255,255,0.5); font-size: 10px;">
-                                ${massDriverCount} mass driver${massDriverCount !== 1 ? 's' : ''} in ${fromName} | 
-                                ${this.formatMass ? this.formatMass(storedMetal) : storedMetal.toExponential(2)} stored metal
+                                ${massDriverCount} mass driver${massDriverCount !== 1 ? 's' : ''} · Per-driver: ${formatPower(mdStats.effectivePowerMW)} · Efficiency: ${(mdStats.effectiveEfficiency * 100).toFixed(1)}% · Available: ${availablePowerPct.toFixed(1)}%
                             </span>
                         </div>
                         <button id="transfer-execute-btn" style="
                             margin-top: 8px;
                             padding: 8px 16px;
-                            background: ${transferColor};
-                            color: #000;
+                            background: ${hasDestination && massDriverCount > 0 ? transferColor : 'rgba(100,100,100,0.5)'};
+                            color: ${hasDestination && massDriverCount > 0 ? '#000' : 'rgba(255,255,255,0.5)'};
                             border: none;
                             border-radius: 4px;
                             font-family: monospace;
                             font-weight: bold;
-                            cursor: pointer;
+                            cursor: ${hasDestination && massDriverCount > 0 ? 'pointer' : 'not-allowed'};
                             transition: opacity 0.2s;
-                        " ${massDriverCount === 0 ? 'disabled' : ''}>START CONTINUOUS TRANSFER</button>
+                        " ${!hasDestination || massDriverCount === 0 ? 'disabled' : ''}>LAUNCH TRANSFER</button>
+                        <div style="display: flex; gap: 20px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 8px; padding-top: 8px;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="margin-bottom: 8px; color: #ffaa00; font-weight: bold;">Mass Driver Stats</div>
+                                ${massDriverStatsHTML}
+                            </div>
+                            <div style="flex: 1; min-width: 0; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 15px;">
+                                <div style="margin-bottom: 5px; color: #c0c0c0; font-weight: bold;">Transfer Rate</div>
+                                <div id="metal-transfer-details" style="font-size: 10px;">
+                                    ${hasDestination ? '<span style="color: rgba(255,255,255,0.5);">Calculating...</span>' : '<span style="color: rgba(255,255,255,0.5);">Select destination...</span>'}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 `;
             }
@@ -2581,11 +3195,14 @@ class OrbitalZoneSelector {
                     slider.addEventListener('input', (e) => {
                         const count = parseInt(e.target.value);
                         countSpan.textContent = count;
+                        this.currentProbeTransferCount = count; // Store for chart display
                         updateFuelCost(count);
                     });
                     
-                    // Initial fuel cost calculation
-                    updateFuelCost(parseInt(slider.value));
+                    // Initial fuel cost calculation and probe count storage
+                    const initialCount = parseInt(slider.value);
+                    this.currentProbeTransferCount = initialCount;
+                    updateFuelCost(initialCount);
                 }
                 
                 if (executeBtn && toZoneId) {
@@ -2599,43 +3216,222 @@ class OrbitalZoneSelector {
             } else {
                 const slider = transferControlsDiv.querySelector('#transfer-allocation-slider');
                 const pctSpan = transferControlsDiv.querySelector('#transfer-allocation-pct');
-                const throughputSpan = transferControlsDiv.querySelector('#transfer-throughput');
+                const detailsContainer = transferControlsDiv.querySelector('#metal-transfer-details');
                 const executeBtn = transferControlsDiv.querySelector('#transfer-execute-btn');
                 
-                const updateThroughput = (pct) => {
-                    // Calculate throughput based on mass driver capacity
-                    if (this.transferSystem && massDriverCount > 0) {
-                        const baseThroughput = this.transferSystem.calculateMassDriverThroughput(this.gameState, fromZoneId, toZoneId);
-                        const allocatedThroughput = baseThroughput * (pct / 100);
-                        
-                        if (allocatedThroughput >= 1e6) {
-                            throughputSpan.textContent = `${(allocatedThroughput / 1e6).toFixed(2)} kt/day`;
-                        } else if (allocatedThroughput >= 1e3) {
-                            throughputSpan.textContent = `${(allocatedThroughput / 1e3).toFixed(2)} t/day`;
-                        } else {
-                            throughputSpan.textContent = `${allocatedThroughput.toFixed(0)} kg/day`;
+                const formatMassRate = (kgPerDay) => {
+                    if (kgPerDay >= 1e12) return `${(kgPerDay / 1e12).toFixed(2)} GT/day`;
+                    if (kgPerDay >= 1e9) return `${(kgPerDay / 1e9).toFixed(2)} MT/day`;
+                    if (kgPerDay >= 1e6) return `${(kgPerDay / 1e6).toFixed(2)} kt/day`;
+                    if (kgPerDay >= 1e3) return `${(kgPerDay / 1e3).toFixed(2)} t/day`;
+                    return `${kgPerDay.toFixed(0)} kg/day`;
+                };
+                
+                const formatEnergy = (joules) => {
+                    if (joules >= 1e12) return `${(joules / 1e12).toFixed(2)} TJ`;
+                    if (joules >= 1e9) return `${(joules / 1e9).toFixed(2)} GJ`;
+                    if (joules >= 1e6) return `${(joules / 1e6).toFixed(2)} MJ`;
+                    if (joules >= 1e3) return `${(joules / 1e3).toFixed(2)} kJ`;
+                    return `${joules.toFixed(0)} J`;
+                };
+                
+                const formatPowerMW = (mw) => {
+                    if (mw >= 1e6) return `${(mw / 1e6).toFixed(2)} TW`;
+                    if (mw >= 1e3) return `${(mw / 1e3).toFixed(2)} GW`;
+                    if (mw >= 1) return `${mw.toFixed(2)} MW`;
+                    if (mw >= 0.001) return `${(mw * 1e3).toFixed(2)} kW`;
+                    return `${(mw * 1e6).toFixed(2)} W`;
+                };
+                
+                const updateTransferDetails = (pct) => {
+                    if (!toZoneId || !detailsContainer) {
+                        if (detailsContainer) {
+                            detailsContainer.innerHTML = '<span style="color: rgba(255,255,255,0.5);">Select a destination to calculate transfer rate</span>';
+                        }
+                        return;
+                    }
+                    
+                    // Re-check mass driver count from current game state
+                    const currentStructuresByZone = this.gameState?.structures_by_zone || {};
+                    const currentZoneStructures = currentStructuresByZone[fromZoneId] || {};
+                    const currentMassDriverCount = currentZoneStructures['mass_driver'] || 0;
+                    
+                    if (currentMassDriverCount === 0) {
+                        detailsContainer.innerHTML = '<span style="color: #ff4444;">No mass drivers in this zone</span>';
+                        return;
+                    }
+                    
+                    // Calculate mass driver stats with current upgraded values from skills
+                    // This uses the current game state skills to get properly upgraded values
+                    const localMdStats = this.calculateMassDriverStatsWithBreakdown();
+                    const muzzleVelocityKmS = localMdStats.effectiveMuzzleVelocityKmS;
+                    // Total power = per-driver effective power × driver count
+                    const totalEffectivePowerMW = localMdStats.effectivePowerMW * currentMassDriverCount;
+                    const efficiency = localMdStats.effectiveEfficiency;
+                    
+                    // Calculate required delta-v components (escape + Hohmann)
+                    const zones = this.gameState?.zones || {};
+                    const fromZoneData = zones[fromZoneId] || {};
+                    const fromZoneInfo = this.orbitalZones?.find(z => z.id === fromZoneId);
+                    const toZoneInfo = this.orbitalZones?.find(z => z.id === toZoneId);
+                    const fromZoneMass = fromZoneData.mass_remaining !== undefined && fromZoneData.mass_remaining !== null
+                        ? fromZoneData.mass_remaining
+                        : (fromZoneInfo?.total_mass_kg || 0);
+                    
+                    // Get escape delta-v from origin
+                    // Uses base escape velocity from zone data, scaled by sqrt(mass ratio)
+                    const baseEscapeDV = fromZoneInfo?.escape_delta_v_km_s || 0;
+                    const originalMass = fromZoneInfo?.total_mass_kg || 0;
+                    let escapeDeltaV = 0;
+                    let massRatio = 1.0;
+                    
+                    if (this.orbitalMechanics) {
+                        escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+                        if (originalMass > 0 && fromZoneMass > 0) {
+                            massRatio = fromZoneMass / originalMass;
                         }
                     } else {
-                        throughputSpan.textContent = 'No mass driver available';
+                        // Fallback: use pre-defined escape velocity from zone data
+                        if (baseEscapeDV > 0 && originalMass > 0 && fromZoneMass > 0) {
+                            // Scale with sqrt(mass ratio): v_escape ∝ sqrt(M)
+                            massRatio = fromZoneMass / originalMass;
+                            escapeDeltaV = baseEscapeDV * Math.sqrt(massRatio);
+                        }
                     }
+                    
+                    // Get Hohmann transfer delta-v
+                    let hohmannDeltaV = 0;
+                    if (this.orbitalMechanics) {
+                        hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+                    } else {
+                        hohmannDeltaV = this.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+                    }
+                    
+                    // Total delta-v for energy calculation = escape + Hohmann
+                    const totalDeltaVKmS = escapeDeltaV + hohmannDeltaV;
+                    
+                    // Net delta-v = muzzle velocity - escape velocity
+                    // This is what's available for the Hohmann transfer
+                    const netDeltaVKmS = muzzleVelocityKmS - escapeDeltaV;
+                    
+                    // Reachability check: net_delta_v >= hohmann_delta_v
+                    const canReach = netDeltaVKmS >= hohmannDeltaV;
+                    
+                    // Calculate throughput using physics:
+                    // Energy per kg = 0.5 * (escape + hohmann)^2
+                    // Throughput = (allocated_power × efficiency × seconds_per_day) / energy_per_kg
+                    const allocatedPowerMW = totalEffectivePowerMW * (pct / 100);
+                    const netPowerW = allocatedPowerMW * 1e6 * efficiency;
+                    const secondsPerDay = 86400;
+                    const energyPerDayJ = netPowerW * secondsPerDay;
+                    const totalDeltaVMS = totalDeltaVKmS * 1000; // Convert to m/s
+                    const energyPerKgJ = 0.5 * totalDeltaVMS * totalDeltaVMS;
+                    const throughputKgPerDay = energyPerKgJ > 0 ? energyPerDayJ / energyPerKgJ : 0;
+                    
+                    // Store for chart display
+                    this.currentMassRateKgPerDay = canReach ? throughputKgPerDay : 0;
+                    
+                    let html = '';
+                    
+                    // Muzzle velocity (mass driver capacity)
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Muzzle Δv: </span>`;
+                    html += `<span style="color: #ffaa00;">${muzzleVelocityKmS.toFixed(2)} km/s</span>`;
+                    html += `</div>`;
+                    
+                    // Escape velocity with breakdown
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Escape Δv: </span>`;
+                    html += `<span style="color: #ff6666;">${escapeDeltaV.toFixed(2)} km/s</span>`;
+                    if (baseEscapeDV > 0) {
+                        html += ` <span style="color: rgba(255,255,255,0.4); font-size: 9px;">(base: ${baseEscapeDV.toFixed(2)} × √${massRatio.toFixed(3)})</span>`;
+                    }
+                    html += `</div>`;
+                    
+                    // Net delta-v = muzzle - escape
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Net Δv: </span>`;
+                    html += `<span style="color: ${canReach ? '#4aff4a' : '#ff4444'}; font-weight: bold;">${netDeltaVKmS.toFixed(2)} km/s</span>`;
+                    html += ` <span style="color: rgba(255,255,255,0.4); font-size: 9px;">(${muzzleVelocityKmS.toFixed(2)} - ${escapeDeltaV.toFixed(2)})</span>`;
+                    html += `</div>`;
+                    
+                    // Hohmann transfer requirement
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Transfer Δv: </span>`;
+                    html += `<span style="color: ${canReach ? '#fff' : '#ff4444'};">${hohmannDeltaV.toFixed(2)} km/s</span>`;
+                    html += `</div>`;
+                    
+                    // Check if reachable
+                    if (!canReach) {
+                        html += `<div style="margin-bottom: 3px; color: #ff4444; font-size: 10px;">`;
+                        html += `<span>Cannot reach: net Δv (${netDeltaVKmS.toFixed(2)}) < transfer Δv (${hohmannDeltaV.toFixed(2)})</span>`;
+                        html += `</div>`;
+                        detailsContainer.innerHTML = html;
+                        return;
+                    }
+                    
+                    // Energy cost per kg (uses total delta-v: escape + hohmann)
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Energy/kg: </span>`;
+                    html += `<span style="color: #87ceeb;">${formatEnergy(energyPerKgJ)}/kg</span>`;
+                    html += `</div>`;
+                    
+                    // Allocated power (slider value × total upgraded power)
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Allocated Power: </span>`;
+                    html += `<span style="color: #ffaa00;">${formatPowerMW(allocatedPowerMW)}</span>`;
+                    html += ` <span style="color: rgba(255,255,255,0.4);">(${pct.toFixed(1)}% of ${formatPowerMW(totalEffectivePowerMW)})</span>`;
+                    html += `</div>`;
+                    
+                    // Net power after efficiency
+                    html += `<div style="margin-bottom: 3px;">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Net Power: </span>`;
+                    html += `<span style="color: #87ceeb;">${formatPowerMW(netPowerW / 1e6)}</span>`;
+                    html += ` <span style="color: rgba(255,255,255,0.4);">(${(efficiency * 100).toFixed(1)}% efficiency)</span>`;
+                    html += `</div>`;
+                    
+                    // Throughput (mass delivery rate) - prominent display
+                    html += `<div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.1);">`;
+                    html += `<span style="color: rgba(255,255,255,0.7);">Delivery Rate: </span>`;
+                    html += `<span style="color: #4aff4a; font-weight: bold; font-size: 12px;">${formatMassRate(throughputKgPerDay)}</span>`;
+                    html += `</div>`;
+                    
+                    detailsContainer.innerHTML = html;
                 };
                 
                 if (slider) {
+                    // Get power display element
+                    const powerSpan = transferControlsDiv.querySelector('#transfer-allocation-power');
+                    
                     slider.addEventListener('input', (e) => {
-                        const pct = parseInt(e.target.value);
-                        pctSpan.textContent = `${pct}%`;
-                        updateThroughput(pct);
+                        const pct = parseFloat(e.target.value);
+                        pctSpan.textContent = `${pct.toFixed(1)}%`;
+                        
+                        // Recalculate total power from current upgraded values (not captured closure)
+                        const currentMdStats = this.calculateMassDriverStatsWithBreakdown();
+                        const currentStructuresByZone = this.gameState?.structures_by_zone || {};
+                        const currentZoneStructures = currentStructuresByZone[fromZoneId] || {};
+                        const currentMassDriverCount = currentZoneStructures['mass_driver'] || 0;
+                        const currentTotalPowerMW = currentMdStats.effectivePowerMW * currentMassDriverCount;
+                        
+                        // Update power display with current upgraded values
+                        if (powerSpan && currentTotalPowerMW > 0) {
+                            const allocatedMW = currentTotalPowerMW * (pct / 100);
+                            powerSpan.textContent = `= ${formatPowerMW(allocatedMW)} of ${formatPowerMW(currentTotalPowerMW)}`;
+                        }
+                        
+                        updateTransferDetails(pct);
                     });
                     
-                    // Initial throughput calculation
-                    updateThroughput(parseInt(slider.value));
+                    // Initial calculation
+                    updateTransferDetails(parseFloat(slider.value));
                 }
                 
-                if (executeBtn) {
+                if (executeBtn && toZoneId) {
                     executeBtn.addEventListener('click', () => {
-                        const pct = parseInt(slider?.value || 50);
+                        const pct = parseFloat(slider?.value || 50);
                         this.createTransfer(fromZoneId, toZoneId, 'metal', 'continuous', 0, pct);
-                        this.showQuickMessage(`Metal transfer to ${toName} started (${pct}%)`);
+                        this.showQuickMessage(`Metal transfer to ${toName} started (${pct.toFixed(1)}% power allocation)`);
                         this.closeTransferMenu();
                     });
                 }
@@ -2714,6 +3510,9 @@ class OrbitalZoneSelector {
         this.transferSourceZone = null;
         this.transferDestinationZone = null;
         this.waitingForTransferDestination = false;
+        this.lastTransferControlsHash = null; // Reset hash for next menu open
+        this.currentMassRateKgPerDay = 0; // Reset mass rate for chart display
+        this.currentProbeTransferCount = 0; // Reset probe count for chart display
         this.hideDeltaVOverlay();
         this.render(); // Re-render to remove transfer highlights
     }
@@ -2725,7 +3524,44 @@ class OrbitalZoneSelector {
         if (!this.transferMenuOpen || !this.deltaVOverlayCanvas) return;
         
         const resourceType = this.transferMenuMode || 'probe';
+        // Sync deltaVOverlayResourceType so game loop updates use the correct type
+        this.deltaVOverlayResourceType = resourceType;
         this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+        
+        // Update header title and color based on resource type
+        const header = document.getElementById('transfer-window-header');
+        const title = document.getElementById('transfer-window-title');
+        if (header && title) {
+            let headerTitle, headerColor;
+            if (resourceType === 'probe') {
+                headerTitle = 'PROBE TRANSFER';
+                headerColor = '#00ffff'; // Cyan for probes
+            } else if (resourceType === 'metal') {
+                headerTitle = 'METAL TRANSFER';
+                headerColor = '#c0c0c0'; // Silver for metal
+            } else if (resourceType === 'methalox') {
+                headerTitle = 'FUEL TRANSFER';
+                headerColor = '#87ceeb'; // Light blue for methalox/fuel
+            } else {
+                headerTitle = 'TRANSFER';
+                headerColor = '#00ffff';
+            }
+            header.style.background = headerColor;
+            title.textContent = headerTitle;
+        }
+        
+        // Sync radio buttons with current mode
+        const probeRadio = document.querySelector('input[name="delta-v-resource-type"][value="probe"]');
+        const metalRadio = document.querySelector('input[name="delta-v-resource-type"][value="metal"]');
+        const methaloxRadio = document.querySelector('input[name="delta-v-resource-type"][value="methalox"]');
+        if (probeRadio) probeRadio.checked = (resourceType === 'probe');
+        if (metalRadio) metalRadio.checked = (resourceType === 'metal');
+        if (methaloxRadio) methaloxRadio.checked = (resourceType === 'methalox');
+        
+        // Update transfer controls (sliders, etc.) with new resource type
+        if (this.updateTransferControls) {
+            this.updateTransferControls(this.transferSourceZone, this.transferDestinationZone, resourceType);
+        }
         
         // Update upgrades section
         const upgradesDiv = document.getElementById('delta-v-upgrades');
@@ -2733,11 +3569,17 @@ class OrbitalZoneSelector {
             this.populateUpgradesSection(upgradesDiv, this.transferSourceZone, resourceType).catch(err => {
                 console.error('[Transfer Menu] Failed to populate upgrades:', err);
             });
+            
+            // Update transfer details if destination is selected
+            if (this.transferDestinationZone) {
+                this.updateTransferDetails(upgradesDiv, this.transferSourceZone, this.transferDestinationZone, resourceType);
+            }
         }
     }
     
     /**
      * Launch transfer (called when spacebar pressed with destination selected)
+     * Reads slider values from the transfer UI to match button behavior
      */
     launchTransfer() {
         if (!this.transferSourceZone || !this.transferDestinationZone || !this.transferMenuMode) {
@@ -2745,14 +3587,31 @@ class OrbitalZoneSelector {
             return;
         }
         
+        const fromZone = this.transferSourceZone;
+        const toZone = this.transferDestinationZone;
+        const toName = this.getZoneName(toZone);
+        
         if (this.transferMenuMode === 'probe') {
-            // One-time transfer of 1 probe
-            this.createTransfer(this.transferSourceZone, this.transferDestinationZone, 'probe', 'one-time', 1, 0);
-            this.showQuickMessage(`Transferring 1 probe from ${this.getZoneName(this.transferSourceZone)} to ${this.getZoneName(this.transferDestinationZone)}`);
+            // Read probe count from slider (default to 1 if not found)
+            const slider = document.querySelector('#transfer-probe-slider');
+            const count = slider ? parseInt(slider.value) : 1;
+            
+            this.createTransfer(fromZone, toZone, 'probe', 'one-time', count, 0);
+            this.showQuickMessage(`Transferring ${count} probe${count > 1 ? 's' : ''} to ${toName}`);
         } else if (this.transferMenuMode === 'metal') {
-            // Continuous transfer of 10% stored metal
-            this.createTransfer(this.transferSourceZone, this.transferDestinationZone, 'metal', 'continuous', 0, 10);
-            this.showQuickMessage(`Metal transfer from ${this.getZoneName(this.transferSourceZone)} to ${this.getZoneName(this.transferDestinationZone)} started (10%)`);
+            // Read power allocation percentage from slider (default to 50% if not found)
+            const slider = document.querySelector('#transfer-allocation-slider');
+            const pct = slider ? parseFloat(slider.value) : 50;
+            
+            this.createTransfer(fromZone, toZone, 'metal', 'continuous', 0, pct);
+            this.showQuickMessage(`Metal transfer to ${toName} started (${pct.toFixed(1)}% power allocation)`);
+        } else if (this.transferMenuMode === 'methalox') {
+            // Read power allocation percentage from slider (default to 50% if not found)
+            const slider = document.querySelector('#transfer-allocation-slider');
+            const pct = slider ? parseFloat(slider.value) : 50;
+            
+            this.createTransfer(fromZone, toZone, 'methalox', 'continuous', 0, pct);
+            this.showQuickMessage(`Methalox transfer to ${toName} started (${pct.toFixed(1)}% power allocation)`);
         }
         
         // Close transfer menu
@@ -3130,9 +3989,11 @@ class OrbitalZoneSelector {
         
         // Calculate Hohmann transfer delta-v for all zones
         const zoneData = [];
-        // Fixed y-axis limits: positive axis up to 30 km/s, negative axis down to -20 km/s
+        // Fixed y-axis limits with UNIFIED SCALE (same pixels per km/s above and below zero)
         const maxPositiveDeltaV = 30; // Upper limit for positive y-axis (km/s)
-        const maxNegativeDeltaV = 20; // Lower limit magnitude for negative y-axis (km/s)
+        const maxNegativeDeltaV = 10; // Lower limit magnitude for negative y-axis (km/s)
+        // Total range determines scale: chartHeight / (maxPositive + maxNegative) pixels per km/s
+        const totalDeltaVRange = maxPositiveDeltaV + maxNegativeDeltaV; // 40 km/s total
         let maxDeltaV = maxPositiveDeltaV; // For backwards compatibility with some calculations
         
         // Collect mass data for all zones (for background mass bars)
@@ -3191,13 +4052,17 @@ class OrbitalZoneSelector {
                 const totalRequiredDeltaV = escapeDeltaV + hohmannDeltaV;
                 
                 // Check if this zone is reachable with current upgraded capacity
-                // For metal transfers, also require a mass driver to be present
+                // Different requirements based on resource type
                 let isReachable = false;
-                if (resourceType === 'metal') {
-                    // Metal transfers require a mass driver
+                if (resourceType === 'metal' || resourceType === 'methalox') {
+                    // Metal and methalox transfers require a mass driver
                     isReachable = hasMassDriver && (availableCapacity >= totalRequiredDeltaV);
-                } else {
+                } else if (resourceType === 'probe') {
                     // Probe transfers can use probe capacity + mass driver (if available)
+                    // Probes have their own propulsion, so no mass driver required
+                    isReachable = availableCapacity >= totalRequiredDeltaV;
+                } else {
+                    // Default fallback
                     isReachable = availableCapacity >= totalRequiredDeltaV;
                 }
                 
@@ -3221,25 +4086,23 @@ class OrbitalZoneSelector {
         const columnWidth = chartWidth / numZones;
         const barWidth = columnWidth * 0.6; // Bars are 60% of column width
         
-        // Calculate zero line position (1/3 of the way up from bottom, so 2/3 down from top)
-        const zeroY = padding.top + chartHeight * (2/3);
+        // UNIFIED SCALE: Same pixels per km/s for both positive and negative axes
+        // Zero line position is determined by the ratio of positive to total range
+        // This puts zero closer to the bottom (75% down from top with 30/10 split)
+        const zeroY = padding.top + chartHeight * (maxPositiveDeltaV / totalDeltaVRange);
         
         // Calculate available space above and below zero line
         const spaceAboveZero = zeroY - padding.top;
         const spaceBelowZero = (padding.top + chartHeight) - zeroY;
         
-        // Helper function to convert delta-v to Y coordinate (0 at 1/3 from bottom, positive up, negative down)
-        // Uses fixed axis limits: +30 km/s at top, -20 km/s at bottom
+        // Unified scale: pixels per km/s (same for both axes)
+        const pixelsPerKmS = chartHeight / totalDeltaVRange;
+        
+        // Helper function to convert delta-v to Y coordinate
+        // Uses UNIFIED SCALE: same pixels per km/s above and below zero
         const deltaVToY = (deltaV) => {
-            if (deltaV >= 0) {
-                // Positive values go upward from zero, scaled to maxPositiveDeltaV (30 km/s)
-                const normalized = deltaV / maxPositiveDeltaV;
-                return zeroY - (normalized * spaceAboveZero);
-            } else {
-                // Negative values go downward from zero, scaled to maxNegativeDeltaV (20 km/s)
-                const normalized = Math.abs(deltaV) / maxNegativeDeltaV;
-                return zeroY + (normalized * spaceBelowZero);
-            }
+            // Unified scale: deltaV * pixelsPerKmS gives consistent visual representation
+            return zeroY - (deltaV * pixelsPerKmS);
         };
         
         // Draw background
@@ -3330,12 +4193,15 @@ class OrbitalZoneSelector {
         ctx.fillText('0 km/s', padding.left - 10, zeroY + 4);
         
         // Draw horizontal grid lines (delta-v) - both positive and negative
+        // UNIFIED SCALE: Grid lines at consistent 5 km/s intervals
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.lineWidth = 1;
         
-        // Positive values (above zero) - fixed at 30 km/s max
-        for (let i = 1; i <= 5; i++) {
-            const deltaV = (i / 5) * maxPositiveDeltaV;
+        // Positive values (above zero) - grid lines every 5 km/s up to maxPositiveDeltaV
+        const gridInterval = 5; // km/s per grid line
+        const numPositiveGridLines = Math.floor(maxPositiveDeltaV / gridInterval);
+        for (let i = 1; i <= numPositiveGridLines; i++) {
+            const deltaV = i * gridInterval;
             const y = deltaVToY(deltaV);
             if (y >= padding.top) { // Only draw if within chart bounds
                 ctx.beginPath();
@@ -3350,9 +4216,10 @@ class OrbitalZoneSelector {
             }
         }
         
-        // Negative values (below zero) - fixed at -20 km/s min
-        for (let i = 1; i <= 4; i++) {
-            const deltaV = -(i / 4) * maxNegativeDeltaV;
+        // Negative values (below zero) - grid lines every 5 km/s down to -maxNegativeDeltaV
+        const numNegativeGridLines = Math.floor(maxNegativeDeltaV / gridInterval);
+        for (let i = 1; i <= numNegativeGridLines; i++) {
+            const deltaV = -i * gridInterval;
             const y = deltaVToY(deltaV);
             if (y <= padding.top + chartHeight) { // Only draw if within chart bounds
                 ctx.beginPath();
@@ -3388,8 +4255,8 @@ class OrbitalZoneSelector {
                 // Source zone: draw escape velocity bar (red, negative) and capacity bar (green)
                 
                 // Draw escape velocity bar (red) - negative, extending downward from zero
-                // Scale by maxNegativeDeltaV (20 km/s) for the negative axis
-                const escapeBarHeight = spaceBelowZero * (escapeDeltaV / maxNegativeDeltaV);
+                // UNIFIED SCALE: use pixelsPerKmS for consistent visual representation
+                const escapeBarHeight = escapeDeltaV * pixelsPerKmS;
                 const escapeBarTop = zeroY; // Starts at zero line
                 const escapeBarBottom = zeroY + escapeBarHeight; // Extends downward
                 
@@ -3398,8 +4265,10 @@ class OrbitalZoneSelector {
                 
                 // Draw capacity bar (green) - starts from bottom of red bar and extends upward
                 // Translated down by the height of the red bar
-                // Scale by maxPositiveDeltaV (30 km/s) for the positive axis
-                const capacityBarHeight = spaceAboveZero * (availableCapacity / maxPositiveDeltaV);
+                // UNIFIED SCALE: use pixelsPerKmS for consistent visual representation
+                // Cap visual bar height at maxPositiveDeltaV to stay within chart bounds
+                const visualCapacity = Math.min(availableCapacity, maxPositiveDeltaV);
+                const capacityBarHeight = visualCapacity * pixelsPerKmS;
                 const capacityBarBottom = escapeBarBottom; // Starts where red bar ends
                 const capacityBarTop = capacityBarBottom - capacityBarHeight; // Extends upward
                 
@@ -3456,8 +4325,8 @@ class OrbitalZoneSelector {
                 
             } else {
                 // Other zones: draw Hohmann transfer delta-v bar (blue, positive)
-                // Blue bar extends upward from zero, scaled by maxPositiveDeltaV (30 km/s)
-                const hohmannBarHeight = spaceAboveZero * (data.hohmannDeltaV / maxPositiveDeltaV);
+                // UNIFIED SCALE: use pixelsPerKmS for consistent visual representation
+                const hohmannBarHeight = data.hohmannDeltaV * pixelsPerKmS;
                 const hohmannBarBottom = zeroY; // Starts at zero line
                 const hohmannBarTop = zeroY - hohmannBarHeight; // Extends upward
                 
@@ -3466,8 +4335,8 @@ class OrbitalZoneSelector {
                 
                 // Draw escape velocity bar (dark red) for this zone - extends downward from zero
                 if (data.escapeDeltaV > 0) {
-                    // Scale by maxNegativeDeltaV (20 km/s) for the negative axis
-                    const zoneEscapeBarHeight = spaceBelowZero * (data.escapeDeltaV / maxNegativeDeltaV);
+                    // UNIFIED SCALE: use pixelsPerKmS for consistent visual representation
+                    const zoneEscapeBarHeight = data.escapeDeltaV * pixelsPerKmS;
                     const zoneEscapeBarTop = zeroY; // Starts at zero line
                     const zoneEscapeBarBottom = zeroY + zoneEscapeBarHeight; // Extends downward
                     
@@ -3511,9 +4380,11 @@ class OrbitalZoneSelector {
                     
                     // Start from the same position as the source zone's green bar
                     // (at the bottom of the escape velocity bar, extending upward)
-                    // Scale escape by maxNegativeDeltaV (20 km/s), capacity by maxPositiveDeltaV (30 km/s)
-                    const escapeBarBottom = zeroY + spaceBelowZero * (escapeDeltaV / maxNegativeDeltaV);
-                    const capacityBarHeight = spaceAboveZero * (availableCapacity / maxPositiveDeltaV);
+                    // UNIFIED SCALE: use pixelsPerKmS for consistent visual representation
+                    // Cap visual bar height at maxPositiveDeltaV to stay within chart bounds
+                    const escapeBarBottom = zeroY + escapeDeltaV * pixelsPerKmS;
+                    const visualCapacity = Math.min(availableCapacity, maxPositiveDeltaV);
+                    const capacityBarHeight = visualCapacity * pixelsPerKmS;
                     const capacityBarBottom = escapeBarBottom; // Same starting point as source
                     const capacityBarTop = capacityBarBottom - capacityBarHeight; // Extends upward
                     
@@ -3539,26 +4410,31 @@ class OrbitalZoneSelector {
             // Draw zone name label at bottom
             const zoneName = data.zone.name.replace(/\s+Orbit\s*$/i, '');
             const isDestination = this.transferMenuOpen && this.transferDestinationZone === data.zone.id;
+            // Check if destination is reachable (has sufficient delta-v)
+            const destIsReachable = data.isReachable !== undefined ? data.isReachable : false;
             
-            // Highlight destination zone
+            // Highlight destination zone - color based on reachability
             if (isDestination) {
-                // Draw highlight background
-                ctx.fillStyle = 'rgba(74, 255, 74, 0.3)';
+                // Draw highlight background - green if reachable, dark red if not
+                ctx.fillStyle = destIsReachable ? 'rgba(74, 255, 74, 0.3)' : 'rgba(180, 40, 40, 0.3)';
                 ctx.fillRect(x - 5, height - padding.bottom + 5, barWidth + 10, 35);
                 
-                // Draw border
-                ctx.strokeStyle = '#4aff4a';
+                // Draw border - green if reachable, dark red if not
+                ctx.strokeStyle = destIsReachable ? '#4aff4a' : '#b42828';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(x - 5, height - padding.bottom + 5, barWidth + 10, 35);
             }
             
-            ctx.fillStyle = data.isSource ? '#4a9eff' : (isDestination ? '#4aff4a' : 'rgba(255, 255, 255, 0.9)');
+            // Text color: source blue, destination green/red based on reachability, others white
+            const destTextColor = destIsReachable ? '#4aff4a' : '#b42828';
+            ctx.fillStyle = data.isSource ? '#4a9eff' : (isDestination ? destTextColor : 'rgba(255, 255, 255, 0.9)');
             ctx.font = isDestination ? 'bold 11px monospace' : '11px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(zoneName, centerX, height - padding.bottom + 15);
             
             // Draw zone radius label
-            ctx.fillStyle = isDestination ? 'rgba(74, 255, 74, 0.9)' : 'rgba(255, 255, 255, 0.6)';
+            const destRadiusColor = destIsReachable ? 'rgba(74, 255, 74, 0.9)' : 'rgba(180, 40, 40, 0.9)';
+            ctx.fillStyle = isDestination ? destRadiusColor : 'rgba(255, 255, 255, 0.6)';
             ctx.font = '9px monospace';
             ctx.fillText(`${(data.zone.radius_au || 0).toFixed(2)} AU`, centerX, height - padding.bottom + 28);
         }
@@ -3574,16 +4450,26 @@ class OrbitalZoneSelector {
                 const sourceX = padding.left + (sourceIndex * columnWidth) + columnWidth / 2;
                 const destX = padding.left + (destIndex * columnWidth) + columnWidth / 2;
                 
-                // Determine color based on resource type
+                // Check if destination is reachable (has sufficient delta-v)
+                const destData = zoneData[destIndex];
+                const transferIsReachable = destData.isReachable !== undefined ? destData.isReachable : false;
+                
+                // Determine color based on reachability - green if reachable, dark red if not
                 let transferColor;
-                if (resourceType === 'probe') {
-                    transferColor = '#00ffff'; // Cyan for probes
-                } else if (resourceType === 'metal') {
-                    transferColor = '#c0c0c0'; // Silver for metal
-                } else if (resourceType === 'methalox') {
-                    transferColor = '#87ceeb'; // Light blue for methalox
+                if (transferIsReachable) {
+                    // Reachable: use resource-type colors
+                    if (resourceType === 'probe') {
+                        transferColor = '#00ffff'; // Cyan for probes
+                    } else if (resourceType === 'metal') {
+                        transferColor = '#c0c0c0'; // Silver for metal
+                    } else if (resourceType === 'methalox') {
+                        transferColor = '#87ceeb'; // Light blue for methalox
+                    } else {
+                        transferColor = '#00ffff'; // Default to cyan
+                    }
                 } else {
-                    transferColor = '#00ffff'; // Default to cyan
+                    // Not reachable: dark red
+                    transferColor = '#b42828';
                 }
                 
                 // Draw vertical lines from zone labels pointing down
@@ -3627,19 +4513,40 @@ class OrbitalZoneSelector {
                 ctx.textAlign = 'center';
                 const textX = (sourceX + destX) / 2;
                 ctx.fillText('TRANSFER', textX, horizontalLineY + 15);
+                
+                // Draw transfer details based on resource type
+                let yOffset = 27;
+                ctx.font = '10px monospace';
+                
+                if (resourceType === 'probe' && this.currentProbeTransferCount > 0) {
+                    // Probe transfer: show count
+                    const probeText = this.currentProbeTransferCount === 1 ? '1 PROBE' : `${this.currentProbeTransferCount} PROBES`;
+                    ctx.fillText(probeText, textX, horizontalLineY + yOffset);
+                    yOffset += 12;
+                } else if ((resourceType === 'metal' || resourceType === 'methalox') && this.currentMassRateKgPerDay > 0) {
+                    // Mass transfer: show mass rate
+                    const formatMassRateForChart = (kgPerDay) => {
+                        if (kgPerDay >= 1e15) return `${(kgPerDay / 1e15).toFixed(2)} Pt/day`;
+                        if (kgPerDay >= 1e12) return `${(kgPerDay / 1e12).toFixed(2)} Gt/day`;
+                        if (kgPerDay >= 1e9) return `${(kgPerDay / 1e9).toFixed(2)} Mt/day`;
+                        if (kgPerDay >= 1e6) return `${(kgPerDay / 1e6).toFixed(2)} kt/day`;
+                        if (kgPerDay >= 1e3) return `${(kgPerDay / 1e3).toFixed(2)} t/day`;
+                        return `${kgPerDay.toFixed(0)} kg/day`;
+                    };
+                    ctx.fillText(`MASS RATE: ${formatMassRateForChart(this.currentMassRateKgPerDay)}`, textX, horizontalLineY + yOffset);
+                    yOffset += 12;
+                }
+                
+                // Draw AU distance below TRANSFER label (or details if shown)
+                const sourceZone = zoneData[sourceIndex].zone;
+                const destZone = zoneData[destIndex].zone;
+                const auDistance = Math.abs((destZone.radius_au || 0) - (sourceZone.radius_au || 0));
+                ctx.fillText(`${auDistance.toFixed(2)} AU`, textX, horizontalLineY + yOffset);
             }
         }
         
         // Draw axis labels
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.font = '14px monospace';
-        ctx.textAlign = 'center';
-        
-        ctx.save();
-        ctx.translate(20, height / 2);
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText('Delta-V (km/s)', 0, 0);
-        ctx.restore();
+        // (Left y-axis label removed - tick markers with km/s units are sufficient)
         
         // Right y-axis label (mass, log scale)
         ctx.fillStyle = 'rgba(139, 90, 43, 0.9)';
@@ -3654,29 +4561,29 @@ class OrbitalZoneSelector {
         ctx.font = '12px monospace';
         ctx.textAlign = 'left';
         
-        // Brown bar (zone mass, log scale)
-        ctx.fillStyle = 'rgba(101, 67, 33, 0.7)';
-        ctx.fillRect(padding.left, legendY - 8, 20, 12);
-        ctx.fillStyle = 'rgba(139, 90, 43, 0.9)';
-        ctx.fillText('Zone Mass (log)', padding.left + 25, legendY);
-        
-        // Red bar (escape velocity, negative)
-        ctx.fillStyle = 'rgba(255, 68, 68, 0.8)';
-        ctx.fillRect(padding.left + 145, legendY - 8, 20, 12);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillText('Escape ΔV', padding.left + 170, legendY);
-        
-        // Blue bar (Hohmann transfer, positive)
-        ctx.fillStyle = 'rgba(74, 158, 255, 0.8)';
-        ctx.fillRect(padding.left + 265, legendY - 8, 20, 12);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillText('Transfer ΔV', padding.left + 290, legendY);
-        
-        // Green bar (capacity, starts from transfer)
+        // Green bar (launch delta-v capacity) - first
         ctx.fillStyle = 'rgba(74, 255, 74, 0.8)';
-        ctx.fillRect(padding.left + 390, legendY - 8, 20, 12);
+        ctx.fillRect(padding.left, legendY - 8, 20, 12);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillText('Capacity', padding.left + 415, legendY);
+        ctx.fillText('Launch Δv', padding.left + 25, legendY);
+        
+        // Red bar (escape velocity, negative) - second
+        ctx.fillStyle = 'rgba(255, 68, 68, 0.8)';
+        ctx.fillRect(padding.left + 115, legendY - 8, 20, 12);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillText('Escape Δv', padding.left + 140, legendY);
+        
+        // Blue bar (Hohmann transfer, positive) - third
+        ctx.fillStyle = 'rgba(74, 158, 255, 0.8)';
+        ctx.fillRect(padding.left + 235, legendY - 8, 20, 12);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillText('Transfer Δv', padding.left + 260, legendY);
+        
+        // Brown bar (zone mass, log scale) - fourth
+        ctx.fillStyle = 'rgba(101, 67, 33, 0.7)';
+        ctx.fillRect(padding.left + 360, legendY - 8, 20, 12);
+        ctx.fillStyle = 'rgba(139, 90, 43, 0.9)';
+        ctx.fillText('Zone Mass (log)', padding.left + 385, legendY);
         
         // Draw title
         ctx.fillStyle = '#4a9eff';
@@ -4953,6 +5860,12 @@ class OrbitalZoneSelector {
             hash = ((hash << 5) - hash) + zoneId.charCodeAt(0);
             // Only hash structure types present, not counts (counts change frequently)
             hash = ((hash << 5) - hash) + Object.keys(structures).length;
+            
+            // When transfer menu is open, also hash mass driver count for source zone
+            // This ensures the UI updates when mass drivers are built/destroyed
+            if (this.transferMenuOpen && this.transferSourceZone === zoneId) {
+                hash = ((hash << 5) - hash) + (structures['mass_driver'] || 0);
+            }
         }
         
         const currentHash = hash.toString();
@@ -4975,6 +5888,30 @@ class OrbitalZoneSelector {
             const resourceType = this.quickTransferMode ? this.quickTransferMode : (this.deltaVOverlayResourceType || 'probe');
             if (sourceZone) {
                 this.drawOverlayChart(this.deltaVOverlayCanvas, sourceZone, resourceType);
+            }
+        }
+        
+        // Update transfer controls when transfer menu is open (refresh mass driver status, etc.)
+        // Only update if structural values have changed to avoid resetting sliders
+        // NOTE: probe count and stored metal change frequently but don't affect slider setup,
+        // so we exclude exact values from the hash to avoid constant refreshes that reset slider position
+        if (this.transferMenuOpen && this.updateTransferControls && this.transferSourceZone) {
+            const sourceZone = this.transferSourceZone;
+            const zoneStructures = structuresByZone[sourceZone] || {};
+            const massDriverCount = zoneStructures['mass_driver'] || 0;
+            const zoneProbes = (gameState.probes_by_zone || {})[sourceZone] || {};
+            const probeCount = zoneProbes['probe'] || 0;
+            const resourceType = this.transferMenuMode || 'probe';
+            
+            // Create a hash of structural values that affect control setup
+            // Include hasProbes flag (not exact count) to enable/disable probe slider when crossing 0
+            // Exclude frequently-changing exact values to prevent slider reset
+            const hasProbes = probeCount > 0 ? 'p' : 'np';
+            const controlsHash = `${massDriverCount}_${this.transferDestinationZone || ''}_${resourceType}_${this.transferSystem ? 'ts' : 'no'}_${hasProbes}`;
+            
+            if (controlsHash !== this.lastTransferControlsHash) {
+                this.lastTransferControlsHash = controlsHash;
+                this.updateTransferControls(sourceZone, this.transferDestinationZone, resourceType);
             }
         }
         

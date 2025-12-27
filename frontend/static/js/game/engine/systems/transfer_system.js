@@ -9,6 +9,7 @@ class TransferSystem {
     constructor(orbitalMechanics) {
         this.orbitalMechanics = orbitalMechanics;
         this.economicRules = null;
+        this.buildingsData = null;
         // Track accumulated probes for continuous transfers (per transfer)
         this.continuousAccumulators = new Map();
         // Track last rate update time (for 5-second updates)
@@ -23,6 +24,14 @@ class TransferSystem {
      */
     initializeEconomicRules(economicRules) {
         this.economicRules = economicRules;
+    }
+    
+    /**
+     * Initialize with buildings data (for base values like muzzle velocity)
+     * @param {Object} buildingsData - Buildings data from buildings.json
+     */
+    initializeBuildingsData(buildingsData) {
+        this.buildingsData = buildingsData;
     }
     
     /**
@@ -467,28 +476,34 @@ class TransferSystem {
             
             state.probes_by_zone = probesByZone;
         } else if (transferResourceType === 'metal') {
-            // Metal transfer - use metal_rate_percentage (% of stored metal per day)
-            const metalRatePercentage = transfer.metal_rate_percentage || 0;
+            // Metal transfer - use power_allocation_percentage (% of mass driver power)
+            // Fall back to metal_rate_percentage for backwards compatibility
+            const powerAllocationPct = transfer.power_allocation_percentage ?? transfer.metal_rate_percentage ?? 0;
             
-            if (metalRatePercentage <= 0) return;
+            if (powerAllocationPct <= 0) return;
             
             // Get available metal in source zone
             const zones = state.zones || {};
             const sourceZone = zones[fromZoneId] || {};
             available = sourceZone.stored_metal || 0;
             
-            // Calculate actual kg/day based on percentage of stored metal
-            const metalRateKgPerDay = available * (metalRatePercentage / 100);
+            // Calculate throughput based on power allocation and delta-v to destination
+            const throughputInfo = this.calculatePowerBasedThroughput(
+                state, fromZoneId, toZoneId, powerAllocationPct
+            );
+            
+            // If destination is unreachable, skip
+            if (!throughputInfo.canReach) {
+                console.warn(`[Transfer] Metal transfer unreachable: ${fromZoneId} -> ${toZoneId}, muzzle velocity ${throughputInfo.muzzleVelocityKmS.toFixed(2)} km/s < required ${throughputInfo.deltaVKmS.toFixed(2)} km/s`);
+                return;
+            }
+            
+            const metalRateKgPerDay = throughputInfo.throughputKgPerDay;
             
             if (metalRateKgPerDay <= 0) return;
             
-            // Calculate total capacity and check if this transfer's rate exceeds its share
-            const totalCapacity = this.calculateMetalTransferCapacity(state, fromZoneId);
-            const usedByOthers = this.calculateUsedMetalCapacity(state, fromZoneId, transfer.id);
-            const availableCapacity = Math.max(0, totalCapacity - usedByOthers);
-            
-            // Cap send rate at available capacity
-            sendRate = Math.min(metalRateKgPerDay, availableCapacity);
+            // Cap send rate at available stored metal
+            sendRate = Math.min(metalRateKgPerDay, available);
             
             // Get accumulator for this transfer
             const transferId = transfer.id;
@@ -923,10 +938,13 @@ class TransferSystem {
      * @returns {number} Power draw in MW
      */
     getMassDriverPowerDraw(state, zoneId, buildingsData = null) {
+        // Use passed buildingsData or fall back to stored buildingsData
+        const buildings = buildingsData || this.buildingsData;
+        
         // Get base power from buildings data
         let basePowerMW = 100; // Default: 100 MW
-        if (buildingsData && buildingsData.mass_driver) {
-            basePowerMW = buildingsData.mass_driver.power_draw_mw || basePowerMW;
+        if (buildings && buildings.mass_driver) {
+            basePowerMW = buildings.mass_driver.power_draw_mw || basePowerMW;
         }
         
         // Apply upgrade factors
@@ -945,10 +963,13 @@ class TransferSystem {
      * @returns {number} Efficiency (0-1)
      */
     getMassDriverEfficiency(state, zoneId, buildingsData = null) {
+        // Use passed buildingsData or fall back to stored buildingsData
+        const buildings = buildingsData || this.buildingsData;
+        
         // Get base efficiency from buildings data
         let baseEfficiency = 0.4; // Default: 40%
-        if (buildingsData && buildingsData.mass_driver) {
-            baseEfficiency = buildingsData.mass_driver.energy_efficiency || baseEfficiency;
+        if (buildings && buildings.mass_driver) {
+            baseEfficiency = buildings.mass_driver.energy_efficiency || baseEfficiency;
         }
         
         // Apply upgrade factors
@@ -967,10 +988,13 @@ class TransferSystem {
      * @returns {number} Muzzle velocity in km/s
      */
     getMassDriverMuzzleVelocity(state, zoneId, buildingsData = null) {
+        // Use passed buildingsData or fall back to stored buildingsData
+        const buildings = buildingsData || this.buildingsData;
+        
         // Get base muzzle velocity from buildings data
         let baseMuzzleVelocityKmS = 3.0; // Default: 3 km/s (enough for Venus but not Mars)
-        if (buildingsData && buildingsData.mass_driver) {
-            baseMuzzleVelocityKmS = buildingsData.mass_driver.base_muzzle_velocity_km_s || baseMuzzleVelocityKmS;
+        if (buildings && buildings.mass_driver) {
+            baseMuzzleVelocityKmS = buildings.mass_driver.base_muzzle_velocity_km_s || baseMuzzleVelocityKmS;
         }
         
         // Apply mass driver delta-v bonus from starting skill points
@@ -986,8 +1010,192 @@ class TransferSystem {
     }
     
     /**
+     * Get total mass driver power capacity for a zone (MW)
+     * This is the total power output of all mass drivers in the zone
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Zone identifier
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {number} Total power in MW
+     */
+    getTotalMassDriverPowerMW(state, zoneId, buildingsData = null) {
+        const structuresByZone = state.structures_by_zone || {};
+        const zoneStructures = structuresByZone[zoneId] || {};
+        const massDriverCount = zoneStructures['mass_driver'] || 0;
+        
+        if (massDriverCount === 0) {
+            return 0;
+        }
+        
+        const powerPerDriverMW = this.getMassDriverPowerDraw(state, zoneId, buildingsData);
+        return powerPerDriverMW * massDriverCount;
+    }
+    
+    /**
+     * Get total power allocation percentage currently used by all transfers from a zone
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Zone identifier
+     * @param {string} excludeTransferId - Optional transfer ID to exclude
+     * @returns {number} Total used power percentage (0-100)
+     */
+    getUsedMassDriverPowerPct(state, zoneId, excludeTransferId = null) {
+        const activeTransfers = state.active_transfers || [];
+        let totalUsedPct = 0;
+        
+        for (const transfer of activeTransfers) {
+            // Skip if this transfer should be excluded
+            if (excludeTransferId && transfer.id === excludeTransferId) continue;
+            
+            // Only count metal transfers from this zone
+            if (transfer.from_zone !== zoneId) continue;
+            if (transfer.resource_type !== 'metal') continue;
+            if (transfer.paused) continue;
+            
+            if (transfer.type === 'continuous') {
+                // Use power_allocation_percentage
+                const allocationPct = transfer.power_allocation_percentage || 0;
+                totalUsedPct += allocationPct;
+            }
+        }
+        
+        return totalUsedPct;
+    }
+    
+    /**
+     * Get available mass driver power percentage for a zone
+     * @param {Object} state - Game state
+     * @param {string} zoneId - Zone identifier
+     * @param {string} excludeTransferId - Optional transfer ID to exclude
+     * @returns {number} Available power percentage (0-100)
+     */
+    getAvailableMassDriverPowerPct(state, zoneId, excludeTransferId = null) {
+        const usedPct = this.getUsedMassDriverPowerPct(state, zoneId, excludeTransferId);
+        return Math.max(0, 100 - usedPct);
+    }
+    
+    /**
+     * Calculate energy cost per kg for a given delta-v (Joules/kg)
+     * Uses kinetic energy formula: E = 0.5 * m * v^2, so E/m = 0.5 * v^2
+     * @param {number} deltaVKmS - Delta-v in km/s
+     * @returns {number} Energy in Joules per kg
+     */
+    getEnergyCostPerKg(deltaVKmS) {
+        const deltaVMS = deltaVKmS * 1000; // Convert to m/s
+        return 0.5 * deltaVMS * deltaVMS;
+    }
+    
+    /**
+     * Calculate mass throughput rate based on power allocation and delta-v
+     * 
+     * The mass driver must supply enough energy to:
+     * 1. Escape the origin's gravity well (escape_velocity delta-v)
+     * 2. Perform the Hohmann transfer to destination (hohmann delta-v)
+     * 
+     * Total energy per kg = 0.5 * (hohmann_delta_v + escape_velocity)^2
+     * 
+     * Throughput (kg/day) = (power * efficiency * seconds_per_day) / energy_per_kg
+     * 
+     * Reachability check uses: net_delta_v >= hohmann_delta_v
+     * Where: net_delta_v = muzzle_velocity - escape_velocity
+     * 
+     * @param {Object} state - Game state
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone
+     * @param {number} powerAllocationPct - Power allocation percentage (0-100)
+     * @param {Object} buildingsData - Optional buildings data
+     * @returns {Object} Throughput calculation results
+     */
+    calculatePowerBasedThroughput(state, fromZoneId, toZoneId, powerAllocationPct, buildingsData = null) {
+        const totalPowerMW = this.getTotalMassDriverPowerMW(state, fromZoneId, buildingsData);
+        const efficiency = this.getMassDriverEfficiency(state, fromZoneId, buildingsData);
+        const muzzleVelocityKmS = this.getMassDriverMuzzleVelocity(state, fromZoneId, buildingsData);
+        
+        // Get zone mass for escape velocity calculation
+        const zones = state.zones || {};
+        const zoneData = zones[fromZoneId] || {};
+        const zone = this.orbitalMechanics?.getZone(fromZoneId);
+        const zoneMass = zoneData.mass_remaining !== undefined && zoneData.mass_remaining !== null
+            ? zoneData.mass_remaining
+            : (zone?.total_mass_kg || 0);
+        
+        // Get individual delta-v components
+        const escapeDeltaVKmS = this.orbitalMechanics?.calculateEscapeDeltaV(fromZoneId, zoneMass) || 0;
+        const hohmannDeltaVKmS = this.orbitalMechanics?.getHohmannDeltaVKmS(fromZoneId, toZoneId) || 0;
+        
+        // Total delta-v for energy calculation = escape + Hohmann
+        // The mass driver must supply energy for the complete transfer
+        const totalDeltaVKmS = escapeDeltaVKmS + hohmannDeltaVKmS;
+        
+        // Net delta-v = muzzle velocity - escape velocity
+        // This is what's available for the Hohmann transfer after escaping
+        const netDeltaVKmS = muzzleVelocityKmS - escapeDeltaVKmS;
+        
+        // Check if target is reachable: net_delta_v >= hohmann_delta_v
+        // Equivalent to: muzzle_velocity >= hohmann + escape
+        const canReach = netDeltaVKmS >= hohmannDeltaVKmS;
+        
+        if (!canReach) {
+            return {
+                throughputKgPerDay: 0,
+                // Return both components for debugging/display
+                escapeDeltaVKmS,
+                hohmannDeltaVKmS,
+                totalDeltaVKmS,
+                netDeltaVKmS,
+                energyPerKgJ: this.getEnergyCostPerKg(totalDeltaVKmS),
+                allocatedPowerMW: 0,
+                canReach: false,
+                muzzleVelocityKmS
+            };
+        }
+        
+        // Calculate allocated power
+        const allocatedPowerMW = totalPowerMW * (powerAllocationPct / 100);
+        const netPowerW = allocatedPowerMW * 1e6 * efficiency;
+        
+        // Energy per day (joules)
+        const secondsPerDay = 86400;
+        const energyPerDayJ = netPowerW * secondsPerDay;
+        
+        // Energy per kg for the complete transfer (escape + Hohmann)
+        // E = 0.5 * v^2 where v = total_delta_v in m/s
+        const energyPerKgJ = this.getEnergyCostPerKg(totalDeltaVKmS);
+        
+        // Mass throughput per day = total energy per day / energy per kg
+        const throughputKgPerDay = energyPerKgJ > 0 ? energyPerDayJ / energyPerKgJ : 0;
+        
+        return {
+            throughputKgPerDay,
+            // Individual components
+            escapeDeltaVKmS,
+            hohmannDeltaVKmS,
+            totalDeltaVKmS,
+            netDeltaVKmS,
+            // Energy and power
+            energyPerKgJ,
+            allocatedPowerMW,
+            efficiency,
+            totalPowerMW,
+            // Status
+            canReach: true,
+            muzzleVelocityKmS,
+            // Backward compatibility
+            deltaVKmS: totalDeltaVKmS
+        };
+    }
+    
+    /**
      * Calculate mass driver throughput (kg/day) for a specific destination
-     * Based on physics: throughput = (power * efficiency * time) / (0.5 * v^2 per kg)
+     * 
+     * The mass driver must supply energy for:
+     * 1. Escaping origin's gravity well (escape_velocity)
+     * 2. Hohmann transfer to destination (hohmann_delta_v)
+     * 
+     * Total energy per kg = 0.5 * (escape + hohmann)^2
+     * Throughput = (power * efficiency * seconds_per_day) / energy_per_kg
+     * 
+     * Reachability: net_delta_v >= hohmann_delta_v
+     * Where: net_delta_v = muzzle_velocity - escape_velocity
+     * 
      * @param {Object} state - Game state
      * @param {string} zoneId - Source zone identifier
      * @param {string} targetZoneId - Destination zone identifier
@@ -1007,12 +1215,20 @@ class TransferSystem {
             ? zoneData.mass_remaining
             : (zone?.total_mass_kg || 0);
         
-        const requiredDeltaVKmS = this.orbitalMechanics.getTotalDeltaVKmS(zoneId, targetZoneId, zoneMass);
+        // Get individual delta-v components
+        const escapeDeltaVKmS = this.orbitalMechanics.calculateEscapeDeltaV(zoneId, zoneMass);
+        const hohmannDeltaVKmS = this.orbitalMechanics.getHohmannDeltaVKmS(zoneId, targetZoneId);
         
-        // Check if target is reachable
-        if (requiredDeltaVKmS > muzzleVelocityKmS) {
+        // Net delta-v = muzzle velocity - escape velocity
+        const netDeltaVKmS = muzzleVelocityKmS - escapeDeltaVKmS;
+        
+        // Check if target is reachable: net_delta_v >= hohmann_delta_v
+        if (netDeltaVKmS < hohmannDeltaVKmS) {
             return 0; // Cannot reach this orbit
         }
+        
+        // Total delta-v for energy calculation = escape + Hohmann
+        const totalDeltaVKmS = escapeDeltaVKmS + hohmannDeltaVKmS;
         
         // Net power in watts
         const netPowerW = powerMW * 1e6 * efficiency;
@@ -1021,9 +1237,9 @@ class TransferSystem {
         const secondsPerDay = 86400;
         const energyPerDayJ = netPowerW * secondsPerDay;
         
-        // Energy per kg at this delta-v: E = 0.5 * v^2 (v in m/s)
-        const deltaVMS = requiredDeltaVKmS * 1000;
-        const energyPerKgJ = 0.5 * deltaVMS * deltaVMS;
+        // Energy per kg for complete transfer: E = 0.5 * v^2 (v in m/s)
+        const totalDeltaVMS = totalDeltaVKmS * 1000;
+        const energyPerKgJ = 0.5 * totalDeltaVMS * totalDeltaVMS;
         
         // Mass per day
         if (energyPerKgJ <= 0) return 0;
@@ -1032,6 +1248,14 @@ class TransferSystem {
     
     /**
      * Check if mass driver can reach destination based on muzzle velocity
+     * 
+     * Uses the net delta-v comparison:
+     *   net_delta_v >= hohmann_delta_v
+     * Where:
+     *   net_delta_v = muzzle_velocity - escape_velocity
+     * 
+     * This is equivalent to: muzzle_velocity >= hohmann_delta_v + escape_velocity
+     * 
      * @param {Object} state - Game state
      * @param {string} fromZoneId - Source zone
      * @param {string} toZoneId - Destination zone
@@ -1050,9 +1274,19 @@ class TransferSystem {
                 : (fromZone?.total_mass_kg || 0);
         }
         
-        const requiredDeltaV = this.orbitalMechanics.getTotalDeltaVKmS(fromZoneId, toZoneId, fromZoneMass);
+        // Get escape velocity from origin
+        const escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+        
+        // Get Hohmann transfer delta-v (fixed physics)
+        const hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+        
+        // Get mass driver muzzle velocity
         const muzzleVelocity = this.getMassDriverMuzzleVelocity(state, fromZoneId, buildingsData);
-        return muzzleVelocity >= requiredDeltaV;
+        
+        // Compare net delta-v to Hohmann delta-v:
+        // net_delta_v = muzzle_velocity - escape_velocity
+        // Can reach if: net_delta_v >= hohmann_delta_v
+        return this.orbitalMechanics.canTransferWithNetDeltaV(muzzleVelocity, escapeDeltaV, hohmannDeltaV);
     }
     
     /**
@@ -1155,17 +1389,17 @@ class TransferSystem {
                 return { success: false, transfer: null, error: 'Mass driver required for metal transfers' };
             }
             
-            // Check capacity for continuous metal transfers
+            // Check power allocation for continuous metal transfers
             if (type === 'continuous' && ratePercentage > 0) {
-                // Use destination-specific capacity calculation
-                const availableCapacity = this.getAvailableMetalCapacity(state, fromZoneId, null, null, toZoneId);
-                if (availableCapacity <= 0) {
-                    return { success: false, transfer: null, error: 'No mass driver capacity available. Build more mass drivers or reduce other transfer rates.' };
+                // Check available power allocation percentage
+                const availablePowerPct = this.getAvailableMassDriverPowerPct(state, fromZoneId);
+                if (availablePowerPct <= 0) {
+                    return { success: false, transfer: null, error: 'No mass driver power available. Build more mass drivers or reduce other transfer allocations.' };
                 }
-                // Cap the rate at available capacity
-                if (ratePercentage > availableCapacity) {
-                    console.log(`[Transfer] Metal rate capped from ${ratePercentage} to ${availableCapacity} kg/day (capacity limit)`);
-                    ratePercentage = availableCapacity;
+                // Cap the allocation at available power
+                if (ratePercentage > availablePowerPct) {
+                    console.log(`[Transfer] Power allocation capped from ${ratePercentage}% to ${availablePowerPct}% (capacity limit)`);
+                    ratePercentage = availablePowerPct;
                 }
             }
         }
@@ -1267,8 +1501,8 @@ class TransferSystem {
         } else {
             // Continuous transfer
             if (resourceType === 'metal') {
-                // For metal, ratePercentage is percentage of stored metal per day
-                transfer.metal_rate_percentage = ratePercentage;
+                // For metal, ratePercentage is percentage of mass driver power allocation
+                transfer.power_allocation_percentage = ratePercentage;
             } else {
                 // For probes, ratePercentage is percentage of production rate
                 transfer.rate_percentage = ratePercentage;

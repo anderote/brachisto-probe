@@ -96,16 +96,19 @@ class ResearchPanel {
             return 'energy';
         }
         
-        // Dexterity category (propulsion, locomotion, acds, robotics, dyson swarm, production efficiency, resource recovery)
-        if (treeId === 'propulsion_systems' || treeId === 'locomotion_systems' || 
+        // Dexterity category (propulsion, thrust, locomotion, acds, robotics, materials, dyson swarm, production efficiency, resource recovery)
+        if (treeId === 'propulsion_systems' || treeId === 'thrust_systems' ||
+            treeId === 'locomotion_systems' || treeId === 'materials_science' ||
             treeId === 'acds' || treeId === 'robotic_systems' ||
             treeId === 'dyson_swarm_construction' || treeId === 'production_efficiency' ||
             treeId === 'recycling_efficiency' ||
-            name.includes('propulsion') || name.includes('locomotion') || 
+            name.includes('propulsion') || name.includes('thrust') ||
+            name.includes('locomotion') || name.includes('materials') ||
             name.includes('attitude') || name.includes('robotic') ||
             name.includes('dyson') || name.includes('production') ||
             name.includes('recycling') || name.includes('salvage') ||
-            category === 'propulsion' || category === 'locomotion' || 
+            category === 'propulsion' || category === 'thrust' ||
+            category === 'locomotion' || category === 'materials' ||
             category === 'control' || category === 'robotics' ||
             category === 'construction_efficiency' || category === 'manufacturing' ||
             category === 'resource_management') {
@@ -494,7 +497,7 @@ class ResearchPanel {
             html += `<div class="probe-summary-breakdown" style="margin-top: 5px;">
                 <div class="probe-summary-breakdown-item">
                     <span class="probe-summary-breakdown-label">Progress:</span>
-                    <span class="probe-summary-breakdown-count">${completedTranches} / ${totalTranches} tranches</span>
+                    <span class="probe-summary-breakdown-count" id="tranches-${treeId}">${completedTranches} / ${totalTranches} tranches</span>
                 </div>`;
             
             if (nextTier && nextTierEnabled && allocatedFLOPS > 0) {
@@ -1087,7 +1090,7 @@ class ResearchPanel {
                 }
             }
             
-            // Update progress bars
+            // Update progress bars and tranche counts
             if (shouldBeEnabled && tierState.tranches_completed !== undefined) {
                 const tierDefAndIndex = this.getTierDefinitionWithIndex(treeId, tierId, subcatId);
                 if (tierDefAndIndex) {
@@ -1104,6 +1107,23 @@ class ResearchPanel {
                     }
                     if (progressPercentEl) {
                         progressPercentEl.textContent = `${progressPercent.toFixed(1)}%`;
+                    }
+                    
+                    // Update total tranche count across all tiers
+                    const tranchesEl = document.getElementById(`tranches-${treeId}`);
+                    if (tranchesEl) {
+                        const treeData = this.researchData[treeId];
+                        if (treeData && treeData.tiers) {
+                            let totalTranches = 0;
+                            let completedTranches = 0;
+                            treeData.tiers.forEach(tier => {
+                                const maxTranches = tier.tranches || 10;
+                                totalTranches += maxTranches;
+                                const tierProgress = treeState[tier.id];
+                                completedTranches += (tierProgress?.tranches_completed || 0);
+                            });
+                            tranchesEl.textContent = `${completedTranches} / ${totalTranches} tranches`;
+                        }
                     }
                     
                     // Update time estimate using smooth progress

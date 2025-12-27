@@ -219,11 +219,16 @@ class SceneManager {
 
     animate() {
         this.animationId = requestAnimationFrame(() => this.animate());
+        
+        // Track FPS for debug panel
+        if (window.debugPanel) {
+            window.debugPanel.tick();
+        }
 
         // Update camera controller
         const deltaTime = 0.016; // ~60fps
 
-        // Handle arrow key rotation (or comet/transfer navigation when tracking)
+        // Handle arrow keys for comet/transfer navigation when tracking
         if (this.keys['ArrowLeft']) {
             if (this.trackingMode === 'comet' && !this.arrowLeftPressed) {
                 // Navigate to previous comet
@@ -233,8 +238,6 @@ class SceneManager {
                 // Navigate to previous transfer
                 this.arrowLeftPressed = true;
                 this.cycleToPreviousTransfer();
-            } else if (!this.trackingMode) {
-                this.cameraController.rotate(-1 * deltaTime * 60, 0);
             }
         } else {
             this.arrowLeftPressed = false;
@@ -248,17 +251,9 @@ class SceneManager {
                 // Navigate to next transfer
                 this.arrowRightPressed = true;
                 this.cycleToNextTransfer();
-            } else if (!this.trackingMode) {
-                this.cameraController.rotate(1 * deltaTime * 60, 0);
             }
         } else {
             this.arrowRightPressed = false;
-        }
-        if (this.keys['ArrowUp']) {
-            this.cameraController.rotate(0, -1 * deltaTime * 60);
-        }
-        if (this.keys['ArrowDown']) {
-            this.cameraController.rotate(0, 1 * deltaTime * 60);
         }
         
         // WASD for panning
@@ -564,125 +559,72 @@ class SceneManager {
             return;
         }
         
+        // Get current game time
+        const gameState = window.gameEngine?.getGameState();
+        const currentTime = gameState?.time || 0;
+        
         // Get zone names for display
         const fromZoneName = this.formatZoneName(viz.fromZoneId);
         const toZoneName = this.formatZoneName(viz.toZoneId);
         
-        // Get resource type - try multiple sources
+        // Get resource type and cargo mass from game state transfer object
         let resourceType = viz.resourceType || 'probe';
+        let cargoMass = 0;
         
-        // Fallback: try to get from game state transfer object
-        if (resourceType === 'probe' && gameState) {
-            const activeTransfers = gameState.active_transfers || [];
-            // Try to find transfer by ID (might be in transferId field for batches)
-            const transferId = transferData.id;
-            const transfer = activeTransfers.find(t => {
-                // Check if ID matches directly or if it's a batch ID
-                if (t.id === transferId) return true;
-                // For batch IDs, check if it starts with transfer ID
-                if (transferId.includes('_') && transferId.startsWith(t.id + '_')) return true;
-                return false;
-            });
-            
-            if (transfer && transfer.resource_type) {
+        const activeTransfersState = gameState?.active_transfers || [];
+        const transferId = transferData.id;
+        const transfer = activeTransfersState.find(t => {
+            // Check if ID matches directly or if it's a batch ID
+            if (t.id === transferId) return true;
+            // For batch IDs, check if it starts with transfer ID
+            if (transferId.includes('_') && transferId.startsWith(t.id + '_')) return true;
+            return false;
+        });
+        
+        if (transfer) {
+            if (transfer.resource_type) {
                 resourceType = transfer.resource_type;
+            }
+            // Calculate cargo mass
+            if (resourceType === 'metal') {
+                cargoMass = transfer.metal_kg || 0;
+            } else {
+                // Probe mass: 100 kg per probe
+                const probeCount = transfer.probe_count || 0;
+                cargoMass = probeCount * 100;
             }
         }
         
         const resourceLabel = resourceType.charAt(0).toUpperCase() + resourceType.slice(1) + 's';
         
-        // Get current game time
-        const gameState = window.gameEngine?.getGameState();
-        const currentTime = gameState?.time || 0;
-        
-        // Calculate time to arrival
+        // Get arrival time (absolute in-game time)
         const arrivalTime = viz.arrivalTime || 0;
-        const timeToArrival = Math.max(0, arrivalTime - currentTime);
-        
-        // Calculate current velocity
-        const tripTime = arrivalTime - (viz.departureTime || 0);
-        const elapsed = currentTime - (viz.departureTime || 0);
-        let currentVelocity = viz.fromVelocity || 0;
-        if (this.transferViz && tripTime > 0) {
-            currentVelocity = this.transferViz.calculateCurrentVelocity(
-                viz.fromVelocity || 0,
-                viz.toVelocity || 0,
-                elapsed,
-                tripTime
-            );
-        }
         
         // Get total transfers count
         const activeTransfers = this.getActiveTransfers();
         const transferIndex = this.currentTransferIndex + 1;
         const totalTransfers = activeTransfers.length;
         
-        // Build transfer-specific info based on resource type
-        let transferTypeInfo = '';
+        // Calculate current velocity in km/s
+        const currentVelocityKmS = this.calculateCurrentTransferVelocityKmS(transferData);
         
-        // Debug: log resource type
-        console.log('[TransferInfo] Resource type:', resourceType, 'viz.resourceType:', viz.resourceType);
-        
-        if (resourceType === 'probe') {
-            // Probe transfer info
-            const skills = gameState?.skills || {};
-            const probeMass = 100; // kg per probe
-            // Include probe delta-v bonus from starting skill points
-            const probeDvBonus = gameState?.skill_bonuses?.probe_dv_bonus || 0;
-            const probeDeltaV = window.gameEngine?.orbitalMechanics?.getProbeDeltaVCapacity?.(skills, probeDvBonus) || 1.0;
-            const requiredDeltaV = window.gameEngine?.orbitalMechanics?.getDeltaVKmS?.(viz.fromZoneId, viz.toZoneId, skills) || 0;
-            
-            // Get upgrade contributions
-            const economicRules = window.gameEngine?.dataLoader?.economicRules;
-            let upgradeContributions = [];
-            if (economicRules?.skill_coefficients?.probe_delta_v_capacity) {
-                const coefficients = economicRules.skill_coefficients.probe_delta_v_capacity;
-                for (const [skillName, coefficient] of Object.entries(coefficients)) {
-                    if (skillName === 'description') continue;
-                    const skillValue = skills[skillName] || 1.0;
-                    if (skillValue > 1.0) {
-                        upgradeContributions.push(`${skillName}: ${(coefficient * 100).toFixed(0)}%`);
-                    }
-                }
-            }
-            
-            transferTypeInfo = `
-                <div class="transfer-info-line" style="color: #4a9eff; font-weight: bold; margin-top: 8px;">PROBE HOHMANN TRANSFER</div>
-                <div class="transfer-info-line">Mass: ${probeMass} kg</div>
-                <div class="transfer-info-line">Delta-V: ${probeDeltaV.toFixed(2)} km/s (required: ${requiredDeltaV.toFixed(2)} km/s)</div>
-                ${upgradeContributions.length > 0 ? `<div class="transfer-info-line" style="color: rgba(255,255,255,0.6); font-size: 0.9em;">Upgrades: ${upgradeContributions.join(', ')}</div>` : ''}
-            `;
-        } else {
-            // Metal transfer info (default to metal if not probe)
-            const powerMW = window.gameEngine?.transferSystem?.getMassDriverPowerDraw?.(gameState, viz.fromZoneId) || 100;
-            const efficiency = window.gameEngine?.transferSystem?.getMassDriverEfficiency?.(gameState, viz.fromZoneId) || 0.4;
-            const muzzleVelocity = window.gameEngine?.transferSystem?.getMassDriverMuzzleVelocity?.(gameState, viz.fromZoneId) || 3.0;
-            const requiredDeltaV = window.gameEngine?.orbitalMechanics?.getDeltaVKmS?.(viz.fromZoneId, viz.toZoneId) || 0;
-            
-            transferTypeInfo = `
-                <div class="transfer-info-line" style="color: #4a9eff; font-weight: bold; margin-top: 8px;">LINEAR MASS DRIVER</div>
-                <div class="transfer-info-line">Power Capacity: ${powerMW.toFixed(0)} MW</div>
-                <div class="transfer-info-line">Efficiency: ${(efficiency * 100).toFixed(1)}%</div>
-                <div class="transfer-info-line">Delta-V: ${muzzleVelocity.toFixed(2)} km/s (required: ${requiredDeltaV.toFixed(2)} km/s)</div>
-            `;
-        }
-        
-        // Convert velocity from AU/day to km/s
-        // 1 AU = 149,597,870.7 km, 1 day = 86,400 seconds
-        // AU/day to km/s: multiply by 149,597,870.7 / 86,400 ≈ 1731.46
-        const AU_TO_KM = 149597870.7;
-        const SECONDS_PER_DAY = 86400;
-        const velocityKmS = currentVelocity * AU_TO_KM / SECONDS_PER_DAY;
+        // Format cargo mass
+        const formatMass = (kg) => {
+            if (kg >= 1e9) return (kg / 1e9).toFixed(2) + ' Gt';
+            if (kg >= 1e6) return (kg / 1e6).toFixed(2) + ' Mt';
+            if (kg >= 1e3) return (kg / 1e3).toFixed(2) + ' t';
+            return kg.toFixed(0) + ' kg';
+        };
         
         // Build the overlay content - simple terminal-style left-justified text
         overlay.innerHTML = `
             <div class="transfer-info-line">ID: ${transferData.id}</div>
-            <div class="transfer-info-line">Cargo: ${resourceLabel}</div>
             <div class="transfer-info-line">Origin: ${fromZoneName}</div>
             <div class="transfer-info-line">Destination: ${toZoneName}</div>
-            ${transferTypeInfo}
-            <div class="transfer-info-line">Speed: <span id="transfer-velocity">${velocityKmS.toFixed(2)}</span> km/s</div>
-            <div class="transfer-info-line">ETA: <span id="transfer-eta">${this.formatDays(timeToArrival)}</span></div>
+            <div class="transfer-info-line">Cargo: ${resourceLabel}</div>
+            <div class="transfer-info-line">Mass: ${formatMass(cargoMass)}</div>
+            <div class="transfer-info-line">Current Velocity: <span id="transfer-current-velocity">${currentVelocityKmS.toFixed(2)}</span> km/s</div>
+            <div class="transfer-info-line">Arrival: <span id="transfer-eta">${this.formatGameTime(arrivalTime)}</span></div>
             <div class="transfer-info-nav">[${transferIndex}/${totalTransfers}] ← → cycle | I toggle info | ESC exit</div>
         `;
         
@@ -705,51 +647,78 @@ class SceneManager {
     }
     
     /**
-     * Update transfer info overlay with real-time values (velocity, time to arrival)
+     * Calculate current velocity in km/s by converting from visual velocity
+     * Uses the transfer viz's current velocity (visual units/day) and converts to km/s
+     * @param {Object} transferData - Transfer data from getActiveTransfers()
+     * @returns {number} Current velocity in km/s
+     */
+    calculateCurrentTransferVelocityKmS(transferData) {
+        const viz = transferData?.viz;
+        if (!viz) return 0;
+        
+        // Get transfer timing info
+        const gameState = window.gameEngine?.getGameState();
+        const currentTime = gameState?.time || 0;
+        const departureTime = viz.departureTime || 0;
+        const arrivalTime = viz.arrivalTime || 0;
+        const tripTime = arrivalTime - departureTime;
+        
+        if (tripTime <= 0) return 0;
+        
+        // Calculate elapsed time
+        const elapsedTime = currentTime - departureTime;
+        
+        // Get the current velocity in visual units/day using linear interpolation
+        const fromVelocity = viz.fromVelocity || 0;
+        const toVelocity = viz.toVelocity || 0;
+        const progressRatio = Math.max(0, Math.min(1, elapsedTime / tripTime));
+        const currentVisualVelocity = fromVelocity + (toVelocity - fromVelocity) * progressRatio;
+        
+        if (currentVisualVelocity <= 0) return 0;
+        
+        // Get arc lengths to calculate conversion factor
+        const arcLengthVisual = viz.arcLength || 0;
+        const fromAU = viz.fromAU || 0;
+        const toAU = viz.toAU || 0;
+        
+        if (arcLengthVisual <= 0 || fromAU <= 0 || toAU <= 0) return 0;
+        
+        // Calculate approximate arc length in AU
+        // For Hohmann transfer, the arc is half an ellipse with semi-major axis = (r1 + r2) / 2
+        // Arc length ≈ π * semi_major_axis for a half ellipse (approximation)
+        const semiMajorAxisAU = (fromAU + toAU) / 2;
+        const arcLengthAU = Math.PI * semiMajorAxisAU;
+        
+        // Conversion factor from visual units to AU
+        const visualToAU = arcLengthAU / arcLengthVisual;
+        
+        // Convert visual velocity (visual units/day) to AU/day
+        const velocityAUPerDay = currentVisualVelocity * visualToAU;
+        
+        // Convert AU/day to AU/s (1 day = 86400 seconds)
+        const velocityAUPerSec = velocityAUPerDay / 86400;
+        
+        // Convert AU/s to km/s (1 AU = 149,597,870.7 km)
+        const AU_TO_KM = 149597870.7;
+        const velocityKmPerSec = velocityAUPerSec * AU_TO_KM;
+        
+        return velocityKmPerSec;
+    }
+    
+    /**
+     * Update transfer info overlay with real-time values
      * Called during animation loop when tracking a transfer
      */
     updateTransferInfoRealtime() {
-        if (!this.currentTrackedTransfer || this.trackingMode !== 'transfer') return;
-        if (!this.transferInfoVisible) return; // Don't update if hidden
+        if (!this.currentTrackedTransfer) return;
         
-        const viz = this.currentTrackedTransfer.viz;
-        if (!viz) return;
+        // Calculate current velocity in km/s
+        const currentVelocityKmS = this.calculateCurrentTransferVelocityKmS(this.currentTrackedTransfer);
         
-        // Get current game time
-        const gameState = window.gameEngine?.getGameState();
-        const currentTime = gameState?.time || 0;
-        
-        // Calculate time to arrival
-        const arrivalTime = viz.arrivalTime || 0;
-        const timeToArrival = Math.max(0, arrivalTime - currentTime);
-        
-        // Calculate current velocity
-        const tripTime = arrivalTime - (viz.departureTime || 0);
-        const elapsed = currentTime - (viz.departureTime || 0);
-        let currentVelocity = viz.fromVelocity || 0;
-        if (this.transferViz && tripTime > 0) {
-            currentVelocity = this.transferViz.calculateCurrentVelocity(
-                viz.fromVelocity || 0,
-                viz.toVelocity || 0,
-                elapsed,
-                tripTime
-            );
-        }
-        
-        // Convert velocity from AU/day to km/s
-        const AU_TO_KM = 149597870.7;
-        const SECONDS_PER_DAY = 86400;
-        const velocityKmS = currentVelocity * AU_TO_KM / SECONDS_PER_DAY;
-        
-        // Update just the dynamic elements
-        const velocityEl = document.getElementById('transfer-velocity');
-        const etaEl = document.getElementById('transfer-eta');
-        
-        if (velocityEl) {
-            velocityEl.textContent = velocityKmS.toFixed(2);
-        }
-        if (etaEl) {
-            etaEl.textContent = this.formatDays(timeToArrival);
+        // Update the velocity display
+        const velocityElement = document.getElementById('transfer-current-velocity');
+        if (velocityElement) {
+            velocityElement.textContent = currentVelocityKmS.toFixed(2);
         }
     }
     
@@ -786,6 +755,26 @@ class SceneManager {
         } else {
             const years = days / 365;
             return `${years.toFixed(2)} years`;
+        }
+    }
+    
+    /**
+     * Format in-game time (days since start) to a readable absolute time
+     * @param {number} days - Time in days since game start
+     * @returns {string} Formatted time string (e.g., "Year 2, Day 145")
+     */
+    formatGameTime(days) {
+        if (days <= 0) return 'Day 0';
+        
+        const years = Math.floor(days / 365);
+        const remainingDays = Math.floor(days % 365);
+        
+        if (years === 0) {
+            return `Day ${remainingDays}`;
+        } else if (years === 1) {
+            return `Year 1, Day ${remainingDays}`;
+        } else {
+            return `Year ${years}, Day ${remainingDays}`;
         }
     }
 
@@ -1078,7 +1067,7 @@ class CameraController {
     constructor(camera) {
         this.camera = camera;
         this.panSpeed = 0.5;
-        this.zoomSpeed = 1.2;
+        this.zoomSpeed = 0.84; // Reduced by 30% from 1.2
         this.rotationSpeed = 1.0;
         
         // Spherical coordinates for rotation

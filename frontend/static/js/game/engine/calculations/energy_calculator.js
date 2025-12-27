@@ -418,13 +418,30 @@ class EnergyCalculator {
         const totalConsumption = probeConsumption + structureConsumption;
         const netEnergy = production - totalConsumption;
         
-        // Calculate throttle factor (if negative energy, throttle production)
-        // If consumption is 0, throttle is 1.0 (no throttling needed)
-        // If production is 0 but consumption > 0, throttle is 0 (complete shutdown)
-        // Otherwise, throttle = production / consumption (capped at 1.0)
-        const throttle = totalConsumption > 0 
-            ? (production > 0 ? Math.min(1.0, production / totalConsumption) : 0)
-            : 1.0;
+        // Calculate throttle factor using exponential decay for energy deficits
+        // When production >= consumption: throttle = 1.0 (no penalty)
+        // When production < consumption: exponential decay to 5% over 10 orders of magnitude
+        // Formula: throttle = 0.05^(deficit_orders / 10) where deficit_orders = log10(consumption / production)
+        // This gives a smooth exponential penalty that bottoms out at 5% efficiency
+        let throttle;
+        if (totalConsumption <= 0) {
+            // No consumption, no throttle
+            throttle = 1.0;
+        } else if (production <= 0) {
+            // No production but consumption exists - minimum performance (5%)
+            throttle = 0.05;
+        } else if (production >= totalConsumption) {
+            // Surplus or balanced - no throttle
+            throttle = 1.0;
+        } else {
+            // Deficit - apply exponential decay
+            // deficit_orders = log10(consumption / production)
+            // At deficit_orders = 10 (production is 10 billion times less), throttle = 5%
+            const deficitRatio = totalConsumption / production;
+            const deficitOrders = Math.log10(deficitRatio);
+            // throttle = 0.05^(deficitOrders / 10), clamped to minimum 5%
+            throttle = Math.max(0.05, Math.pow(0.05, deficitOrders / 10));
+        }
         
         return {
             production,

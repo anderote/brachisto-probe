@@ -306,18 +306,13 @@ class PurchasePanel {
                 const perfFactor = structureUpgrades.building?.performance || 1.0;
                 const scaledRate = baseRate * geometricFactor * perfFactor;
                 const probesPerDay = scaledRate / Config.PROBE_MASS; // probes per day
-                const probesDisplay = probesPerDay >= 1e6 ? `${(probesPerDay/1e6).toFixed(1)}M` : 
-                                      probesPerDay >= 1e3 ? `${(probesPerDay/1e3).toFixed(1)}k` : 
-                                      probesPerDay.toFixed(2);
+                const probesDisplay = this.formatScientific(probesPerDay);
                 statsHtml = '<div class="building-stats">';
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
                 statsHtml += `<div class="building-stat-line">${probesDisplay} probes/day${countLabel}</div>`;
                 if (building.energy_cost_multiplier) {
                     const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
-                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
-                                         `${energyCost.toFixed(0)} W`;
-                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
                 }
                 statsHtml += '</div>';
             } else if (building.mining_rate_multiplier && !building.build_rate_multiplier) {
@@ -326,18 +321,13 @@ class PurchasePanel {
                 const baseRate = baseProbeMiningRate * building.mining_rate_multiplier;
                 const perfFactor = structureUpgrades.mining?.performance || 1.0;
                 const scaledRate = baseRate * geometricFactor * perfFactor;
-                const metalDisplay = scaledRate >= 1e6 ? `${(scaledRate/1e6).toFixed(1)}M` : 
-                                     scaledRate >= 1e3 ? `${(scaledRate/1e3).toFixed(1)}k` : 
-                                     scaledRate.toFixed(1);
+                const metalDisplay = this.formatScientific(scaledRate);
                 statsHtml = '<div class="building-stats">';
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
                 statsHtml += `<div class="building-stat-line">${metalDisplay} kg/day${countLabel}</div>`;
                 if (building.energy_cost_multiplier) {
                     const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
-                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
-                                         `${energyCost.toFixed(0)} W`;
-                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
                 }
                 statsHtml += '</div>';
             } else if (building.power_output_mw) {
@@ -346,30 +336,23 @@ class PurchasePanel {
                 const perfFactor = structureUpgrades.energy?.performance || 1.0;
                 const scaledPowerMW = basePowerMW * geometricFactor * perfFactor;
                 const scaledPowerW = scaledPowerMW * 1e6; // Convert to watts for display
-                const powerDisplay = scaledPowerW >= 1e9 ? `${(scaledPowerW/1e9).toFixed(1)} GW` : 
-                                    scaledPowerW >= 1e6 ? `${(scaledPowerW/1e6).toFixed(1)} MW` : 
-                                    scaledPowerW >= 1e3 ? `${(scaledPowerW/1e3).toFixed(1)} kW` :
-                                    `${scaledPowerW.toFixed(0)} W`;
+                const powerDisplay = this.formatScientific(scaledPowerW);
                 statsHtml = '<div class="building-stats">';
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
-                statsHtml += `<div class="building-stat-line">${powerDisplay}${countLabel}</div>`;
+                statsHtml += `<div class="building-stat-line">${powerDisplay} W${countLabel}</div>`;
                 statsHtml += '</div>';
             } else if (building.compute_eflops) {
                 // Data center - show scaled compute output with upgrade factors
                 const baseComputeEFLOPS = building.compute_eflops;
                 const perfFactor = structureUpgrades.compute?.performance || 1.0;
                 const scaledComputeEFLOPS = baseComputeEFLOPS * geometricFactor * perfFactor;
-                const computeDisplay = scaledComputeEFLOPS >= 1e3 ? `${(scaledComputeEFLOPS/1e3).toFixed(2)} ZFLOPS` :
-                                      `${scaledComputeEFLOPS.toFixed(2)} EFLOPS`;
+                const computeDisplay = this.formatScientific(scaledComputeEFLOPS);
                 statsHtml = '<div class="building-stats">';
                 const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
-                statsHtml += `<div class="building-stat-line">${computeDisplay}${countLabel}</div>`;
+                statsHtml += `<div class="building-stat-line">${computeDisplay} EFLOPS${countLabel}</div>`;
                 if (building.energy_cost_multiplier) {
                     const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    const energyDisplay = energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
-                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
-                                         `${energyCost.toFixed(0)} W`;
-                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
                 }
                 statsHtml += '</div>';
             } else if (building.efficiency !== undefined && building.efficiency < 1.0) {
@@ -378,30 +361,28 @@ class PurchasePanel {
                 statsHtml += `<div class="building-stat-line">50% efficiency (all functions)</div>`;
                 if (building.mining_rate_multiplier) {
                     const baseRate = (Config.PROBE_HARVEST_RATE || 100) * building.mining_rate_multiplier;
-                    statsHtml += `<div class="building-stat-line">Mining: ${baseRate.toFixed(0)} kg/day</div>`;
+                    statsHtml += `<div class="building-stat-line">Mining: ${this.formatScientific(baseRate)} kg/day</div>`;
                 }
                 if (building.build_rate_multiplier) {
                     const baseRate = (Config.PROBE_BUILD_RATE || 20) * building.build_rate_multiplier;
-                    statsHtml += `<div class="building-stat-line">Build: ${baseRate.toFixed(0)} kg/day</div>`;
+                    statsHtml += `<div class="building-stat-line">Build: ${this.formatScientific(baseRate)} kg/day</div>`;
                 }
                 if (building.power_output_mw) {
-                    statsHtml += `<div class="building-stat-line">Power: ${building.power_output_mw} MW</div>`;
+                    const powerW = building.power_output_mw * 1e6;
+                    statsHtml += `<div class="building-stat-line">Power: ${this.formatScientific(powerW)} W</div>`;
                 }
                 if (building.compute_eflops) {
-                    statsHtml += `<div class="building-stat-line">Compute: ${building.compute_eflops} EFLOPS</div>`;
+                    statsHtml += `<div class="building-stat-line">Compute: ${this.formatScientific(building.compute_eflops)} EFLOPS</div>`;
                 }
                 statsHtml += '</div>';
             } else if (building.base_capacity_kg || building.base_delta_v) {
                 // Mass driver
                 statsHtml = '<div class="building-stats">';
                 if (building.base_capacity_kg) {
-                    const capacityDisplay = building.base_capacity_kg >= 1e6 ? `${(building.base_capacity_kg/1e6).toFixed(1)}M kg` :
-                                           building.base_capacity_kg >= 1e3 ? `${(building.base_capacity_kg/1e3).toFixed(1)}k kg` :
-                                           `${building.base_capacity_kg.toFixed(0)} kg`;
-                    statsHtml += `<div class="building-stat-line">Capacity: ${capacityDisplay}</div>`;
+                    statsHtml += `<div class="building-stat-line">Capacity: ${this.formatScientific(building.base_capacity_kg)} kg</div>`;
                 }
                 if (building.base_delta_v) {
-                    statsHtml += `<div class="building-stat-line">Delta-V: ${building.base_delta_v.toFixed(0)} m/s</div>`;
+                    statsHtml += `<div class="building-stat-line">Delta-V: ${this.formatScientific(building.base_delta_v)} m/s</div>`;
                 }
                 statsHtml += '</div>';
             } else if (building.production_rate_kg_per_day) {
@@ -422,28 +403,21 @@ class PurchasePanel {
                 statsHtml = '<div class="building-stats">';
                 if (currentCount > 0) {
                     // Show current total and what the next one adds
-                    const currentDisplay = currentTotalRate >= 1e6 ? `${(currentTotalRate/1e6).toFixed(1)}M` : 
-                                          currentTotalRate >= 1e3 ? `${(currentTotalRate/1e3).toFixed(1)}k` : 
-                                          currentTotalRate.toFixed(0);
                     const limitDisplay = zoneLimit > 0 ? ` / ${zoneLimit} max` : '';
-                    statsHtml += `<div class="building-stat-line">${currentDisplay} kg/day total (${currentCount}${limitDisplay})</div>`;
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(currentTotalRate)} kg/day total (${currentCount}${limitDisplay})</div>`;
                     if (!atLimit) {
-                        statsHtml += `<div class="building-stat-line">+${nextRefineryRate} kg/day each</div>`;
+                        statsHtml += `<div class="building-stat-line">+${this.formatScientific(nextRefineryRate)} kg/day each</div>`;
                     } else {
                         statsHtml += `<div class="building-stat-line" style="color: #ff6b6b;">Zone limit reached</div>`;
                     }
                 } else {
                     // No refineries yet, show what the first one produces
                     const limitDisplay = zoneLimit > 0 ? ` (max ${zoneLimit} in zone)` : '';
-                    statsHtml += `<div class="building-stat-line">${nextRefineryRate} kg/day methalox${limitDisplay}</div>`;
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(nextRefineryRate)} kg/day methalox${limitDisplay}</div>`;
                 }
                 if (building.energy_cost_multiplier) {
                     const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    const energyDisplay = energyCost >= 1e9 ? `${(energyCost/1e9).toFixed(1)} GW` : 
-                                         energyCost >= 1e6 ? `${(energyCost/1e6).toFixed(1)} MW` : 
-                                         energyCost >= 1e3 ? `${(energyCost/1e3).toFixed(1)} kW` : 
-                                         `${energyCost.toFixed(0)} W`;
-                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
                 }
                 statsHtml += '</div>';
             }
@@ -458,74 +432,51 @@ class PurchasePanel {
                     energyPerProbeKw = effects.energy_consumption_per_second / probesPerDay;
                 }
                 
-                const probesDisplay = probesPerDay >= 1e6 ? `${(probesPerDay/1e6).toFixed(1)}M` : 
-                                      probesPerDay >= 1e3 ? `${(probesPerDay/1e3).toFixed(1)}k` : 
-                                      probesPerDay.toFixed(2);
-                
                 statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${probesDisplay} probes/s</div>`;
-                statsHtml += `<div class="building-stat-line">${metalPerProbe.toFixed(1)} kg/probe</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(probesPerDay)} probes/s</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(metalPerProbe)} kg/probe</div>`;
                 if (energyPerProbeKw !== undefined) {
-                    const energyDisplay = energyPerProbeKw >= 1e3 ? `${(energyPerProbeKw/1e3).toFixed(1)} MW/probe/s` : 
-                                         `${energyPerProbeKw.toFixed(0)} kW/probe/s`;
-                    statsHtml += `<div class="building-stat-line">${energyDisplay}</div>`;
+                    const energyW = energyPerProbeKw * 1000; // Convert kW to W
+                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyW)} W/probe/s</div>`;
                 }
                 statsHtml += '</div>';
             } else if (effects.metal_production_per_day !== undefined) {
                 // Mining building
                 const metalRate = effects.metal_production_per_day;
                 const powerKw = effects.energy_consumption_per_second || 0;
-                const metalDisplay = metalRate >= 1e6 ? `${(metalRate/1e6).toFixed(1)}M` : 
-                                     metalRate >= 1e3 ? `${(metalRate/1e3).toFixed(1)}k` : 
-                                     metalRate.toFixed(1);
-                const powerDisplay = powerKw >= 1e3 ? `${(powerKw/1e3).toFixed(1)}MW` : `${powerKw.toFixed(0)}kW`;
+                const powerW = powerKw * 1000; // Convert kW to W
                 statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${metalDisplay} kg/s metal</div>`;
-                statsHtml += `<div class="building-stat-line">${powerDisplay}</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(metalRate)} kg/s metal</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(powerW)} W</div>`;
                 statsHtml += '</div>';
             } else if (effects.energy_production_per_second !== undefined) {
                 // Energy building
                 const energyRate = effects.energy_production_per_second;
-                const energyDisplay = energyRate >= 1e6 ? `${(energyRate/1e6).toFixed(1)}MW` : 
-                                      energyRate >= 1e3 ? `${(energyRate/1e3).toFixed(1)}kW` : 
-                                      energyRate.toFixed(0) + 'W';
                 statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${energyDisplay}/s</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(energyRate)} W/s</div>`;
                 statsHtml += '</div>';
             } else if (effects.intelligence_flops !== undefined) {
                 // Computing building (orbital data center)
                 const flops = effects.intelligence_flops;
                 const powerKw = effects.energy_consumption_per_second || 0;
-                let flopsDisplay = '';
-                if (flops >= 1e21) {
-                    flopsDisplay = `${(flops/1e21).toFixed(2)} ZFLOPS`;
-                } else if (flops >= 1e18) {
-                    flopsDisplay = `${(flops/1e18).toFixed(2)} EFLOPS`;
-                } else if (flops >= 1e15) {
-                    flopsDisplay = `${(flops/1e15).toFixed(2)} PFLOPS`;
-                } else if (flops >= 1e12) {
-                    flopsDisplay = `${(flops/1e12).toFixed(2)} TFLOPS`;
-                } else {
-                    flopsDisplay = flops.toExponential(2) + ' FLOPS';
-                }
-                const powerDisplay = powerKw >= 1e6 ? `${(powerKw/1e6).toFixed(1)}MW` : 
-                                     powerKw >= 1e3 ? `${(powerKw/1e3).toFixed(1)}kW` : 
-                                     `${powerKw.toFixed(0)}W`;
+                const powerW = powerKw * 1000; // Convert kW to W
                 statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${flopsDisplay}</div>`;
-                statsHtml += `<div class="building-stat-line">${powerDisplay}</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(flops)} FLOPS</div>`;
+                statsHtml += `<div class="building-stat-line">${this.formatScientific(powerW)} W</div>`;
                 statsHtml += '</div>';
             } else if (effects.energy_consumption_per_second !== undefined) {
                 // Other building with power draw
                 const powerKw = effects.energy_consumption_per_second;
-                const powerDisplay = powerKw >= 1e3 ? `${(powerKw/1e3).toFixed(1)}MW` : `${powerKw.toFixed(0)}kW`;
+                const powerW = powerKw * 1000; // Convert kW to W
                 statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">Power draw: ${powerDisplay}</div>`;
+                statsHtml += `<div class="building-stat-line">Power draw: ${this.formatScientific(powerW)} W</div>`;
                 statsHtml += '</div>';
             }
             
             // Check if building is allowed in selected zone (if zone is selected)
             let isAllowed = true;
+            let atZoneLimit = false;
+            let zoneLimitReason = '';
             if (this.selectedZone) {
                 // Check if this is the Dyson zone
                 const zone = this.orbitalZones.find(z => z.id === this.selectedZone);
@@ -542,9 +493,20 @@ class PurchasePanel {
                     const allowedZones = building.allowed_orbital_zones || [];
                     isAllowed = allowedZones.includes(this.selectedZone);
                 }
+                
+                // Check max_per_zone limit
+                if (isAllowed && building.max_per_zone) {
+                    const zoneLimit = building.max_per_zone[this.selectedZone];
+                    if (zoneLimit !== undefined && zoneLimit > 0) {
+                        if (currentCount >= zoneLimit) {
+                            atZoneLimit = true;
+                            zoneLimitReason = `Zone limit reached (${currentCount}/${zoneLimit})`;
+                        }
+                    }
+                }
             }
             
-            const disabledClass = (!this.selectedZone || !isAllowed) ? 'disabled' : '';
+            const disabledClass = (!this.selectedZone || !isAllowed || atZoneLimit) ? 'disabled' : '';
             const clickableClass = (!disabledClass) ? 'building-card-clickable' : '';
             
             html += `
@@ -563,7 +525,7 @@ class PurchasePanel {
                     <div class="probe-summary-breakdown" style="margin-top: 5px;">
                         <div class="probe-summary-breakdown-item">
                             <span class="probe-summary-breakdown-label">Cost:</span>
-                            <span class="probe-summary-breakdown-count" id="cost-${buildingId}">${this.formatNumber(this.getBuildingCost(building, buildingId))}</span>
+                            <span class="probe-summary-breakdown-count" id="cost-${buildingId}">${this.formatScientific(this.getBuildingCost(building, buildingId))} kg</span>
                         </div>
                         <div class="probe-summary-breakdown-item">
                             <span class="probe-summary-breakdown-label">Count:</span>
@@ -582,6 +544,7 @@ class PurchasePanel {
                     </div>
                     ${!this.selectedZone ? '<div style="font-size: 9px; color: rgba(255, 255, 255, 0.4); margin-top: 8px;">Select a zone to enable construction</div>' : ''}
                     ${this.selectedZone && !isAllowed ? `<div style="font-size: 9px; color: rgba(255, 100, 100, 0.8); margin-top: 8px;">Not allowed in ${this.selectedZone}</div>` : ''}
+                    ${this.selectedZone && isAllowed && atZoneLimit ? `<div style="font-size: 9px; color: rgba(255, 100, 100, 0.8); margin-top: 8px;">${zoneLimitReason}</div>` : ''}
                     ${!disabledClass ? '<div style="font-size: 9px; color: rgba(74, 158, 255, 0.7); margin-top: 8px;">Click to toggle construction</div>' : ''}
                 </div>
             `;
@@ -636,6 +599,20 @@ class PurchasePanel {
         return value.toString();
     }
     
+    /**
+     * Format number in scientific notation for structure stats
+     * @param {number} value - Number to format
+     * @param {number} precision - Significant figures (default: 2)
+     * @returns {string} Formatted number in scientific notation
+     */
+    formatScientific(value, precision = 2) {
+        if (value === 0 || !value || isNaN(value) || !isFinite(value)) {
+            return '0';
+        }
+        // Use exponential notation for all values
+        return value.toExponential(precision);
+    }
+    
     getBuildingCost(building, buildingId = null) {
         let baseCost = 0;
         
@@ -653,7 +630,8 @@ class PurchasePanel {
         
         // Methalox refineries use flat cost (no geometric scaling)
         // They have zone limits instead of exponential cost scaling
-        if (buildingId === 'methalox_refinery') {
+        // Methalox refineries and mass drivers use flat scaling (no geometric increase)
+        if (buildingId === 'methalox_refinery' || buildingId === 'mass_driver') {
             return baseCost;
         }
         
@@ -837,7 +815,7 @@ class PurchasePanel {
                     const building = this.getBuildingById(buildingId);
                     if (building) {
                         const nextCost = this.getBuildingCost(building, buildingId);
-                        costElement.textContent = this.formatNumber(nextCost);
+                        costElement.textContent = `${this.formatScientific(nextCost)} kg`;
                     }
                 }
             });
@@ -860,7 +838,7 @@ class PurchasePanel {
                         const building = this.getBuildingById(buildingId);
                         if (building) {
                             const nextCost = this.getBuildingCost(building, buildingId);
-                            costElement.textContent = this.formatNumber(nextCost);
+                            costElement.textContent = `${this.formatScientific(nextCost)} kg`;
                         }
                     }
                 }

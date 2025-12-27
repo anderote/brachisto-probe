@@ -7,6 +7,7 @@ class ResourceDisplay {
         this.gameState = null;
         this.buildings = null; // Will store buildings data for structure mass calculation
         this.economicRules = null; // Will store economic rules for energy calculations
+        this.isExpanded = false; // Track dropdown expansion state
         this.init();
         this.loadGameData();
     }
@@ -52,81 +53,1003 @@ class ResourceDisplay {
 
     initCompact() {
         this.container.innerHTML = `
-            <div class="compact-resource-item" id="resource-energy-container" data-resource="energy">
-                <div class="compact-resource-header">Energy</div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Net:</span>
-                    <span class="compact-resource-value" id="resource-energy-net">0 kW</span>
+            <div class="compact-resources-header" id="economic-bar-toggle">
+                <div class="compact-resource-item" id="resource-energy-container" data-resource="energy">
+                    <div class="compact-resource-header">Energy</div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Net:</span>
+                        <span class="compact-resource-value" id="resource-energy-net">0 kW</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Produced:</span>
+                        <span class="compact-resource-value" id="resource-energy-produced">0 kW</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Consumed:</span>
+                        <span class="compact-resource-value" id="resource-energy-consumed">0 kW</span>
+                    </div>
                 </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Produced:</span>
-                    <span class="compact-resource-value" id="resource-energy-produced">0 kW</span>
+                <div class="compact-resource-divider"></div>
+                <div class="compact-resource-item" id="resource-intelligence-container" data-resource="intelligence">
+                    <div class="compact-resource-header">Intelligence</div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Net:</span>
+                        <span class="compact-resource-value" id="resource-intelligence-net">0</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Produced:</span>
+                        <span class="compact-resource-value" id="resource-intelligence-produced">0</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Consumed:</span>
+                        <span class="compact-resource-value" id="resource-intelligence-consumed">0</span>
+                    </div>
                 </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Consumed:</span>
-                    <span class="compact-resource-value" id="resource-energy-consumed">0 kW</span>
+                <div class="compact-resource-divider"></div>
+                <div class="compact-resource-item" id="resource-dexterity-container" data-resource="dexterity">
+                    <div class="compact-resource-header">Dexterity</div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Net:</span>
+                        <span class="compact-resource-value" id="resource-dexterity-net">0 kg/s</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Mining Rate:</span>
+                        <span class="compact-resource-value" id="resource-dexterity-mining">0 kg/s</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Consumption Rate:</span>
+                        <span class="compact-resource-value" id="resource-dexterity-consumption">0 kg/s</span>
+                    </div>
                 </div>
-                <div class="resource-tooltip" id="tooltip-energy"></div>
+                <div id="resource-warnings" class="resource-warnings"></div>
+                <div class="compact-resource-divider"></div>
+                <div class="compact-resource-item">
+                    <div class="compact-resource-header">Dyson</div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Progress:</span>
+                        <span class="compact-resource-value" id="resource-dyson-progress">0%</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Mass:</span>
+                        <span class="compact-resource-value" id="resource-dyson-mass">0 kg</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Probe Mass:</span>
+                        <span class="compact-resource-value" id="resource-probe-mass">0 kg</span>
+                    </div>
+                    <div class="compact-resource-line">
+                        <span class="compact-resource-label-small">Structure Mass:</span>
+                        <span class="compact-resource-value" id="resource-structure-mass">0 kg</span>
+                    </div>
+                </div>
+                <div class="expand-indicator" id="expand-indicator">
+                    <span class="expand-icon">▼</span>
+                </div>
             </div>
-            <div class="compact-resource-divider"></div>
-            <div class="compact-resource-item" id="resource-intelligence-container" data-resource="intelligence">
-                <div class="compact-resource-header">Intelligence</div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Net:</span>
-                    <span class="compact-resource-value" id="resource-intelligence-net">0</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Produced:</span>
-                    <span class="compact-resource-value" id="resource-intelligence-produced">0</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Consumed:</span>
-                    <span class="compact-resource-value" id="resource-intelligence-consumed">0</span>
-                </div>
-                <div class="resource-tooltip" id="tooltip-intelligence"></div>
-            </div>
-            <div class="compact-resource-divider"></div>
-            <div class="compact-resource-item" id="resource-dexterity-container" data-resource="dexterity">
-                <div class="compact-resource-header">Dexterity</div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Net:</span>
-                    <span class="compact-resource-value" id="resource-dexterity-net">0 kg/s</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Mining Rate:</span>
-                    <span class="compact-resource-value" id="resource-dexterity-mining">0 kg/s</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Consumption Rate:</span>
-                    <span class="compact-resource-value" id="resource-dexterity-consumption">0 kg/s</span>
-                </div>
-                <div class="resource-tooltip" id="tooltip-dexterity"></div>
-            </div>
-            <div id="resource-warnings" class="resource-warnings"></div>
-            <div class="compact-resource-divider"></div>
-            <div class="compact-resource-item">
-                <div class="compact-resource-header">Dyson</div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Progress:</span>
-                    <span class="compact-resource-value" id="resource-dyson-progress">0%</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Mass:</span>
-                    <span class="compact-resource-value" id="resource-dyson-mass">0 kg</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Probe Mass:</span>
-                    <span class="compact-resource-value" id="resource-probe-mass">0 kg</span>
-                </div>
-                <div class="compact-resource-line">
-                    <span class="compact-resource-label-small">Structure Mass:</span>
-                    <span class="compact-resource-value" id="resource-structure-mass">0 kg</span>
+            <div class="economic-dropdown" id="economic-dropdown">
+                <div class="economic-dropdown-content">
+                    <div class="economic-breakdown-section" id="energy-breakdown-section">
+                        <div class="breakdown-header">
+                            <span class="breakdown-icon">⚡</span>
+                            <span class="breakdown-title">Energy Breakdown</span>
+                        </div>
+                        <div class="breakdown-content" id="energy-breakdown-content"></div>
+                    </div>
+                    <div class="economic-breakdown-section" id="intelligence-breakdown-section">
+                        <div class="breakdown-header">
+                            <span class="breakdown-icon">🧠</span>
+                            <span class="breakdown-title">Intelligence Breakdown</span>
+                        </div>
+                        <div class="breakdown-content" id="intelligence-breakdown-content"></div>
+                    </div>
+                    <div class="economic-breakdown-section" id="dexterity-breakdown-section">
+                        <div class="breakdown-header">
+                            <span class="breakdown-icon">⛏</span>
+                            <span class="breakdown-title">Dexterity (Metal) Breakdown</span>
+                        </div>
+                        <div class="breakdown-content" id="dexterity-breakdown-content"></div>
+                    </div>
                 </div>
             </div>
         `;
         
-        // Set up tooltip event listeners
-        this.setupTooltips();
+        // Set up click handler for expansion
+        this.setupDropdownToggle();
+    }
+    
+    setupDropdownToggle() {
+        const toggle = document.getElementById('economic-bar-toggle');
+        const dropdown = document.getElementById('economic-dropdown');
+        const expandIcon = document.querySelector('.expand-icon');
+        
+        if (toggle && dropdown) {
+            toggle.addEventListener('click', (e) => {
+                this.isExpanded = !this.isExpanded;
+                dropdown.classList.toggle('expanded', this.isExpanded);
+                toggle.classList.toggle('expanded', this.isExpanded);
+                
+                if (expandIcon) {
+                    expandIcon.textContent = this.isExpanded ? '▲' : '▼';
+                }
+                
+                // Update breakdown content when expanding
+                if (this.isExpanded && this.gameState) {
+                    this.updateBreakdownPanels();
+                }
+            });
+        }
+    }
+    
+    updateBreakdownPanels() {
+        if (!this.gameState) return;
+        
+        this.updateEnergyBreakdown();
+        this.updateIntelligenceBreakdown();
+        this.updateDexterityBreakdown();
+    }
+    
+    updateEnergyBreakdown() {
+        const container = document.getElementById('energy-breakdown-content');
+        if (!container || !this.gameState) return;
+        
+        const gameState = this.gameState;
+        const derived = gameState.derived || {};
+        const totals = derived.totals || {};
+        const probesByZone = gameState.probes_by_zone || {};
+        const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
+        const structuresByZone = gameState.structures_by_zone || {};
+        const allBuildings = this.buildings?.buildings || this.buildings || {};
+        
+        // Get orbital mechanics for solar irradiance
+        const orbitalMechanics = window.gameDataLoader?.orbitalMechanics?.zones || {};
+        
+        let html = '';
+        
+        // ======= PRODUCTION SECTION =======
+        html += '<div class="breakdown-subsection"><div class="subsection-title production-title">⚡ Energy Production</div>';
+        
+        // Base supply
+        const baseSupply = gameState.base_energy_production || 0;
+        if (baseSupply > 0) {
+            html += `<div class="breakdown-row">
+                <span class="row-label">🔋 Base Supply</span>
+                <span class="row-value positive">${this.formatEnergy(baseSupply)}</span>
+            </div>`;
+        }
+        
+        // Probe energy production by zone
+        const BASE_PROBE_ENERGY_PRODUCTION = this.getEnergyValue('probe.base_energy_production_w', 100000);
+        let totalProbeEnergy = 0;
+        let probeEnergyByZone = {};
+        
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            const probeCount = zoneProbes['probe'] || 0;
+            if (probeCount > 0) {
+                const zoneEnergy = probeCount * BASE_PROBE_ENERGY_PRODUCTION;
+                totalProbeEnergy += zoneEnergy;
+                probeEnergyByZone[zoneId] = { probes: probeCount, energy: zoneEnergy };
+            }
+        }
+        
+        if (totalProbeEnergy > 0) {
+            html += `<div class="breakdown-category">
+                <div class="category-header">🛸 Probes <span class="header-detail">(${this.formatEnergy(BASE_PROBE_ENERGY_PRODUCTION)}/probe)</span></div>`;
+            
+            const sortedZones = Object.entries(probeEnergyByZone).sort((a, b) => b[1].energy - a[1].energy);
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${zoneName} <span class="detail">(${this.formatNumber(data.probes)} probes)</span></span>
+                    <span class="row-value positive">${this.formatEnergy(data.energy)}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        // ======= STRUCTURE ENERGY PRODUCTION BY TYPE =======
+        // Gather all structures that produce energy, grouped by building type
+        const geometricScalingExponent = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+        
+        // Structure type definitions for grouping
+        const structureTypeInfo = {
+            'power_station': { icon: '☀️', label: 'Power Stations', isSolar: true },
+            'data_center': { icon: '💻', label: 'Data Centers', isSolar: true, note: '(net power after compute)' },
+            'deep_space_fusion_plant': { icon: '⚛️', label: 'Fusion Plants', isSolar: false }
+        };
+        
+        // Collect all energy-producing structures by type
+        let structuresByType = {};
+        
+        for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
+            const zoneData = orbitalMechanics[zoneId] || {};
+            const solarIrradiance = zoneData.solar_irradiance_factor || 1.0;
+            
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                if (count <= 0) continue;
+                
+                const building = this.findBuilding(buildingId);
+                if (!building) continue;
+                
+                const powerOutputMW = building.power_output_mw || 0;
+                if (powerOutputMW <= 0) continue;
+                
+                // Calculate actual power
+                let powerW = powerOutputMW * 1e6 * Math.pow(count, geometricScalingExponent);
+                
+                // Apply solar irradiance for solar structures
+                const usesSolar = building.uses_solar === true;
+                if (usesSolar) {
+                    powerW *= solarIrradiance;
+                }
+                
+                // For data centers, also track their consumption (net output)
+                let netPower = powerW;
+                if (buildingId === 'data_center' && building.base_power_consumption_mw) {
+                    const consumptionW = building.base_power_consumption_mw * 1e6 * Math.pow(count, geometricScalingExponent);
+                    netPower = powerW - consumptionW;
+                }
+                
+                if (!structuresByType[buildingId]) {
+                    structuresByType[buildingId] = {
+                        building: building,
+                        zones: [],
+                        totalPower: 0,
+                        totalNet: 0,
+                        totalCount: 0
+                    };
+                }
+                
+                structuresByType[buildingId].zones.push({
+                    zoneId,
+                    zoneName: this.formatZoneName(zoneId),
+                    count,
+                    power: powerW,
+                    netPower,
+                    solarIrradiance: usesSolar ? solarIrradiance : null
+                });
+                structuresByType[buildingId].totalPower += powerW;
+                structuresByType[buildingId].totalNet += netPower;
+                structuresByType[buildingId].totalCount += count;
+            }
+        }
+        
+        // Render each structure type
+        for (const [buildingId, data] of Object.entries(structuresByType)) {
+            if (data.totalPower <= 0) continue;
+            
+            const typeInfo = structureTypeInfo[buildingId] || { icon: '🏭', label: data.building.name || buildingId, isSolar: false };
+            const hasNote = typeInfo.note ? ` <span class="header-note">${typeInfo.note}</span>` : '';
+            
+            html += `<div class="breakdown-category">
+                <div class="category-header">${typeInfo.icon} ${typeInfo.label}${hasNote}</div>`;
+            
+            // Sort zones by power output
+            const sortedZones = data.zones.sort((a, b) => b.power - a.power);
+            
+            for (const zone of sortedZones) {
+                const solarNote = zone.solarIrradiance !== null 
+                    ? ` <span class="solar-factor">(${(zone.solarIrradiance * 100).toFixed(0)}% solar)</span>` 
+                    : '';
+                const countLabel = zone.count === 1 ? '' : ` ×${zone.count}`;
+                
+                // For data centers, show net power
+                const displayPower = buildingId === 'data_center' ? zone.netPower : zone.power;
+                const valueClass = displayPower >= 0 ? 'positive' : 'negative';
+                
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${zone.zoneName}${countLabel}${solarNote}</span>
+                    <span class="row-value ${valueClass}">${this.formatEnergy(displayPower)}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        // ======= DYSON SPHERE =======
+        const dysonMass = gameState.dyson_sphere?.mass || 0;
+        const dysonPowerAllocation = gameState.dyson_power_allocation || 0;
+        const economyFraction = (100 - dysonPowerAllocation) / 100.0;
+        const computeFraction = dysonPowerAllocation / 100.0;
+        
+        // Dyson sphere at ~0.29 AU has ~11.9x solar intensity
+        const DYSON_POWER_PER_KG_BASE = 5000; // Base watts per kg at 1 AU
+        const DYSON_RADIUS_AU = 0.29;
+        const SOLAR_INTENSITY_MULT = 1 / (DYSON_RADIUS_AU * DYSON_RADIUS_AU); // ~11.9x
+        const DYSON_POWER_PER_KG = DYSON_POWER_PER_KG_BASE * SOLAR_INTENSITY_MULT;
+        
+        const dysonTotalPower = dysonMass * DYSON_POWER_PER_KG;
+        const dysonEnergyOutput = dysonTotalPower * economyFraction;
+        const dysonComputeOutput = dysonTotalPower * computeFraction;
+        
+        if (dysonMass > 0) {
+            html += `<div class="breakdown-category">
+                <div class="category-header">🌐 Dyson Sphere <span class="header-detail">(${(DYSON_POWER_PER_KG / 1000).toFixed(1)} kW/kg at 0.29 AU)</span></div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Total Mass</span>
+                    <span class="row-value">${this.formatMass(dysonMass)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Total Capacity</span>
+                    <span class="row-value">${this.formatEnergy(dysonTotalPower)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">→ Economy <span class="detail">(${(economyFraction * 100).toFixed(0)}%)</span></span>
+                    <span class="row-value positive">${this.formatEnergy(dysonEnergyOutput)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">→ Compute <span class="detail">(${(computeFraction * 100).toFixed(0)}%)</span></span>
+                    <span class="row-value dimmed">${this.formatEnergy(dysonComputeOutput)}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Production total
+        const totalProduction = totals.energy_produced || 0;
+        html += `<div class="breakdown-total">
+            <span class="total-label">Total Production</span>
+            <span class="total-value positive">${this.formatEnergy(totalProduction)}</span>
+        </div></div>`;
+        
+        // ======= CONSUMPTION SECTION =======
+        html += '<div class="breakdown-subsection"><div class="subsection-title consumption-title">🔌 Energy Consumption</div>';
+        
+        // Probe activity consumption by zone
+        const BASE_MINING_ENERGY = this.getEnergyValue('probe.base_energy_cost_mining_w', 500000);
+        const BASE_RECYCLING_ENERGY = this.getEnergyValue('probe.base_energy_cost_recycle_slag_w', 300000);
+        
+        let probeConsumptionByZone = {};
+        let totalMiningEnergy = 0;
+        let totalRecyclingEnergy = 0;
+        
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            const probeCount = zoneProbes['probe'] || 0;
+            if (probeCount <= 0) continue;
+            
+            const allocations = probeAllocationsByZone[zoneId] || {};
+            const harvestAllocation = allocations.harvest || 0;
+            const recycleAllocation = allocations.recycle || 0;
+            
+            const miningProbes = probeCount * harvestAllocation;
+            const recyclingProbes = probeCount * recycleAllocation;
+            
+            const miningEnergy = miningProbes * BASE_MINING_ENERGY;
+            const recyclingEnergy = recyclingProbes * BASE_RECYCLING_ENERGY;
+            
+            if (miningEnergy > 0 || recyclingEnergy > 0) {
+                probeConsumptionByZone[zoneId] = {
+                    mining: { probes: miningProbes, energy: miningEnergy },
+                    recycling: { probes: recyclingProbes, energy: recyclingEnergy }
+                };
+                totalMiningEnergy += miningEnergy;
+                totalRecyclingEnergy += recyclingEnergy;
+            }
+        }
+        
+        if (totalMiningEnergy > 0 || totalRecyclingEnergy > 0) {
+            html += `<div class="breakdown-category">
+                <div class="category-header">🛸 Probe Activities <span class="header-detail">(Mining: ${this.formatEnergy(BASE_MINING_ENERGY)}/probe, Recycling: ${this.formatEnergy(BASE_RECYCLING_ENERGY)}/probe)</span></div>`;
+            
+            const sortedZones = Object.entries(probeConsumptionByZone).sort((a, b) => 
+                (b[1].mining.energy + b[1].recycling.energy) - (a[1].mining.energy + a[1].recycling.energy));
+            
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                const zoneTotal = data.mining.energy + data.recycling.energy;
+                
+                html += `<div class="breakdown-row indent zone-row">
+                    <span class="row-label zone-name">${zoneName}</span>
+                    <span class="row-value negative">${this.formatEnergy(zoneTotal)}</span>
+                </div>`;
+                
+                if (data.mining.energy > 0) {
+                    html += `<div class="breakdown-row indent-2">
+                        <span class="row-label">⛏️ Mining <span class="detail">(${this.formatNumber(data.mining.probes)} probes)</span></span>
+                        <span class="row-value negative">${this.formatEnergy(data.mining.energy)}</span>
+                    </div>`;
+                }
+                if (data.recycling.energy > 0) {
+                    html += `<div class="breakdown-row indent-2">
+                        <span class="row-label">♻️ Recycling <span class="detail">(${this.formatNumber(data.recycling.probes)} probes)</span></span>
+                        <span class="row-value negative">${this.formatEnergy(data.recycling.energy)}</span>
+                    </div>`;
+                }
+            }
+            html += '</div>';
+        }
+        
+        // ======= STRUCTURE CONSUMPTION BY TYPE =======
+        // Structure consumption type definitions
+        const consumptionTypeInfo = {
+            'mass_driver': { icon: '🚀', label: 'Mass Drivers', note: '(offline when deficit)' },
+            'em_gas_miner': { icon: '⛽', label: 'EM Gas Miners' },
+            'space_elevator': { icon: '🗼', label: 'Space Elevators' },
+            'robotic_asteroid_factory': { icon: '🏭', label: 'Asteroid Factories' },
+            'methalox_refinery': { icon: '⚗️', label: 'Methalox Refineries' },
+            'data_center': { icon: '💻', label: 'Data Centers', note: '(base draw before solar offset)' }
+        };
+        
+        const BASE_STRUCTURE_ENERGY = this.getEnergyValue('structures.base_energy_cost_w', 250000);
+        
+        // Collect all energy-consuming structures by type
+        let consumptionByType = {};
+        
+        for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                if (count <= 0) continue;
+                
+                const building = this.findBuilding(buildingId);
+                if (!building) continue;
+                
+                let consumption = 0;
+                
+                // Check for energy_cost_multiplier (most structures)
+                if (building.energy_cost_multiplier !== undefined && building.energy_cost_multiplier > 0) {
+                    consumption = BASE_STRUCTURE_ENERGY * building.energy_cost_multiplier * count;
+                }
+                // Check for base_power_consumption_mw (data centers)
+                else if (building.base_power_consumption_mw !== undefined && building.base_power_consumption_mw > 0) {
+                    consumption = building.base_power_consumption_mw * 1e6 * Math.pow(count, geometricScalingExponent);
+                }
+                
+                if (consumption <= 0) continue;
+                
+                if (!consumptionByType[buildingId]) {
+                    consumptionByType[buildingId] = {
+                        building: building,
+                        zones: [],
+                        totalConsumption: 0,
+                        totalCount: 0
+                    };
+                }
+                
+                consumptionByType[buildingId].zones.push({
+                    zoneId,
+                    zoneName: this.formatZoneName(zoneId),
+                    count,
+                    consumption
+                });
+                consumptionByType[buildingId].totalConsumption += consumption;
+                consumptionByType[buildingId].totalCount += count;
+            }
+        }
+        
+        // Render each structure type that consumes energy
+        for (const [buildingId, data] of Object.entries(consumptionByType)) {
+            if (data.totalConsumption <= 0) continue;
+            
+            const typeInfo = consumptionTypeInfo[buildingId] || { icon: '🏭', label: data.building.name || buildingId };
+            const hasNote = typeInfo.note ? ` <span class="header-note">${typeInfo.note}</span>` : '';
+            
+            html += `<div class="breakdown-category">
+                <div class="category-header">${typeInfo.icon} ${typeInfo.label}${hasNote}</div>`;
+            
+            // Sort zones by consumption
+            const sortedZones = data.zones.sort((a, b) => b.consumption - a.consumption);
+            
+            for (const zone of sortedZones) {
+                const countLabel = zone.count === 1 ? '' : ` ×${zone.count}`;
+                
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${zone.zoneName}${countLabel}</span>
+                    <span class="row-value negative">${this.formatEnergy(zone.consumption)}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        // Consumption total
+        const totalConsumption = totals.energy_consumed || 0;
+        html += `<div class="breakdown-total">
+            <span class="total-label">Total Consumption</span>
+            <span class="total-value negative">${this.formatEnergy(totalConsumption)}</span>
+        </div></div>`;
+        
+        // ======= NET SECTION =======
+        const netEnergy = totals.energy_net || 0;
+        const netClass = netEnergy < 0 ? 'negative' : 'positive';
+        html += `<div class="breakdown-net ${netClass}">
+            <span class="net-label">Net Energy</span>
+            <span class="net-value">${this.formatEnergy(netEnergy)}</span>
+        </div>`;
+        
+        if (netEnergy < 0) {
+            const throttle = ((totals.energy_produced || 0) / (totals.energy_consumed || 1) * 100);
+            html += `<div class="breakdown-warning">
+                <span class="warning-icon">⚠</span>
+                <span class="warning-text">Energy deficit! Activities throttled to ${throttle.toFixed(1)}%. Mass drivers offline.</span>
+            </div>`;
+        }
+        
+        container.innerHTML = html;
+    }
+    
+    updateIntelligenceBreakdown() {
+        const container = document.getElementById('intelligence-breakdown-content');
+        if (!container || !this.gameState) return;
+        
+        const gameState = this.gameState;
+        const derived = gameState.derived || {};
+        const totals = derived.totals || {};
+        const probesByZone = gameState.probes_by_zone || {};
+        const structuresByZone = gameState.structures_by_zone || {};
+        const orbitalMechanics = window.gameDataLoader?.orbitalMechanics?.zones || {};
+        
+        let html = '';
+        
+        // ======= PRODUCTION SECTION =======
+        html += '<div class="breakdown-subsection"><div class="subsection-title production-title">🧠 Compute Production</div>';
+        
+        // ======= PROBE COMPUTE =======
+        // Each probe has onboard compute (100 PFLOPs base)
+        const BASE_PROBE_PFLOPS = this.economicRules?.probe?.base_compute_pflops || Config.PROBE_BASE_COMPUTE_PFLOPS || 100;
+        let totalProbeFlops = 0;
+        let probeComputeByZone = {};
+        
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            const probeCount = zoneProbes['probe'] || 0;
+            if (probeCount > 0) {
+                const zoneFlops = probeCount * BASE_PROBE_PFLOPS * 1e15; // Convert PFLOPS to FLOPS
+                totalProbeFlops += zoneFlops;
+                probeComputeByZone[zoneId] = { probes: probeCount, flops: zoneFlops };
+            }
+        }
+        
+        if (totalProbeFlops > 0) {
+            html += `<div class="breakdown-category">
+                <div class="category-header">🛸 Probe Onboard Compute <span class="header-detail">(${BASE_PROBE_PFLOPS} PFLOPS/probe)</span></div>`;
+            
+            const sortedZones = Object.entries(probeComputeByZone).sort((a, b) => b[1].flops - a[1].flops);
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${zoneName} <span class="detail">(${this.formatNumber(data.probes)} probes)</span></span>
+                    <span class="row-value positive">${this.formatFLOPS(data.flops)}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        // ======= DATA CENTERS =======
+        // Data centers have compute_eflops (10 EFLOPS each)
+        const geometricScalingExponent = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+        let dataCentersByZone = {};
+        let totalDataCenterFlops = 0;
+        
+        for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
+            const zoneData = orbitalMechanics[zoneId] || {};
+            const solarIrradiance = zoneData.solar_irradiance_factor || 1.0;
+            
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                if (count <= 0 || buildingId !== 'data_center') continue;
+                
+                const building = this.findBuilding(buildingId);
+                if (!building || !building.compute_eflops) continue;
+                
+                // Calculate compute with geometric scaling
+                const baseComputeEFLOPS = building.compute_eflops;
+                const baseComputeFLOPS = baseComputeEFLOPS * 1e18; // Convert EFLOPS to FLOPS
+                const geometricFactor = Math.pow(count, geometricScalingExponent);
+                const effectiveFLOPS = baseComputeFLOPS * geometricFactor;
+                
+                if (!dataCentersByZone[zoneId]) {
+                    dataCentersByZone[zoneId] = {
+                        count: 0,
+                        flops: 0,
+                        solarIrradiance: solarIrradiance
+                    };
+                }
+                
+                dataCentersByZone[zoneId].count += count;
+                dataCentersByZone[zoneId].flops += effectiveFLOPS;
+                totalDataCenterFlops += effectiveFLOPS;
+            }
+        }
+        
+        if (totalDataCenterFlops > 0) {
+            const dataCenter = this.findBuilding('data_center');
+            const baseEFLOPS = dataCenter?.compute_eflops || 10;
+            
+            html += `<div class="breakdown-category">
+                <div class="category-header">💻 Data Centers <span class="header-detail">(${baseEFLOPS} EFLOPS base)</span></div>`;
+            
+            const sortedZones = Object.entries(dataCentersByZone).sort((a, b) => b[1].flops - a[1].flops);
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                const countLabel = data.count === 1 ? '' : ` ×${data.count}`;
+                const solarNote = ` <span class="solar-factor">(${(data.solarIrradiance * 100).toFixed(0)}% solar efficiency)</span>`;
+                
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${zoneName}${countLabel}${solarNote}</span>
+                    <span class="row-value positive">${this.formatFLOPS(data.flops)}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        // ======= DYSON SPHERE COMPUTE =======
+        const dysonMass = gameState.dyson_sphere?.mass || 0;
+        const dysonPowerAllocation = gameState.dyson_power_allocation || 0;
+        const economyFraction = (100 - dysonPowerAllocation) / 100.0;
+        const computeFraction = dysonPowerAllocation / 100.0;
+        
+        // Dyson sphere compute: 1 PFLOPS per kg of mass
+        const DYSON_FLOPS_PER_KG = 1e15; // 1 PFLOPS = 10^15 FLOPS
+        const dysonTotalFlops = dysonMass * DYSON_FLOPS_PER_KG;
+        const dysonComputeFlops = dysonTotalFlops * computeFraction;
+        
+        if (dysonMass > 0) {
+            html += `<div class="breakdown-category">
+                <div class="category-header">🌐 Dyson Sphere <span class="header-detail">(1 PFLOPS/kg)</span></div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Total Mass</span>
+                    <span class="row-value">${this.formatMass(dysonMass)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Total Compute Capacity</span>
+                    <span class="row-value">${this.formatFLOPS(dysonTotalFlops)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">→ Compute <span class="detail">(${(computeFraction * 100).toFixed(0)}%)</span></span>
+                    <span class="row-value positive">${this.formatFLOPS(dysonComputeFlops)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">→ Energy <span class="detail">(${(economyFraction * 100).toFixed(0)}%)</span></span>
+                    <span class="row-value dimmed">(see Energy tab)</span>
+                </div>
+            </div>`;
+        }
+        
+        // ======= LEGACY RESEARCH STRUCTURES =======
+        // Check for any other intelligence-producing structures
+        let researchByZone = {};
+        let totalResearchFlops = 0;
+        
+        for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
+            let zoneFlops = 0;
+            let zoneDetails = [];
+            
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                if (count <= 0 || buildingId === 'data_center') continue;
+                
+                const building = this.findBuilding(buildingId);
+                if (!building) continue;
+                
+                // Check for legacy intelligence production
+                const intelligenceFlops = building.effects?.intelligence_flops || 0;
+                if (intelligenceFlops > 0) {
+                    const geometricFactor = Math.pow(count, geometricScalingExponent);
+                    const totalFlops = intelligenceFlops * geometricFactor;
+                    zoneFlops += totalFlops;
+                    zoneDetails.push({ name: building.name || buildingId, count, flops: totalFlops });
+                }
+            }
+            
+            if (zoneFlops > 0) {
+                researchByZone[zoneId] = { total: zoneFlops, structures: zoneDetails };
+                totalResearchFlops += zoneFlops;
+            }
+        }
+        
+        if (totalResearchFlops > 0) {
+            html += '<div class="breakdown-category"><div class="category-header">🔬 Research Structures</div>';
+            
+            const sortedZones = Object.entries(researchByZone).sort((a, b) => b[1].total - a[1].total);
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                html += `<div class="breakdown-row indent zone-row">
+                    <span class="row-label zone-name">${zoneName}</span>
+                    <span class="row-value positive">${this.formatFLOPS(data.total)}</span>
+                </div>`;
+                
+                for (const struct of data.structures) {
+                    html += `<div class="breakdown-row indent-2">
+                        <span class="row-label structure-name">${struct.name} <span class="detail">(×${struct.count})</span></span>
+                        <span class="row-value positive">${this.formatFLOPS(struct.flops)}</span>
+                    </div>`;
+                }
+            }
+            html += '</div>';
+        }
+        
+        // Production total
+        const totalProduction = totals.intelligence_produced || 0;
+        html += `<div class="breakdown-total">
+            <span class="total-label">Total Compute</span>
+            <span class="total-value positive">${this.formatFLOPS(totalProduction)}</span>
+        </div></div>`;
+        
+        // ======= USAGE SECTION =======
+        html += '<div class="breakdown-subsection"><div class="subsection-title consumption-title">📊 Compute Usage</div>';
+        
+        // Research allocation
+        const techTree = gameState.tech_tree || {};
+        const researchState = techTree.research || gameState.research || {};
+        let activeResearchCount = 0;
+        let researchProjects = [];
+        
+        // Count active research projects
+        for (const [treeId, tree] of Object.entries(researchState)) {
+            for (const [tierId, tier] of Object.entries(tree)) {
+                if (tier.enabled && tier.progress < 1.0) {
+                    activeResearchCount++;
+                    researchProjects.push({
+                        tree: treeId,
+                        tier: tierId,
+                        progress: (tier.progress * 100).toFixed(1)
+                    });
+                }
+            }
+        }
+        
+        if (activeResearchCount > 0) {
+            const flopsPerProject = totalProduction / activeResearchCount;
+            
+            html += `<div class="breakdown-category">
+                <div class="category-header">🔬 Active Research <span class="header-detail">(${activeResearchCount} project${activeResearchCount > 1 ? 's' : ''})</span></div>`;
+            
+            for (const project of researchProjects.slice(0, 5)) { // Show up to 5
+                const treeName = project.tree.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${treeName} T${project.tier} <span class="detail">(${project.progress}%)</span></span>
+                    <span class="row-value">${this.formatFLOPS(flopsPerProject)}</span>
+                </div>`;
+            }
+            if (researchProjects.length > 5) {
+                html += `<div class="breakdown-row indent note">
+                    <span class="row-label">...and ${researchProjects.length - 5} more</span>
+                </div>`;
+            }
+            html += '</div>';
+        } else {
+            html += `<div class="breakdown-category">
+                <div class="category-header">🔬 Research</div>
+                <div class="breakdown-row indent note">
+                    <span class="row-label">No active research projects</span>
+                </div>
+            </div>`;
+        }
+        
+        html += '</div>';
+        
+        // Note
+        html += `<div class="breakdown-note">💡 Compute power is distributed equally among active research projects. Probe compute scales with intelligence research.</div>`;
+        
+        container.innerHTML = html;
+    }
+    
+    updateDexterityBreakdown() {
+        const container = document.getElementById('dexterity-breakdown-content');
+        if (!container || !this.gameState) return;
+        
+        const gameState = this.gameState;
+        const derived = gameState.derived || {};
+        const totals = derived.totals || {};
+        const probesByZone = gameState.probes_by_zone || {};
+        const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
+        const structuresByZone = gameState.structures_by_zone || {};
+        
+        let html = '';
+        
+        // Metal stored
+        const metal = gameState.metal || 0;
+        html += `<div class="breakdown-stored">
+            <span class="stored-label">Metal Stored</span>
+            <span class="stored-value">${this.formatNumber(metal)} kg</span>
+        </div>`;
+        
+        // ======= PRODUCTION SECTION =======
+        html += '<div class="breakdown-subsection"><div class="subsection-title production-title">Mining Rate</div>';
+        
+        // Mining probes by zone
+        let miningByZone = {};
+        let totalMining = 0;
+        const PROBE_HARVEST_RATE = Config.PROBE_HARVEST_RATE || 100;
+        
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            const probeCount = zoneProbes['probe'] || 0;
+            if (probeCount <= 0) continue;
+            
+            const allocations = probeAllocationsByZone[zoneId] || {};
+            const harvestAllocation = allocations.harvest || 0;
+            const miningProbes = probeCount * harvestAllocation;
+            
+            if (miningProbes > 0) {
+                const miningRate = miningProbes * PROBE_HARVEST_RATE;
+                miningByZone[zoneId] = { probes: miningProbes, rate: miningRate };
+                totalMining += miningRate;
+            }
+        }
+        
+        if (totalMining > 0) {
+            html += '<div class="breakdown-category"><div class="category-header">Mining Probes</div>';
+            
+            const sortedZones = Object.entries(miningByZone).sort((a, b) => b[1].rate - a[1].rate);
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                html += `<div class="breakdown-row indent">
+                    <span class="row-label">${zoneName} <span class="detail">(${this.formatNumber(data.probes)} probes)</span></span>
+                    <span class="row-value positive">${this.safeFormatRate(data.rate, 'kg')}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        // Mining structures by zone
+        let structureMiningByZone = {};
+        let totalStructureMining = 0;
+        
+        for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
+            let zoneMining = 0;
+            let zoneDetails = [];
+            
+            for (const [buildingId, count] of Object.entries(zoneStructures)) {
+                if (count <= 0) continue;
+                
+                const building = this.findBuilding(buildingId);
+                if (!building) continue;
+                
+                const metalProduction = building.effects?.metal_production_per_day || 0;
+                if (metalProduction > 0) {
+                    const totalProduction = metalProduction * count;
+                    zoneMining += totalProduction;
+                    zoneDetails.push({ name: building.name || buildingId, count, rate: totalProduction });
+                }
+            }
+            
+            if (zoneMining > 0) {
+                structureMiningByZone[zoneId] = { total: zoneMining, structures: zoneDetails };
+                totalStructureMining += zoneMining;
+            }
+        }
+        
+        if (totalStructureMining > 0) {
+            html += '<div class="breakdown-category"><div class="category-header">Mining Structures</div>';
+            
+            const sortedZones = Object.entries(structureMiningByZone).sort((a, b) => b[1].total - a[1].total);
+            for (const [zoneId, data] of sortedZones) {
+                const zoneName = this.formatZoneName(zoneId);
+                html += `<div class="breakdown-row indent zone-row">
+                    <span class="row-label zone-name">${zoneName}</span>
+                    <span class="row-value positive">${this.safeFormatRate(data.total, 'kg')}</span>
+                </div>`;
+                
+                for (const struct of data.structures) {
+                    html += `<div class="breakdown-row indent-2">
+                        <span class="row-label structure-name">${struct.name} <span class="detail">(×${struct.count})</span></span>
+                        <span class="row-value positive">${this.safeFormatRate(struct.rate, 'kg')}</span>
+                    </div>`;
+                }
+            }
+            html += '</div>';
+        }
+        
+        // Mining total
+        const totalMiningRate = totals.metal_mined_rate || 0;
+        html += `<div class="breakdown-total">
+            <span class="total-label">Total Mining Rate</span>
+            <span class="total-value positive">${this.safeFormatRate(totalMiningRate, 'kg')}</span>
+        </div></div>`;
+        
+        // ======= CONSUMPTION SECTION =======
+        html += '<div class="breakdown-subsection"><div class="subsection-title consumption-title">Consumption Rate</div>';
+        
+        // Construction probes by zone (building probes + structures)
+        let constructionByZone = {};
+        let totalProbeConstruction = 0;
+        let totalStructureConstruction = 0;
+        let totalDysonConstruction = 0;
+        const PROBE_MASS = Config.PROBE_MASS || 100;
+        const PROBE_BUILD_RATE = Config.PROBE_BUILD_RATE || 20;
+        
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            const probeCount = zoneProbes['probe'] || 0;
+            if (probeCount <= 0) continue;
+            
+            const allocations = probeAllocationsByZone[zoneId] || {};
+            const replicateAlloc = allocations.replicate || 0;
+            const constructAlloc = allocations.construct || 0;
+            const dysonAlloc = allocations.dyson || 0;
+            
+            const replicatingProbes = probeCount * replicateAlloc;
+            const constructingProbes = probeCount * constructAlloc;
+            const dysonProbes = probeCount * dysonAlloc;
+            
+            // Calculate rates
+            const buildAllocation = gameState.build_allocation || 50;
+            const probeRate = replicatingProbes * PROBE_BUILD_RATE * PROBE_MASS / 86400; // kg/day to kg/s approx
+            const structureRate = constructingProbes * PROBE_BUILD_RATE;
+            const dysonRate = dysonProbes * PROBE_BUILD_RATE;
+            
+            if (replicatingProbes > 0 || constructingProbes > 0 || dysonProbes > 0) {
+                constructionByZone[zoneId] = {
+                    replicating: { probes: replicatingProbes, rate: gameState.probe_production_rate ? (gameState.probe_production_rate * PROBE_MASS / Object.keys(constructionByZone).length) : 0 },
+                    structures: { probes: constructingProbes, rate: structureRate },
+                    dyson: { probes: dysonProbes, rate: dysonRate }
+                };
+            }
+        }
+        
+        // Probe building consumption
+        const probeProductionRate = gameState.probe_production_rate || 0;
+        const probeMetalConsumption = probeProductionRate * PROBE_MASS;
+        if (probeMetalConsumption > 0) {
+            html += `<div class="breakdown-category"><div class="category-header">Probe Construction</div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Building ${this.formatNumber(probeProductionRate)} probes/day</span>
+                    <span class="row-value negative">${this.safeFormatRate(probeMetalConsumption, 'kg')}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Dyson construction consumption
+        const dysonConstructionRate = gameState.dyson_construction_rate || 0;
+        if (dysonConstructionRate > 0) {
+            html += `<div class="breakdown-category"><div class="category-header">Dyson Sphere Construction</div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Building Dyson mass</span>
+                    <span class="row-value negative">${this.safeFormatRate(dysonConstructionRate, 'kg')}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Structure construction consumption (estimated from construct allocation)
+        let structureMetalConsumption = 0;
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            const probeCount = zoneProbes['probe'] || 0;
+            const allocations = probeAllocationsByZone[zoneId] || {};
+            const constructAlloc = allocations.construct || 0;
+            structureMetalConsumption += probeCount * constructAlloc * PROBE_BUILD_RATE;
+        }
+        
+        if (structureMetalConsumption > 0) {
+            html += `<div class="breakdown-category"><div class="category-header">Structure Construction</div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Building structures</span>
+                    <span class="row-value negative">${this.safeFormatRate(structureMetalConsumption, 'kg')}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Consumption total
+        const totalConsumption = totals.metal_consumed_rate || 0;
+        html += `<div class="breakdown-total">
+            <span class="total-label">Total Consumption Rate</span>
+            <span class="total-value negative">${this.safeFormatRate(totalConsumption, 'kg')}</span>
+        </div></div>`;
+        
+        // ======= NET SECTION =======
+        const netMetal = totalMiningRate - totalConsumption;
+        const netClass = netMetal < 0 ? 'negative' : 'positive';
+        html += `<div class="breakdown-net ${netClass}">
+            <span class="net-label">Net Metal Rate</span>
+            <span class="net-value">${this.safeFormatRate(netMetal, 'kg')}</span>
+        </div>`;
+        
+        if (netMetal < 0) {
+            html += `<div class="breakdown-warning">
+                <span class="warning-icon">⚠</span>
+                <span class="warning-text">Metal deficit! Consuming stored metal faster than mining.</span>
+            </div>`;
+        }
+        
+        container.innerHTML = html;
+    }
+    
+    findBuilding(buildingId) {
+        const allBuildings = this.buildings?.buildings || this.buildings || {};
+        for (const category in allBuildings) {
+            if (Array.isArray(allBuildings[category])) {
+                const found = allBuildings[category].find(b => b.id === buildingId);
+                if (found) return found;
+            } else if (allBuildings[category] && typeof allBuildings[category] === 'object') {
+                if (allBuildings[category][buildingId]) return allBuildings[category][buildingId];
+            }
+        }
+        return null;
+    }
+    
+    formatZoneName(zoneId) {
+        if (zoneId === 'global') return 'Global';
+        return zoneId.charAt(0).toUpperCase() + zoneId.slice(1).replace(/_/g, ' ');
     }
 
     initFull() {
@@ -135,18 +1058,15 @@ class ResourceDisplay {
                 <div class="resource-label">Energy</div>
                 <div class="resource-value" id="resource-energy">0</div>
                 <div class="resource-rate" id="resource-energy-rate">+0 W/s</div>
-                <div class="resource-tooltip" id="tooltip-energy"></div>
             </div>
             <div class="resource-item" id="resource-intelligence-container" data-resource="intelligence">
                 <div class="resource-label">Intelligence</div>
                 <div class="resource-value" id="resource-intelligence">0</div>
                 <div class="resource-rate" id="resource-intelligence-rate">+0 /s</div>
-                <div class="resource-tooltip" id="tooltip-intelligence"></div>
             </div>
             <div class="resource-item" id="resource-dexterity-container" data-resource="dexterity">
                 <div class="resource-label">Dexterity</div>
                 <div class="resource-value" id="resource-dexterity">0</div>
-                <div class="resource-tooltip" id="tooltip-dexterity"></div>
             </div>
             <div class="resource-item">
                 <div class="resource-label">Dyson Sphere</div>
@@ -160,9 +1080,6 @@ class ResourceDisplay {
                 <div id="zone-metal-list"></div>
             </div>
         `;
-        
-        // Set up tooltip event listeners
-        this.setupTooltips();
     }
 
     formatNumber(value) {
@@ -180,18 +1097,26 @@ class ResourceDisplay {
         if (value === 0) return '0 W';
         return `${value.toExponential(2)} W`;
     }
+    
+    formatMass(kg) {
+        // Format mass with appropriate SI prefix
+        if (!kg || kg < 0 || isNaN(kg) || !isFinite(kg)) return '0 kg';
+        
+        if (kg >= 1e24) return (kg / 1e24).toFixed(2) + ' Ykg';
+        if (kg >= 1e21) return (kg / 1e21).toFixed(2) + ' Zkg';
+        if (kg >= 1e18) return (kg / 1e18).toFixed(2) + ' Ekg';
+        if (kg >= 1e15) return (kg / 1e15).toFixed(2) + ' Pkg';
+        if (kg >= 1e12) return (kg / 1e12).toFixed(2) + ' Tkg';
+        if (kg >= 1e9) return (kg / 1e9).toFixed(2) + ' Gkg';
+        if (kg >= 1e6) return (kg / 1e6).toFixed(2) + ' Mkg';
+        if (kg >= 1e3) return (kg / 1e3).toFixed(2) + ' t';
+        return kg.toFixed(2) + ' kg';
+    }
 
     formatFLOPS(flops) {
-        // Format floating point operations per second (FLOPS)
-        if (flops === 0) return '0 FLOPS';
-        if (flops < 1e3) return flops.toFixed(2) + ' FLOPS';
-        if (flops < 1e6) return (flops / 1e3).toFixed(2) + ' kFLOPS';
-        if (flops < 1e9) return (flops / 1e6).toFixed(2) + ' MFLOPS';
-        if (flops < 1e12) return (flops / 1e9).toFixed(2) + ' GFLOPS';
-        if (flops < 1e15) return (flops / 1e12).toFixed(2) + ' TFLOPS';
-        if (flops < 1e18) return (flops / 1e15).toFixed(2) + ' PFLOPS';
-        if (flops < 1e21) return (flops / 1e18).toFixed(2) + ' EFLOPS';
-        return (flops / 1e21).toFixed(2) + ' ZFLOPS';
+        // Format floating point operations per second (FLOPS) in scientific notation
+        if (flops === 0 || !flops || isNaN(flops) || !isFinite(flops)) return '0 FLOPS';
+        return flops.toExponential(2) + ' FLOPS';
     }
 
     /**
@@ -295,827 +1220,6 @@ class ResourceDisplay {
         }
         
         return bonuses;
-    }
-
-    setupTooltips() {
-        // Set up mouseenter and mouseleave for each resource container
-        const resources = ['energy', 'intelligence', 'dexterity'];
-        resources.forEach(resource => {
-            const container = document.getElementById(`resource-${resource}-container`);
-            const tooltip = document.getElementById(`tooltip-${resource}`);
-            if (container && tooltip) {
-                container.addEventListener('mouseenter', (e) => {
-                    // Always try to update tooltip with breakdown - the updateTooltip
-                    // function will calculate locally if backend data isn't available
-                    if (this.gameState) {
-                        const breakdown = this.gameState.resource_breakdowns?.[resource] || null;
-                        this.updateTooltip(resource, breakdown);
-                    } else {
-                        // No game state at all - show basic tooltip
-                        this.showBasicTooltip(resource, tooltip);
-                    }
-                    this.showTooltip(resource, tooltip, container);
-                });
-                container.addEventListener('mouseleave', () => {
-                    tooltip.style.display = 'none';
-                });
-            }
-        });
-    }
-
-    showBasicTooltip(resource, tooltipEl) {
-        // Show a basic tooltip even when breakdown data isn't available
-        const descriptions = {
-            energy: 'Energy is measured in watts. Net energy = Production - Consumption. Positive net energy allows your probes and structures to operate.',
-            intelligence: 'Intelligence measures computational power in PFLOPS (PetaFLOPS). Used for research and advanced calculations.',
-            dexterity: 'Dexterity shows metal storage, production, and consumption. Net = Production - Consumption.'
-        };
-        
-        let html = '<div class="tooltip-content">';
-        html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">`;
-        html += descriptions[resource] || 'Resource information will be displayed here.';
-        html += '</div>';
-        html += '</div>';
-        tooltipEl.innerHTML = html;
-    }
-
-    showTooltip(resource, tooltipEl, containerEl) {
-        const rect = containerEl.getBoundingClientRect();
-        
-        // Ensure tooltip has content
-        if (!tooltipEl.innerHTML || tooltipEl.innerHTML.trim() === '') {
-            this.showBasicTooltip(resource, tooltipEl);
-        }
-        
-        tooltipEl.style.display = 'block';
-        
-        // Position tooltip to the left of the container, below it
-        const tooltipWidth = 300; // Approximate tooltip width
-        const spacing = 10; // Space between container and tooltip
-        
-        // Position to the left of the container
-        let leftPos = rect.left - tooltipWidth - spacing;
-        
-        // If tooltip would go off-screen to the left, position it to the right instead
-        if (leftPos < 10) {
-            leftPos = rect.right + spacing;
-        }
-        
-        // Ensure tooltip doesn't go off-screen to the right
-        if (leftPos + tooltipWidth > window.innerWidth - 10) {
-            leftPos = window.innerWidth - tooltipWidth - 10;
-        }
-        
-        tooltipEl.style.left = `${leftPos}px`;
-        tooltipEl.style.right = 'auto';
-        // Position below the container
-        tooltipEl.style.top = `${rect.bottom + spacing}px`;
-        tooltipEl.style.transform = 'none';
-        tooltipEl.style.zIndex = '10000';
-    }
-
-    updateTooltip(resource, breakdown) {
-        const tooltipEl = document.getElementById(`tooltip-${resource}`);
-        if (!tooltipEl) return;
-        
-        // All tooltips can now calculate locally from gameState, even without backend breakdown
-        if (!this.gameState) {
-            this.showBasicTooltip(resource, tooltipEl);
-            return;
-        }
-        
-        try {
-
-        // Change detection: Cache tooltip content to avoid unnecessary regeneration
-        const tooltipData = resource === 'dexterity' ? {
-            resource: resource,
-            gameState: {
-                metal: this.gameState.metal,
-                metal_production_rate: this.gameState.metal_production_rate,
-                dyson_construction_rate: this.gameState.dyson_construction_rate,
-                probe_production_rate: this.gameState.probe_production_rate,
-                probe_allocations: this.gameState.probe_allocations,
-                build_allocation: this.gameState.build_allocation,
-                resource_breakdowns: this.gameState.resource_breakdowns
-            }
-        } : {
-            resource: resource,
-            breakdown: breakdown
-        };
-        
-        const tooltipHash = JSON.stringify(tooltipData);
-        const cacheKey = `tooltip_${resource}_cache`;
-        
-        if (tooltipHash === this[cacheKey] && this[cacheKey] !== null) {
-            return; // No changes, skip tooltip update
-        }
-        this[cacheKey] = tooltipHash;
-
-        let html = '<div class="tooltip-content">';
-        
-        if (resource === 'dexterity') {
-            // Get game state for breakdown
-            const gameState = this.gameState || {};
-            const metal = gameState.metal || 0;
-            const metalProductionRate = gameState.metal_production_rate || 0;
-            const dysonConstructionRate = gameState.dyson_construction_rate || 0;
-            const probeProductionRate = gameState.probe_production_rate || 0;
-            const allocations = gameState.probe_allocations || {};
-            const constructAllocation = allocations.construct || {};
-            const harvestAllocation = allocations.harvest || {};
-            const constructProbes = (constructAllocation.probe || 0) + (constructAllocation.construction_probe || 0);
-            const buildAllocation = gameState.build_allocation || 50;
-            const structureFraction = (100 - buildAllocation) / 100.0;
-            const structureProbes = constructProbes * structureFraction;
-            
-            // Calculate production breakdown
-            const totalHarvestProbes = (harvestAllocation.probe || 0) + (harvestAllocation.miner_probe || 0) + (harvestAllocation.energy_probe || 0);
-            // metal_production_rate is in kg/day from backend
-            const harvestProduction = gameState.metal_production_rate || 0; // kg/day
-            
-            // Calculate consumption rates (all in kg/day) - use backend data if available
-            const backendConsumption = breakdown && breakdown.consumption;
-            let dysonMetalConsumption, probeMetalConsumption, structureMetalConsumption, totalConsumption;
-            
-            if (backendConsumption) {
-                dysonMetalConsumption = backendConsumption.dyson || 0;
-                probeMetalConsumption = backendConsumption.probes || 0;
-                structureMetalConsumption = backendConsumption.structures || 0;
-                totalConsumption = backendConsumption.total || (dysonMetalConsumption + probeMetalConsumption + structureMetalConsumption);
-            } else {
-                // Fallback to local calculation
-                dysonMetalConsumption = (dysonConstructionRate || 0) * 0.5; // 50% efficiency, kg/day
-                const PROBE_MASS = (typeof Config !== 'undefined' && Config.PROBE_MASS) ? Config.PROBE_MASS : 100;
-                const PROBE_BUILD_RATE = (typeof Config !== 'undefined' && Config.PROBE_BUILD_RATE) ? Config.PROBE_BUILD_RATE : 20;
-                probeMetalConsumption = (probeProductionRate || 0) * PROBE_MASS; // kg/day
-                structureMetalConsumption = structureProbes * PROBE_BUILD_RATE; // kg/day per probe
-                totalConsumption = dysonMetalConsumption + probeMetalConsumption + structureMetalConsumption;
-            }
-            
-            html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">
-                Dexterity shows metal storage, production, and consumption. Net = Production - Consumption.
-            </div>`;
-            
-            // Metal stored - make it prominent
-            html += `<div class="tooltip-section" style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(74, 158, 255, 0.3);">
-                <div class="tooltip-title" style="font-size: 13px; margin-bottom: 4px;">Metal Stored:</div>
-                <div class="tooltip-value" style="font-size: 16px; color: #4a9eff; font-weight: bold;">${this.formatNumber(metal)} kg</div>
-            </div>`;
-            
-            // Dexterity breakdown from probes (if available)
-            if (breakdown && breakdown.probes && breakdown.probes.breakdown) {
-                const zoneBreakdown = breakdown.probes.breakdown;
-                if (Object.keys(zoneBreakdown).length > 0) {
-                    html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                        <div class="tooltip-title">Dexterity by Zone (from Probes):</div>`;
-                    
-                    const zoneEntries = Object.entries(zoneBreakdown)
-                        .sort((a, b) => b[1].baseDexterity - a[1].baseDexterity); // Sort by dexterity descending
-                    
-                    zoneEntries.forEach(([zoneId, data]) => {
-                        const zoneName = zoneId === 'global' ? 'Global' : zoneId.charAt(0).toUpperCase() + zoneId.slice(1).replace(/_/g, ' ');
-                        html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                            <span style="color: rgba(255, 255, 255, 0.8);">${zoneName} (${data.probeCount} probes):</span>
-                            <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(data.baseDexterity, 'kg')}</span>
-                        </div>`;
-                    });
-                    
-                    html += `</div>`;
-                }
-            }
-            
-            // Production breakdown
-            html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <div class="tooltip-title">Production Rate Breakdown:</div>`;
-            
-            // Mining probes by zone - use backend breakdown if available
-            const backendProbeProduction = breakdown && breakdown.production && breakdown.production.probes;
-            let zoneProductionBreakdown = {};
-            let totalProbeProduction = 0;
-            
-            if (backendProbeProduction && Object.keys(backendProbeProduction).length > 0) {
-                // Use backend data
-                zoneProductionBreakdown = backendProbeProduction;
-                totalProbeProduction = Object.values(backendProbeProduction).reduce((sum, z) => sum + (z.production || 0), 0);
-            } else {
-                // Fallback to local calculation
-                const probesByZone = gameState.probes_by_zone || {};
-                const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
-                
-                for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
-                    const probeCount = zoneProbes.probe || 0;
-                    if (probeCount <= 0) continue;
-                    
-                    const allocations = probeAllocationsByZone[zoneId] || {};
-                    const harvestAlloc = allocations.harvest || 0;
-                    const miningProbes = probeCount * harvestAlloc;
-                    
-                    if (miningProbes > 0) {
-                        const PROBE_HARVEST_RATE = (typeof Config !== 'undefined' && Config.PROBE_HARVEST_RATE) ? Config.PROBE_HARVEST_RATE : 100;
-                        const baseRate = PROBE_HARVEST_RATE;
-                        const zoneProduction = miningProbes * baseRate;
-                        totalProbeProduction += zoneProduction;
-                        
-                        zoneProductionBreakdown[zoneId] = {
-                            probeCount: miningProbes,
-                            production: zoneProduction
-                        };
-                    }
-                }
-            }
-            
-            // Show mining probes by zone if we have zone breakdown
-            if (Object.keys(zoneProductionBreakdown).length > 0) {
-                html += `<div style="margin-left: 8px; margin-top: 6px;">
-                    <div style="color: rgba(255, 255, 255, 0.9); font-size: 11px; margin-bottom: 4px;">Mining Probes:</div>`;
-                const zoneEntries = Object.entries(zoneProductionBreakdown)
-                    .sort((a, b) => (b[1].production || 0) - (a[1].production || 0));
-                zoneEntries.forEach(([zoneId, data]) => {
-                    const zoneName = zoneId === 'global' ? 'Global' : zoneId.charAt(0).toUpperCase() + zoneId.slice(1).replace(/_/g, ' ');
-                        html += `<div class="tooltip-item" style="margin-left: 16px; margin-top: 2px;">
-                            <span style="color: rgba(255, 255, 255, 0.75);">${zoneName} (${Math.round(data.probeCount || 0)} probes):</span>
-                            <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(data.production || 0, 'kg')}</span>
-                        </div>`;
-                });
-                html += `</div>`;
-            } else if (harvestProduction > 0) {
-                // Fallback: show total if zone breakdown not available
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Harvesting Probes:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(harvestProduction, 'kg')}</span>
-                </div>`;
-            }
-            
-            // Mining structures (detailed breakdown by type) - use backend data if available
-            const backendStructureProduction = breakdown && breakdown.production && breakdown.production.structures;
-            let structureProduction = 0;
-            let structureBreakdown = {}; // {buildingId: {name: string, count: number, production: number}}
-            
-            if (backendStructureProduction && Object.keys(backendStructureProduction).length > 0) {
-                // Use backend data
-                structureBreakdown = backendStructureProduction;
-                structureProduction = Object.values(backendStructureProduction).reduce((sum, s) => sum + (s.production || 0), 0);
-            } else if (this.buildings) {
-                // Fallback to local calculation
-                const structuresByZone = gameState.structures_by_zone || {};
-                for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
-                    for (const [buildingId, count] of Object.entries(zoneStructures)) {
-                        if (count <= 0) continue;
-                        
-                        let building = null;
-                        for (const category in this.buildings) {
-                            if (Array.isArray(this.buildings[category])) {
-                                building = this.buildings[category].find(b => b.id === buildingId);
-                                if (building) break;
-                            }
-                        }
-                        
-                        if (building) {
-                            const effects = building.effects || {};
-                            const metalProduction = effects.metal_production_per_day || 0;
-                            if (metalProduction > 0) {
-                                const totalProduction = metalProduction * count;
-                                structureProduction += totalProduction;
-                                
-                                if (!structureBreakdown[buildingId]) {
-                                    structureBreakdown[buildingId] = {
-                                        name: building.name || buildingId,
-                                        count: 0,
-                                        production: 0
-                                    };
-                                }
-                                structureBreakdown[buildingId].count += count;
-                                structureBreakdown[buildingId].production += totalProduction;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Show mining structure breakdown if available
-            if (Object.keys(structureBreakdown).length > 0) {
-                html += `<div style="margin-left: 8px; margin-top: 6px;">
-                    <div style="color: rgba(255, 255, 255, 0.9); font-size: 11px; margin-bottom: 4px;">Mining Structures:</div>`;
-                const structureEntries = Object.entries(structureBreakdown)
-                    .sort((a, b) => (b[1].production || 0) - (a[1].production || 0));
-                
-                structureEntries.forEach(([buildingId, data]) => {
-                    html += `<div class="tooltip-item" style="margin-left: 16px; margin-top: 2px;">
-                        <span style="color: rgba(255, 255, 255, 0.75);">${data.name || buildingId} (×${data.count || 0}):</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(data.production || 0, 'kg')}</span>
-                    </div>`;
-                });
-                html += `</div>`;
-            }
-            
-            // Production Research Bonuses
-            const skills = gameState.skills || {};
-            const upgradeFactors = gameState.upgrade_factors || {};
-            const productionBonuses = [];
-            
-            // Mining efficiency from upgrade factors
-            const miningFactor = upgradeFactors.probe?.mining?.performance || 1.0;
-            if (miningFactor > 1.0) {
-                productionBonuses.push({
-                    name: 'Mining Efficiency',
-                    bonus: miningFactor - 1.0
-                });
-            }
-            
-            // Extraction efficiency from recycling skill
-            const recyclingSkill = skills.recycling || 0.75;
-            if (recyclingSkill > 0.75) {
-                const extractionBonus = (recyclingSkill - 0.75) * 0.5; // Up to 12.5% bonus
-                if (extractionBonus > 0) {
-                    productionBonuses.push({
-                        name: 'Extraction Efficiency',
-                        bonus: extractionBonus
-                    });
-                }
-            }
-            
-            if (productionBonuses.length > 0) {
-                html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                    <div class="tooltip-title" style="font-size: 11px; margin-bottom: 4px;">Production Modifiers:</div>`;
-                productionBonuses.forEach(bonus => {
-                    html += `<div class="tooltip-upgrade" style="margin-left: 8px;">${bonus.name}: ${this.formatResearchBonus(bonus.bonus)}</div>`;
-                });
-                html += `</div>`;
-            }
-            
-            // Total production (probe + structure) - use backend total if available
-            const backendProductionTotal = breakdown && breakdown.production && breakdown.production.total;
-            const totalProduction = backendProductionTotal !== undefined 
-                ? backendProductionTotal 
-                : (totalProbeProduction + structureProduction);
-            html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Production:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.safeFormatRate(totalProduction, 'kg')}</span>
-            </div>`;
-            
-            html += `</div>`;
-            
-            // Consumption breakdown
-            html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <div class="tooltip-title">Consumption Rate Breakdown:</div>`;
-            
-            if (dysonMetalConsumption > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Dyson Construction:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(dysonMetalConsumption, 'kg')}</span>
-                </div>`;
-            }
-            
-            if (probeMetalConsumption > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Building Probes:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(probeMetalConsumption, 'kg')}</span>
-                </div>`;
-            }
-            
-            if (structureMetalConsumption > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Building Structures:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.safeFormatRate(structureMetalConsumption, 'kg')}</span>
-                </div>`;
-            }
-            
-            html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Consumption:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.safeFormatRate(totalConsumption, 'kg')}</span>
-            </div>`;
-            
-            html += `</div>`;
-            
-            // Net (all rates are in kg/day)
-            const metalNet = totalProduction - totalConsumption;
-            const netColor = metalNet < 0 ? '#8b0000' : (metalNet > 0 ? '#228B22' : '#4a9eff');
-            html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(74, 158, 255, 0.4);">
-                <div class="tooltip-title">Net Metal:</div>
-                <div class="tooltip-value" style="color: ${netColor}; font-size: 14px;">${this.safeFormatRate(metalNet, 'kg')}</div>
-            </div>`;
-        } else if (resource === 'energy') {
-            const gameState = this.gameState || {};
-            const derived = gameState.derived || {};
-            const totals = derived.totals || {};
-            
-            html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">
-                Energy is measured in watts. Net energy = Production - Consumption. Positive net energy allows your probes and structures to operate. Mass drivers turn off completely when net energy is negative.
-            </div>`;
-            
-            // Get values from gameState.derived.totals (calculated by JS engine) or breakdown
-            const energyProduced = totals.energy_produced || breakdown?.production?.total || gameState.energy_production_rate || 0;
-            const energyConsumed = totals.energy_consumed || breakdown?.consumption?.total || gameState.energy_consumption_rate || 0;
-            
-            // Production Breakdown
-            html += `<div class="tooltip-section">
-                <div class="tooltip-title">Production Breakdown:</div>`;
-            
-            // Base Supply (constant)
-            const baseSupply = gameState.base_energy_production || 0;
-            if (baseSupply > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Base Supply:</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatEnergy(baseSupply)}</span>
-                </div>`;
-            }
-            
-            // Probe energy production (all probes produce energy passively)
-            const probesByZone = gameState.probes_by_zone || {};
-            let totalProbeCount = 0;
-            for (const zoneId in probesByZone) {
-                const zoneProbes = probesByZone[zoneId] || {};
-                totalProbeCount += zoneProbes['probe'] || 0;
-            }
-            const BASE_PROBE_ENERGY_PRODUCTION = this.getEnergyValue('probe.base_energy_production_w', 
-                (typeof Config !== 'undefined' && Config.PROBE_ENERGY_PRODUCTION) ? Config.PROBE_ENERGY_PRODUCTION : 100000);
-            const probeEnergyProduction = totalProbeCount * BASE_PROBE_ENERGY_PRODUCTION;
-            if (probeEnergyProduction > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Probes (${totalProbeCount} @ ${this.formatEnergy(BASE_PROBE_ENERGY_PRODUCTION)}/probe):</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatEnergy(probeEnergyProduction)}</span>
-                </div>`;
-            }
-            
-            // Energy-producing structures (always try to calculate locally)
-            const energyStructures = this.getStructureBreakdown(gameState, 'energy_production_per_second');
-            // Also check for power_output_mw based structures
-            const structuresByZone = gameState.structures_by_zone || {};
-            let structureEnergyBreakdown = {};
-            let totalStructureEnergy = 0;
-            
-            // Calculate from structures with power_output_mw
-            const allBuildings = this.buildings?.buildings || this.buildings || {};
-            for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
-                for (const [buildingId, count] of Object.entries(zoneStructures)) {
-                    if (count <= 0) continue;
-                    
-                    let building = null;
-                    for (const category in allBuildings) {
-                        if (Array.isArray(allBuildings[category])) {
-                            building = allBuildings[category].find(b => b.id === buildingId);
-                            if (building) break;
-                        } else if (allBuildings[category] && typeof allBuildings[category] === 'object') {
-                            building = allBuildings[category][buildingId];
-                            if (building) break;
-                        }
-                    }
-                    if (!building) continue;
-                    
-                    // Check for power output (in MW)
-                    const powerOutputMW = building.power_output_mw || 0;
-                    if (powerOutputMW > 0) {
-                        const geometricScalingExponent = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
-                        const powerW = powerOutputMW * 1e6 * Math.pow(count, geometricScalingExponent); // Geometric scaling
-                        if (!structureEnergyBreakdown[buildingId]) {
-                            structureEnergyBreakdown[buildingId] = { name: building.name || buildingId, count: 0, total: 0 };
-                        }
-                        structureEnergyBreakdown[buildingId].count += count;
-                        structureEnergyBreakdown[buildingId].total += powerW;
-                        totalStructureEnergy += powerW;
-                    }
-                }
-            }
-            
-            // Merge with legacy energy_production_per_second structures
-            for (const [buildingId, data] of Object.entries(energyStructures)) {
-                if (!structureEnergyBreakdown[buildingId]) {
-                    structureEnergyBreakdown[buildingId] = data;
-                    totalStructureEnergy += data.total;
-                }
-            }
-            
-            // Calculate structure energy by zone for detailed breakdown
-            let structureEnergyByZone = {};
-            for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
-                let zoneEnergy = 0;
-                let zoneStructureDetails = [];
-                
-                for (const [buildingId, count] of Object.entries(zoneStructures)) {
-                    if (count <= 0) continue;
-                    
-                    let building = null;
-                    for (const category in allBuildings) {
-                        if (Array.isArray(allBuildings[category])) {
-                            building = allBuildings[category].find(b => b.id === buildingId);
-                            if (building) break;
-                        } else if (allBuildings[category] && typeof allBuildings[category] === 'object') {
-                            building = allBuildings[category][buildingId];
-                            if (building) break;
-                        }
-                    }
-                    if (!building) continue;
-                    
-                    const powerOutputMW = building.power_output_mw || 0;
-                    if (powerOutputMW > 0) {
-                        const geometricScalingExponent = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
-                        const powerW = powerOutputMW * 1e6 * Math.pow(count, geometricScalingExponent);
-                        zoneEnergy += powerW;
-                        zoneStructureDetails.push({
-                            name: building.name || buildingId,
-                            count: count,
-                            power: powerW
-                        });
-                    }
-                }
-                
-                if (zoneEnergy > 0) {
-                    structureEnergyByZone[zoneId] = {
-                        total: zoneEnergy,
-                        structures: zoneStructureDetails
-                    };
-                }
-            }
-            
-            // Show structures by zone if we have zone data
-            if (Object.keys(structureEnergyByZone).length > 0) {
-                html += `<div style="margin-left: 8px; margin-top: 6px;">
-                    <div style="color: rgba(255, 255, 255, 0.9); font-size: 11px; margin-bottom: 4px;">Structures by Zone:</div>`;
-                
-                const zoneEntries = Object.entries(structureEnergyByZone)
-                    .sort((a, b) => b[1].total - a[1].total);
-                
-                zoneEntries.forEach(([zoneId, data]) => {
-                    const zoneName = zoneId === 'global' ? 'Global' : zoneId.charAt(0).toUpperCase() + zoneId.slice(1).replace(/_/g, ' ');
-                    html += `<div class="tooltip-item" style="margin-left: 16px; margin-top: 4px;">
-                        <span style="color: rgba(255, 200, 100, 0.9); font-weight: bold;">${zoneName}:</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatEnergy(data.total)}</span>
-                    </div>`;
-                    
-                    // Show individual structures in this zone
-                    data.structures.forEach(struct => {
-                        html += `<div class="tooltip-item" style="margin-left: 32px; margin-top: 2px;">
-                            <span style="color: rgba(255, 255, 255, 0.65);">${struct.name} (×${struct.count}):</span>
-                            <span style="color: rgba(74, 158, 255, 0.85); margin-left: 6px;">${this.formatEnergy(struct.power)}</span>
-                        </div>`;
-                    });
-                });
-                html += `</div>`;
-            } else if (Object.keys(structureEnergyBreakdown).length > 0) {
-                // Fallback to showing by type if zone breakdown not available
-                html += `<div style="margin-left: 8px; margin-top: 6px;">
-                    <div style="color: rgba(255, 255, 255, 0.9); font-size: 11px; margin-bottom: 4px;">Structures:</div>`;
-                const structureEntries = Object.entries(structureEnergyBreakdown)
-                    .sort((a, b) => b[1].total - a[1].total);
-                structureEntries.forEach(([buildingId, data]) => {
-                    html += `<div class="tooltip-item" style="margin-left: 16px; margin-top: 2px;">
-                        <span style="color: rgba(255, 255, 255, 0.75);">${data.name} (×${data.count}):</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatEnergy(data.total)}</span>
-                    </div>`;
-                });
-                html += `</div>`;
-            }
-            
-            // Dyson Sphere (with power allocation info)
-            const dysonMass = gameState.dyson_sphere?.mass || 0;
-            const dysonPowerAllocation = gameState.dyson_power_allocation || 0;
-            const economyFraction = (100 - dysonPowerAllocation) / 100.0;
-            const DYSON_POWER_PER_KG = (typeof Config !== 'undefined' && Config.DYSON_POWER_PER_KG) ? Config.DYSON_POWER_PER_KG : 5000;
-            const dysonTotalPower = dysonMass * DYSON_POWER_PER_KG;
-            const dysonEnergy = dysonTotalPower * economyFraction;
-            if (dysonMass > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Dyson Sphere (${this.formatNumber(dysonMass)} kg @ ${(economyFraction * 100).toFixed(1)}% to economy):</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatEnergy(dysonEnergy)}</span>
-                </div>`;
-            }
-            
-            html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Production:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.formatEnergy(energyProduced)}</span>
-            </div>`;
-            html += `</div>`;
-            
-            // Consumption Breakdown
-            html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <div class="tooltip-title">Consumption Breakdown:</div>`;
-            
-            // Calculate detailed consumption breakdown
-            let consumptionBreakdown = {};
-            let totalMiningEnergy = 0;
-            let totalRecyclingEnergy = 0;
-            let totalStructureConsumption = 0;
-            let totalMassDriverEnergy = 0;
-            
-            // Get probe allocations for activity-based consumption
-            const probeAllocationsByZone = gameState.probe_allocations_by_zone || {};
-            const BASE_MINING_ENERGY = this.getEnergyValue('probe.base_energy_cost_mining_w', 500000);
-            const BASE_RECYCLING_ENERGY = this.getEnergyValue('probe.base_energy_cost_recycle_slag_w', 300000);
-            
-            for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
-                const probeCount = zoneProbes['probe'] || 0;
-                if (probeCount <= 0) continue;
-                
-                const allocations = probeAllocationsByZone[zoneId] || {};
-                const harvestAllocation = allocations.harvest || 0;
-                const recycleAllocation = allocations.recycle || 0;
-                
-                const miningProbes = probeCount * harvestAllocation;
-                const recyclingProbes = probeCount * recycleAllocation;
-                
-                totalMiningEnergy += miningProbes * BASE_MINING_ENERGY;
-                totalRecyclingEnergy += recyclingProbes * BASE_RECYCLING_ENERGY;
-            }
-            
-            // Calculate structure consumption
-            let structureConsumptionBreakdown = {};
-            for (const [zoneId, zoneStructures] of Object.entries(structuresByZone)) {
-                for (const [buildingId, count] of Object.entries(zoneStructures)) {
-                    if (count <= 0) continue;
-                    
-                    let building = null;
-                    for (const category in allBuildings) {
-                        if (Array.isArray(allBuildings[category])) {
-                            building = allBuildings[category].find(b => b.id === buildingId);
-                            if (building) break;
-                        } else if (allBuildings[category] && typeof allBuildings[category] === 'object') {
-                            building = allBuildings[category][buildingId];
-                            if (building) break;
-                        }
-                    }
-                    if (!building) continue;
-                    
-                    // Check for energy cost multiplier (new system)
-                    const energyCostMultiplier = building.energy_cost_multiplier;
-                    if (energyCostMultiplier !== undefined && energyCostMultiplier > 0) {
-                        const BASE_STRUCTURE_ENERGY = this.getEnergyValue('structures.base_energy_cost_w', 250000);
-                        const consumption = BASE_STRUCTURE_ENERGY * energyCostMultiplier * count;
-                        
-                        if (!structureConsumptionBreakdown[buildingId]) {
-                            structureConsumptionBreakdown[buildingId] = { name: building.name || buildingId, count: 0, total: 0 };
-                        }
-                        structureConsumptionBreakdown[buildingId].count += count;
-                        structureConsumptionBreakdown[buildingId].total += consumption;
-                        
-                        // Track mass driver energy separately
-                        if (buildingId === 'mass_driver') {
-                            totalMassDriverEnergy += consumption;
-                        } else {
-                            totalStructureConsumption += consumption;
-                        }
-                    }
-                    
-                    // Also check legacy energy_consumption_per_second
-                    const legacyConsumption = building.effects?.energy_consumption_per_second || 0;
-                    if (legacyConsumption > 0 && energyCostMultiplier === undefined) {
-                        const consumption = legacyConsumption * count;
-                        if (!structureConsumptionBreakdown[buildingId]) {
-                            structureConsumptionBreakdown[buildingId] = { name: building.name || buildingId, count: 0, total: 0 };
-                        }
-                        structureConsumptionBreakdown[buildingId].count += count;
-                        structureConsumptionBreakdown[buildingId].total += consumption;
-                        totalStructureConsumption += consumption;
-                    }
-                }
-            }
-            
-            // Display mining energy consumption
-            if (totalMiningEnergy > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Mining Activity:</span>
-                    <span style="color: #ff6b6b; font-weight: bold; margin-left: 8px;">${this.formatEnergy(totalMiningEnergy)}</span>
-                </div>`;
-            }
-            
-            // Display slag recycling energy consumption
-            if (totalRecyclingEnergy > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Slag Recycling:</span>
-                    <span style="color: #ff6b6b; font-weight: bold; margin-left: 8px;">${this.formatEnergy(totalRecyclingEnergy)}</span>
-                </div>`;
-            }
-            
-            // Display structure consumption by type
-            if (Object.keys(structureConsumptionBreakdown).length > 0) {
-                html += `<div style="margin-left: 8px; margin-top: 6px;">
-                    <div style="color: rgba(255, 255, 255, 0.9); font-size: 11px; margin-bottom: 4px;">Structures:</div>`;
-                const structureEntries = Object.entries(structureConsumptionBreakdown)
-                    .sort((a, b) => b[1].total - a[1].total);
-                structureEntries.forEach(([buildingId, data]) => {
-                    const isMassDriver = buildingId === 'mass_driver';
-                    const massDriverNote = isMassDriver ? ' (OFF if net < 0)' : '';
-                    html += `<div class="tooltip-item" style="margin-left: 16px; margin-top: 2px;">
-                        <span style="color: rgba(255, 255, 255, 0.75);">${data.name} (×${data.count})${massDriverNote}:</span>
-                        <span style="color: #ff6b6b; font-weight: bold; margin-left: 8px;">${this.formatEnergy(data.total)}</span>
-                    </div>`;
-                });
-                html += `</div>`;
-            }
-            
-            html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Consumption:</span>
-                <span style="color: #ff6b6b; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.formatEnergy(energyConsumed)}</span>
-            </div>`;
-            html += `</div>`;
-            
-            // Net Energy
-            const netEnergy = energyProduced - energyConsumed;
-            const netEnergyColor = netEnergy < 0 ? '#ff4444' : (netEnergy > 0 ? '#44ff44' : '#4a9eff');
-            html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(74, 158, 255, 0.4);">
-                <div class="tooltip-title">Net Energy:</div>
-                <div class="tooltip-value" style="color: ${netEnergyColor}; font-size: 14px; font-weight: bold;">${this.formatEnergy(netEnergy)}</div>`;
-            
-            // Add warning if net energy is negative
-            if (netEnergy < 0) {
-                html += `<div style="margin-top: 8px; padding: 8px; background: rgba(255, 68, 68, 0.2); border-radius: 4px; border-left: 3px solid #ff4444;">
-                    <div style="color: #ff6b6b; font-size: 11px; font-weight: bold;">⚠ ENERGY DEFICIT</div>
-                    <div style="color: rgba(255, 255, 255, 0.8); font-size: 10px; margin-top: 4px;">
-                        • Activities throttled to ${((energyProduced / energyConsumed) * 100).toFixed(1)}%<br>
-                        • Mass drivers are completely offline
-                    </div>
-                </div>`;
-            }
-            html += `</div>`;
-        } else if (resource === 'intelligence') {
-            const gameState = this.gameState || {};
-            const derived = gameState.derived || {};
-            const totals = derived.totals || {};
-            
-            html += `<div class="tooltip-description" style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 11px; font-style: italic;">
-                Intelligence measures computational power in PFLOPS (PetaFLOPS). Used for research and advanced calculations. Intelligence is not consumed, only produced.
-            </div>`;
-            
-            // Get total intelligence from gameState or breakdown
-            const totalIntelligence = totals.intelligence_produced || breakdown?.total || gameState.intelligence || 0;
-            
-            // Production Breakdown
-            html += `<div class="tooltip-section">
-                <div class="tooltip-title">Production Breakdown:</div>`;
-            
-            // Dyson Sphere intelligence production (calculate locally)
-            const dysonMass = gameState.dyson_sphere?.mass || 0;
-            const dysonPowerAllocation = gameState.dyson_power_allocation || 0;
-            const computeFraction = dysonPowerAllocation / 100.0;
-            // 1 PFLOPS/s per kg of Dyson sphere mass, scaled by compute allocation
-            const dysonIntelligence = breakdown?.probes?.base || (dysonMass * 1e15 * computeFraction);
-            
-            if (dysonMass > 0) {
-                html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                    <span style="color: rgba(255, 255, 255, 0.8);">Dyson Sphere (${(computeFraction * 100).toFixed(1)}% to compute, ${this.formatNumber(dysonMass)} kg):</span>
-                    <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatFLOPS(dysonIntelligence)}</span>
-                </div>`;
-                html += `<div style="font-size: 10px; color: rgba(255, 255, 255, 0.6); margin-left: 8px; margin-top: 2px;">1 PFLOPS/s per kg of Dyson sphere mass</div>`;
-            }
-            
-            // Research Structures (calculate locally from gameState)
-            const intelligenceStructures = this.getStructureBreakdown(gameState, 'intelligence_flops');
-            if (Object.keys(intelligenceStructures).length > 0) {
-                html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                    <div class="tooltip-title" style="margin-bottom: 6px;">Research Structures:</div>`;
-                
-                const structureEntries = Object.entries(intelligenceStructures)
-                    .sort((a, b) => (b[1].total || 0) - (a[1].total || 0));
-                
-                structureEntries.forEach(([buildingId, data]) => {
-                    html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                        <span style="color: rgba(255, 255, 255, 0.8);">${data.name} (×${data.count}):</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatFLOPS(data.total)}</span>
-                    </div>`;
-                });
-                html += `</div>`;
-            } else if (breakdown?.structures?.breakdown && Object.keys(breakdown.structures.breakdown).length > 0) {
-                // Fallback to backend breakdown if available
-                html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                    <div class="tooltip-title" style="margin-bottom: 6px;">Research Structures:</div>`;
-                
-                const structureEntries = Object.entries(breakdown.structures.breakdown)
-                    .sort((a, b) => (b[1].flops || 0) - (a[1].flops || 0));
-                
-                structureEntries.forEach(([buildingId, data]) => {
-                    html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 4px;">
-                        <span style="color: rgba(255, 255, 255, 0.8);">${data.name} (×${data.count}):</span>
-                        <span style="color: #4a9eff; font-weight: bold; margin-left: 8px;">${this.formatFLOPS(data.flops)}</span>
-                    </div>`;
-                });
-                html += `</div>`;
-            }
-            
-            html += `<div class="tooltip-item" style="margin-left: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(74, 158, 255, 0.2);">
-                <span style="color: rgba(255, 255, 255, 0.95); font-weight: bold;">Total Intelligence:</span>
-                <span style="color: #4a9eff; font-weight: bold; margin-left: 8px; font-size: 13px;">${this.formatFLOPS(totalIntelligence)}</span>
-            </div>`;
-            html += `</div>`;
-            
-            // Note about consumption
-            html += `<div class="tooltip-section" style="margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(74, 158, 255, 0.4);">
-                <div style="font-size: 10px; color: rgba(255, 255, 255, 0.6); font-style: italic;">Note: Intelligence is not consumed, only produced.</div>
-            </div>`;
-        }
-        
-        html += '</div>';
-        
-        // Ensure HTML is not empty
-        if (!html || html.trim() === '' || html === '<div class="tooltip-content"></div>') {
-            console.warn(`Empty tooltip HTML for ${resource}, showing basic tooltip`);
-            this.showBasicTooltip(resource, tooltipEl);
-        } else {
-            tooltipEl.innerHTML = html;
-        }
-        } catch (error) {
-            console.error(`Error updating ${resource} tooltip:`, error, error.stack);
-            // Fall back to basic tooltip on error
-            this.showBasicTooltip(resource, tooltipEl);
-        }
     }
 
     update(gameState) {
@@ -1243,18 +1347,6 @@ class ResourceDisplay {
         const structureMassFullEl = document.getElementById('resource-structure-mass-full');
         if (structureMassFullEl) structureMassFullEl.textContent = `Structure Mass: ${this.formatNumber(totalStructureMass)} kg`;
         
-        // Update tooltips if breakdown data is available
-        if (gameState.resource_breakdowns) {
-            if (gameState.resource_breakdowns.energy) {
-                this.updateTooltip('energy', gameState.resource_breakdowns.energy);
-            }
-            if (gameState.resource_breakdowns.intelligence) {
-                this.updateTooltip('intelligence', gameState.resource_breakdowns.intelligence);
-            }
-            if (gameState.resource_breakdowns.dexterity) {
-                this.updateTooltip('dexterity', gameState.resource_breakdowns.dexterity);
-            }
-        }
 
         // Handle slag and dyson mass (only in full mode) - removed, using compact mode only
 
@@ -1265,6 +1357,11 @@ class ResourceDisplay {
 
         // Update warning messages
         this.updateWarnings(gameState);
+        
+        // Update breakdown panels if expanded
+        if (this.isExpanded) {
+            this.updateBreakdownPanels();
+        }
 
         // Store current state for next rate calculation
         this.previousState = {

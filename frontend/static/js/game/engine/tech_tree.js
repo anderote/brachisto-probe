@@ -39,13 +39,33 @@ class TechTree {
         this.skillDefinitions = typeof SKILL_DEFINITIONS !== 'undefined' ? SKILL_DEFINITIONS : {};
         this.treeToSkill = typeof TREE_TO_SKILL !== 'undefined' ? TREE_TO_SKILL : {};
         
-        // Default tier multiplier: 1.2x per tier (20% increase, compounding across 10 tranches)
-        // Per-tranche: 1.2^(1/10) ≈ 1.01837, full tier: 1.2x
-        // Full tree (10 tiers): 1.2^10 ≈ 6.19x
-        this.DEFAULT_TIER_MULTIPLIER = 1.2;
+        // Default tier multiplier: 1.1228x per tier (~12.3% increase, compounding across 10 tranches)
+        // Per-tranche: 1.1228^(1/10) ≈ 1.01162, full tier: 1.1228x
+        // Full tree (10 tiers): 1.1228^10 ≈ 3.18x
+        // At 8/10 tiers with all skills maxed: mass driver muzzle velocity ≈ 45 km/s
+        this.DEFAULT_TIER_MULTIPLIER = 1.1228;
         
         // Number of tranches per tier
         this.TRANCHES_PER_TIER = 10;
+        
+        // Research exponential decay factor: each tier's benefit is multiplied by this
+        // At tier 9 (index 8): 0.857^8 ≈ 0.30 (30% of tier 1's benefit)
+        // This creates diminishing returns for deep research in a single tree
+        // Default value - can be overridden by economic_rules.json
+        this.RESEARCH_EXPONENTIAL_DECAY_FACTOR = 0.857;
+    }
+    
+    /**
+     * Initialize with economic rules
+     * @param {Object} economicRules - Economic rules from game_data/economic_rules.json
+     */
+    initializeEconomicRules(economicRules) {
+        if (!economicRules) return;
+        
+        // Load research exponential decay factor
+        if (economicRules.research?.exponential_decay_factor !== undefined) {
+            this.RESEARCH_EXPONENTIAL_DECAY_FACTOR = economicRules.research.exponential_decay_factor;
+        }
     }
     
     /**
@@ -271,7 +291,7 @@ class TechTree {
     /**
      * Get upgrade factor for a single tree
      * @param {string} treeId - Research tree ID
-     * @returns {number} Upgrade factor (1.0 to ~6.19x when fully researched)
+     * @returns {number} Upgrade factor (1.0 to ~3.18x when fully researched)
      */
     getTreeUpgradeFactor(treeId) {
         const tree = this.treeLookup[treeId];
@@ -280,18 +300,31 @@ class TechTree {
         const treeState = this.researchState[treeId] || {};
         let factor = 1.0;
         
-        for (const tier of tree.tiers) {
+        for (let tierIndex = 0; tierIndex < tree.tiers.length; tierIndex++) {
+            const tier = tree.tiers[tierIndex];
             const tierState = treeState[tier.id];
             if (!tierState) continue;
             
             const tranchesCompleted = tierState.tranches_completed || 0;
             const totalTranches = tier.tranches || this.TRANCHES_PER_TIER;
             
-            // Get tier multiplier (default 1.2x = 20% per tier)
-            const tierMultiplier = tier.tier_multiplier || this.DEFAULT_TIER_MULTIPLIER;
+            // Get tier multiplier (default 1.1228x = ~12.3% per tier)
+            const baseTierMultiplier = tier.tier_multiplier || this.DEFAULT_TIER_MULTIPLIER;
+            
+            // Apply exponential decay: higher tiers give less benefit
+            // Tier 1 (index 0): full benefit, Tier 9 (index 8): ~30% benefit
+            const decayFactor = Math.pow(this.RESEARCH_EXPONENTIAL_DECAY_FACTOR, tierIndex);
+            
+            // The benefit portion (multiplier - 1) is decayed, then added back to 1
+            // e.g., if baseTierMultiplier = 1.1228, benefit = 0.1228
+            // At tier 1: decayedBenefit = 0.1228 * 1.0 = 0.1228, tierMultiplier = 1.1228
+            // At tier 9: decayedBenefit = 0.1228 * 0.30 = 0.0368, tierMultiplier = 1.0368
+            const baseBenefit = baseTierMultiplier - 1.0;
+            const decayedBenefit = baseBenefit * decayFactor;
+            const tierMultiplier = 1.0 + decayedBenefit;
             
             if (tranchesCompleted >= totalTranches) {
-                // Tier complete: full multiplier (1.2x)
+                // Tier complete: full multiplier
                 factor *= tierMultiplier;
             } else if (tranchesCompleted > 0) {
                 // Tier in progress: compound per tranche

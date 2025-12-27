@@ -26,7 +26,11 @@ class ProductionCalculator {
         // Probe count scaling penalty parameters (diminishing returns for probe count)
         this.PROBE_COUNT_BASE_PENALTY = 0.0;     // No penalty per doubling (disabled)
         this.PROBE_COUNT_MIN_PENALTY = 0.0;      // No penalty per doubling (disabled)
-        this.PROBE_COUNT_COMPUTE_THRESHOLD = 6.19; // Compute skill level for min penalty
+        this.PROBE_COUNT_COMPUTE_THRESHOLD = 3.18; // Compute skill level for min penalty
+        
+        // Global replication scaling penalty parameters (diminishing returns for total probe count)
+        this.GLOBAL_REPLICATION_THRESHOLD = 1e12;  // Penalty starts after this many probes
+        this.GLOBAL_REPLICATION_HALVING_FACTOR = 0.5;  // Rate halves for each order of magnitude above threshold
         
         // Skill coefficients (loaded from economic rules)
         this.skillCoefficients = null;
@@ -69,7 +73,13 @@ class ProductionCalculator {
         if (economicRules.probe_count_scaling) {
             this.PROBE_COUNT_BASE_PENALTY = economicRules.probe_count_scaling.base_penalty_per_doubling || 0.40;
             this.PROBE_COUNT_MIN_PENALTY = economicRules.probe_count_scaling.min_penalty_per_doubling || 0.01;
-            this.PROBE_COUNT_COMPUTE_THRESHOLD = economicRules.probe_count_scaling.compute_skill_threshold || 6.19;
+            this.PROBE_COUNT_COMPUTE_THRESHOLD = economicRules.probe_count_scaling.compute_skill_threshold || 3.18;
+        }
+        
+        // Load global replication scaling penalty parameters
+        if (economicRules.global_replication_scaling) {
+            this.GLOBAL_REPLICATION_THRESHOLD = economicRules.global_replication_scaling.threshold || 1e12;
+            this.GLOBAL_REPLICATION_HALVING_FACTOR = economicRules.global_replication_scaling.halving_factor || 0.5;
         }
         
         // Load skill coefficients
@@ -173,7 +183,7 @@ class ProductionCalculator {
      * 
      * The penalty_per_doubling is interpolated based on compute skill:
      * - At base compute (1.0): 40% penalty per doubling (so doubling only gives 20% more output)
-     * - At max compute (6.19x): 1% penalty per doubling (so doubling gives ~98% more output)
+     * - At max compute (3.18x): 1% penalty per doubling (so doubling gives ~98% more output)
      * 
      * @param {number} probeCount - Total number of probes in the zone
      * @param {Object} skills - Current skills (for compute level)
@@ -206,6 +216,40 @@ class ProductionCalculator {
         
         // Clamp to reasonable minimum (0.1% efficiency minimum)
         return Math.max(0.001, efficiency);
+    }
+    
+    /**
+     * Calculate global replication scaling penalty (diminishing returns for total probe count)
+     * After threshold, each order of magnitude (10x) growth halves replication rate.
+     * Formula: efficiency = halving_factor^max(0, log10(totalProbes) - log10(threshold))
+     * 
+     * At 1e12 threshold:
+     * - At 1e12: efficiency = 1.0 (no penalty)
+     * - At 1e13: efficiency = 0.5 (50% rate)
+     * - At 1e14: efficiency = 0.25 (25% rate)
+     * - At 5e12: efficiency ≈ 0.62 (smooth interpolation)
+     * 
+     * @param {number} totalProbes - Total number of probes globally (across all zones)
+     * @returns {number} Efficiency factor (0-1), where 1 = no penalty
+     */
+    calculateGlobalReplicationScalingPenalty(totalProbes) {
+        // No penalty if below threshold
+        if (totalProbes <= this.GLOBAL_REPLICATION_THRESHOLD) {
+            return 1.0;
+        }
+        
+        // Calculate orders of magnitude above threshold
+        // log10(totalProbes) - log10(threshold) = log10(totalProbes / threshold)
+        const thresholdLog = Math.log10(this.GLOBAL_REPLICATION_THRESHOLD);
+        const currentLog = Math.log10(totalProbes);
+        const ordersAboveThreshold = currentLog - thresholdLog;
+        
+        // Efficiency = halving_factor^ordersAboveThreshold
+        // e.g., 0.5^1 = 0.5, 0.5^2 = 0.25
+        const efficiency = Math.pow(this.GLOBAL_REPLICATION_HALVING_FACTOR, ordersAboveThreshold);
+        
+        // Clamp to reasonable minimum (0.01% efficiency minimum)
+        return Math.max(0.0001, efficiency);
     }
     
     /**

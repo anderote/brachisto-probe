@@ -307,6 +307,7 @@ class StructuresVisualization {
             // Structures without visuals return null
             case 'robotic_asteroid_factory':
             case 'deep_space_fusion_plant':
+            case 'methalox_refinery':
                 return null;
             default:
                 // Default: small grey box

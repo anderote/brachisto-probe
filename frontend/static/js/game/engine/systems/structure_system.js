@@ -63,9 +63,10 @@ class StructureSystem {
         // Base cost with research factor
         const baseCost = baseMass * costFactor;
         
-        // Methalox refineries use flat scaling (no geometric increase)
-        // They have zone limits instead of exponential cost scaling
-        if (buildingId === 'methalox_refinery') {
+        // Methalox refineries and mass drivers use flat scaling (no geometric increase)
+        // Methalox refineries have zone limits instead of exponential cost scaling
+        // Mass drivers scale linearly - each additional one provides the same capacity boost
+        if (buildingId === 'methalox_refinery' || buildingId === 'mass_driver') {
             return baseCost;
         }
         
@@ -74,8 +75,10 @@ class StructureSystem {
         if (zoneId && buildingId && state.structures_by_zone) {
             const zoneStructures = state.structures_by_zone[zoneId] || {};
             const currentCount = zoneStructures[buildingId] || 0;
+            // Use building-specific exponent if available, otherwise global default
+            const exponent = building.geometric_scaling_exponent ?? this.GEOMETRIC_SCALING_EXPONENT;
             // Next building will be count + 1, so multiply by (currentCount + 1)^exponent
-            const scalingFactor = Math.pow(currentCount + 1, this.GEOMETRIC_SCALING_EXPONENT);
+            const scalingFactor = Math.pow(currentCount + 1, exponent);
             return baseCost * scalingFactor;
         }
         
@@ -370,8 +373,6 @@ class StructureSystem {
                     }
                     // Store the target cost so it doesn't change if another building completes
                     structureTargets[enabledKey] = costMetal;
-                    const currentCount = (structuresByZone[zoneId]?.[buildingId] || 0);
-                    console.log(`[StructureSystem] Starting construction: ${enabledKey} (building #${currentCount + 1}, cost: ${costMetal.toFixed(2)} kg)`);
                 }
                 
                 // Record start time for minimum build time tracking (if not already set)
@@ -385,10 +386,33 @@ class StructureSystem {
                 
                 // Check if metal requirement is met
                 if (remainingToBuild <= 0) {
+                    // Check max_per_zone limit before completing the building
+                    if (building.max_per_zone) {
+                        const zoneLimit = building.max_per_zone[zoneId];
+                        if (zoneLimit !== undefined && zoneLimit > 0) {
+                            if (!structuresByZone[zoneId]) {
+                                structuresByZone[zoneId] = {};
+                            }
+                            const currentCount = structuresByZone[zoneId][buildingId] || 0;
+                            
+                            if (currentCount >= zoneLimit) {
+                                // At zone limit - disable construction and don't complete the building
+                                // Remove from enabled construction
+                                const enabledIndex = enabledConstruction.indexOf(enabledKey);
+                                if (enabledIndex !== -1) {
+                                    enabledConstruction.splice(enabledIndex, 1);
+                                    newState.enabled_construction = enabledConstruction;
+                                }
+                                // Clear progress and targets
+                                delete structureProgress[enabledKey];
+                                delete structureTargets[enabledKey];
+                                delete structureStartTimes[enabledKey];
+                                continue; // Skip this building
+                            }
+                        }
+                    }
+                    
                     // Metal requirement met - building is complete
-                    const startTime = structureStartTimes[enabledKey] || currentTime;
-                    const elapsedTime = currentTime - startTime;
-                    console.log(`[StructureSystem] ✓ Building complete: ${enabledKey} (took ${elapsedTime.toFixed(2)} days)`);
                     if (!structuresByZone[zoneId]) {
                         structuresByZone[zoneId] = {};
                     }
@@ -400,17 +424,34 @@ class StructureSystem {
                     // Update zone structure_mass
                     zone.structure_mass = (zone.structure_mass || 0) + costMetal;
                     
-                    // If still enabled, start next one immediately (reset progress to 0 and clear target)
-                    if (enabledConstruction.includes(enabledKey)) {
+                    // Check if we just hit the zone limit after completing this building
+                    let atZoneLimit = false;
+                    if (building.max_per_zone) {
+                        const zoneLimit = building.max_per_zone[zoneId];
+                        const newCount = structuresByZone[zoneId][buildingId];
+                        if (zoneLimit !== undefined && zoneLimit > 0 && newCount >= zoneLimit) {
+                            atZoneLimit = true;
+                        }
+                    }
+                    
+                    // If still enabled and not at limit, start next one immediately (reset progress to 0 and clear target)
+                    if (enabledConstruction.includes(enabledKey) && !atZoneLimit) {
                         structureProgress[enabledKey] = 0.0;
                         delete structureTargets[enabledKey]; // Clear target so next building gets new cost
                         delete structureStartTimes[enabledKey]; // Clear start time for next building
-                        console.log(`[StructureSystem] Starting next ${buildingId} in ${zoneId}`);
                         // Continue to process the next building in the same tick
                         // The next iteration will set a new target and start time
                         continue;
                     } else {
-                        // Not enabled anymore, remove from progress and target
+                        // Not enabled anymore or at zone limit, remove from progress and target
+                        if (atZoneLimit) {
+                            // Remove from enabled construction since we hit the limit
+                            const enabledIndex = enabledConstruction.indexOf(enabledKey);
+                            if (enabledIndex !== -1) {
+                                enabledConstruction.splice(enabledIndex, 1);
+                                newState.enabled_construction = enabledConstruction;
+                            }
+                        }
                         delete structureProgress[enabledKey];
                         delete structureTargets[enabledKey];
                         delete structureStartTimes[enabledKey];
@@ -432,10 +473,6 @@ class StructureSystem {
                     // No metal available - construction progresses at 0 rate but remains enabled
                     metalConsumed = 0;
                     progressMade = 0;
-                    // Only log occasionally to avoid spam
-                    if (Math.random() < 0.01) { // 1% chance to log
-                        console.log(`[StructureSystem] ${enabledKey}: No metal (progress: ${currentProgress.toFixed(2)}/${costMetal.toFixed(2)})`);
-                    }
                 } else if (storedMetal < metalNeeded) {
                     // Not enough metal - throttle progress based on available metal
                     const metalThrottle = storedMetal / metalNeeded;
@@ -451,13 +488,7 @@ class StructureSystem {
                 zone.stored_metal = Math.max(0, storedMetal - metalConsumed);
                 
                 // Update progress (always update, even if 0)
-                const oldProgress = structureProgress[enabledKey] || 0;
-                structureProgress[enabledKey] = oldProgress + progressMade;
-                
-                // Debug log progress updates (occasionally to avoid spam)
-                if (progressMade > 0 && Math.random() < 0.1) { // 10% chance to log
-                    console.log(`[StructureSystem] ${enabledKey}: Progress ${oldProgress.toFixed(2)} -> ${structureProgress[enabledKey].toFixed(2)} kg (${((structureProgress[enabledKey] / costMetal) * 100).toFixed(1)}%)`);
-                }
+                structureProgress[enabledKey] = (structureProgress[enabledKey] || 0) + progressMade;
             }
         }
         

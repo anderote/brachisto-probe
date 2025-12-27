@@ -96,32 +96,87 @@ class TransferPanel {
         if (!this.gameState || transfer.type !== 'continuous') return null;
         
         const fromZoneId = transfer.from;
+        const toZoneId = transfer.to;
         const resourceType = transfer.resource_type || 'probe';
         
         if (resourceType === 'metal') {
-            // Get stored metal in source zone
-            const zones = this.gameState.zones || {};
-            const sourceZone = zones[fromZoneId] || {};
-            const storedMetal = sourceZone.stored_metal || 0;
+            // Use power_allocation_percentage (new) or fall back to metal_rate_percentage (legacy)
+            const powerAllocationPct = transfer.power_allocation_percentage ?? transfer.metal_rate_percentage ?? transfer.rate ?? 0;
             
-            // Calculate rate from percentage
-            const ratePercentage = transfer.metal_rate_percentage || transfer.rate || 0;
-            const actualRateKgPerDay = storedMetal * (ratePercentage / 100);
-            
-            // Get mass driver capacity if available
-            let totalCapacity = 0;
-            let usedCapacity = 0;
-            if (window.gameEngine && window.gameEngine.transferSystem) {
-                totalCapacity = window.gameEngine.transferSystem.calculateMetalTransferCapacity(this.gameState, fromZoneId);
-                usedCapacity = window.gameEngine.transferSystem.calculateUsedMetalCapacity(this.gameState, fromZoneId);
+            // Calculate throughput using power-based method
+            // Try engine.transferSystem first (main path), then fallback to gameEngine.transferSystem
+            const transferSystem = window.gameEngine?.engine?.transferSystem || window.gameEngine?.transferSystem;
+            if (transferSystem && toZoneId) {
+                try {
+                    const throughputInfo = transferSystem.calculatePowerBasedThroughput(
+                        this.gameState, fromZoneId, toZoneId, powerAllocationPct
+                    );
+                    
+                    return {
+                        throughputKgPerDay: throughputInfo.throughputKgPerDay,
+                        deltaVKmS: throughputInfo.deltaVKmS,
+                        energyPerKgJ: throughputInfo.energyPerKgJ,
+                        allocatedPowerMW: throughputInfo.allocatedPowerMW,
+                        canReach: throughputInfo.canReach,
+                        powerAllocationPct: powerAllocationPct
+                    };
+                } catch (e) {
+                    console.warn('[TransferPanel] Failed to calculate throughput via transferSystem:', e);
+                }
             }
             
-            return {
-                actualRate: actualRateKgPerDay,
-                totalCapacity: totalCapacity,
-                usedCapacity: usedCapacity,
-                availableCapacity: Math.max(0, totalCapacity - usedCapacity)
-            };
+            // Fallback: calculate locally using transfer's stored transfer_time and available data
+            // Get the transfer_time from the transfer (calculated when transfer was created)
+            const transferTime = transfer.transfer_time || 0;
+            if (transferTime > 0) {
+                // We can estimate throughput from available in_transit batches
+                // Or use a simplified calculation based on power allocation
+                const structuresByZone = this.gameState.structures_by_zone || {};
+                const zoneStructures = structuresByZone[fromZoneId] || {};
+                const massDriverCount = zoneStructures['mass_driver'] || 0;
+                
+                if (massDriverCount > 0) {
+                    // Estimate mass driver stats from game state's tech upgrade factors
+                    const upgradeFactors = this.gameState.tech_upgrade_factors || {};
+                    const basePowerMW = 100; // Default base power
+                    const baseEfficiency = 0.4; // Default efficiency
+                    const baseMuzzleVelocityKmS = 3.0; // Default muzzle velocity
+                    
+                    // Apply upgrade factors
+                    const powerFactor = upgradeFactors.mass_driver_power || 1.0;
+                    const efficiencyFactor = upgradeFactors.mass_driver_efficiency || 1.0;
+                    const muzzleVelocityFactor = upgradeFactors.mass_driver_muzzle_velocity || 1.0;
+                    
+                    const effectivePowerMW = basePowerMW * powerFactor * massDriverCount;
+                    const effectiveEfficiency = Math.min(1.0, baseEfficiency * efficiencyFactor);
+                    const effectiveMuzzleVelocityKmS = baseMuzzleVelocityKmS * muzzleVelocityFactor;
+                    
+                    // Estimate delta-v from zone info (use transfer_time as proxy for distance)
+                    // For now, use a reference delta-v of 5 km/s as a rough estimate
+                    const estimatedDeltaVKmS = 5.0;
+                    
+                    // Calculate throughput: power * efficiency * seconds_per_day / (0.5 * v^2)
+                    const allocatedPowerMW = effectivePowerMW * (powerAllocationPct / 100);
+                    const netPowerW = allocatedPowerMW * 1e6 * effectiveEfficiency;
+                    const secondsPerDay = 86400;
+                    const energyPerDayJ = netPowerW * secondsPerDay;
+                    const deltaVMS = estimatedDeltaVKmS * 1000;
+                    const energyPerKgJ = 0.5 * deltaVMS * deltaVMS;
+                    const throughputKgPerDay = energyPerKgJ > 0 ? energyPerDayJ / energyPerKgJ : 0;
+                    
+                    return {
+                        throughputKgPerDay,
+                        deltaVKmS: estimatedDeltaVKmS,
+                        energyPerKgJ,
+                        allocatedPowerMW,
+                        canReach: effectiveMuzzleVelocityKmS >= estimatedDeltaVKmS,
+                        powerAllocationPct,
+                        isEstimate: true
+                    };
+                }
+            }
+            
+            return null;
         }
         
         return null;
@@ -242,18 +297,19 @@ class TransferPanel {
             // Continuous transfer
             html += `<div class="transfer-item-details">`;
             if (resourceType === 'metal') {
-                const ratePercentage = transfer.metal_rate_percentage || transfer.rate || 0;
+                // Use power_allocation_percentage (new) or fall back to metal_rate_percentage (legacy)
+                const powerAllocationPct = transfer.power_allocation_percentage ?? transfer.metal_rate_percentage ?? transfer.rate ?? 0;
                 const throughput = this.calculateMassThroughput(transfer);
                 
-                if (throughput && throughput.totalCapacity > 0) {
-                    // Show actual throughput and capacity usage
-                    html += `<div class="transfer-detail">Rate: ${ratePercentage.toFixed(1)}% of stored metal/day</div>`;
-                    html += `<div class="transfer-detail">Throughput: ${this.formatMass(throughput.actualRate)}/day</div>`;
-                    const capacityUsedPct = throughput.totalCapacity > 0 ? 
-                        (throughput.usedCapacity / throughput.totalCapacity * 100) : 0;
-                    html += `<div class="transfer-detail">Capacity: ${this.formatMass(throughput.usedCapacity)}/${this.formatMass(throughput.totalCapacity)}/day (${capacityUsedPct.toFixed(1)}%)</div>`;
-                } else {
-                    html += `<div class="transfer-detail">Rate: ${ratePercentage.toFixed(1)}% of stored metal/day</div>`;
+                html += `<div class="transfer-detail">Power Allocation: ${powerAllocationPct.toFixed(1)}%</div>`;
+                
+                if (throughput && throughput.throughputKgPerDay > 0) {
+                    // Show actual throughput based on power allocation
+                    const estimateMarker = throughput.isEstimate ? ' (est.)' : '';
+                    html += `<div class="transfer-detail">Throughput: ${this.formatMass(throughput.throughputKgPerDay)}/day${estimateMarker}</div>`;
+                    if (throughput.deltaVKmS) {
+                        html += `<div class="transfer-detail">Δv: ${throughput.deltaVKmS.toFixed(2)} km/s</div>`;
+                    }
                 }
             } else {
                 const ratePct = transfer.ratePercentage !== undefined ? transfer.ratePercentage : (transfer.rate || 0);
@@ -428,6 +484,7 @@ class TransferPanel {
             hash = ((hash << 5) - hash) + idHash;
             hash = ((hash << 5) - hash) + (transfer.probe_count || 0);
             hash = ((hash << 5) - hash) + (transfer.rate_percentage || 0);
+            hash = ((hash << 5) - hash) + (transfer.power_allocation_percentage || 0);
             hash = ((hash << 5) - hash) + (transfer.metal_rate_percentage || 0);
             hash = ((hash << 5) - hash) + (transfer.status === 'completed' ? 1 : 0);
             hash = ((hash << 5) - hash) + (transfer.paused ? 1 : 0);
@@ -457,8 +514,9 @@ class TransferPanel {
                 existing.resource_type = activeTransfer.resource_type || existing.resource_type || 'probe';
                 existing.count = activeTransfer.probe_count !== undefined ? activeTransfer.probe_count : existing.count;
                 existing.metal_kg = activeTransfer.metal_kg !== undefined ? activeTransfer.metal_kg : existing.metal_kg;
-                existing.rate = activeTransfer.rate_percentage || activeTransfer.metal_rate_percentage || existing.rate || 0;
+                existing.rate = activeTransfer.rate_percentage || activeTransfer.power_allocation_percentage || activeTransfer.metal_rate_percentage || existing.rate || 0;
                 existing.ratePercentage = activeTransfer.rate_percentage !== undefined ? activeTransfer.rate_percentage : existing.ratePercentage;
+                existing.power_allocation_percentage = activeTransfer.power_allocation_percentage !== undefined ? activeTransfer.power_allocation_percentage : existing.power_allocation_percentage;
                 existing.metal_rate_percentage = activeTransfer.metal_rate_percentage !== undefined ? activeTransfer.metal_rate_percentage : existing.metal_rate_percentage;
                 // Store departure and arrival times for progress calculation
                 existing.departure_time = activeTransfer.departure_time !== undefined ? activeTransfer.departure_time : existing.departure_time;
@@ -481,8 +539,9 @@ class TransferPanel {
                     resource_type: activeTransfer.resource_type || 'probe',
                     count: activeTransfer.probe_count || 0,
                     metal_kg: activeTransfer.metal_kg || 0,
-                    rate: activeTransfer.rate_percentage || activeTransfer.metal_rate_percentage || 0,
+                    rate: activeTransfer.rate_percentage || activeTransfer.power_allocation_percentage || activeTransfer.metal_rate_percentage || 0,
                     ratePercentage: activeTransfer.rate_percentage,
+                    power_allocation_percentage: activeTransfer.power_allocation_percentage,
                     metal_rate_percentage: activeTransfer.metal_rate_percentage,
                     departure_time: activeTransfer.departure_time || 0,
                     arrival_time: activeTransfer.arrival_time || 0,
