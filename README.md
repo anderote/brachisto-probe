@@ -32,7 +32,7 @@ A minimum-time simulation game for constructing Dyson spheres. Build probes, res
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/brachisto-probe.git
+git clone https://github.com/anderote/brachisto-probe.git
 cd brachisto-probe
 
 # Create virtual environment (optional but recommended)

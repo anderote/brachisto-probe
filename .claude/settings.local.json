@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv --version:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv pip index:*)",
+      "WebSearch",
+      "Bash(uv lock --help:*)",
+      "Bash(pip index:*)",
+      "Bash(pip show:*)",
+      "Bash(uv python:*)",
+      "Bash(uv run python:*)"
+    ]
+  }
+}
