@@ -115,12 +115,47 @@ class App {
                         // Set transfer viz reference in scene manager for line toggling
                         this.sceneManager.setTransferViz(this.transferViz);
                         
-                        // Wire up transfer arrival callback to add particles to zone clouds
-                        if (this.solarSystem && this.solarSystem.zoneClouds) {
-                            this.transferViz.setArrivalCallback((arrivalInfo) => {
-                                this.solarSystem.zoneClouds.handleTransferArrival(arrivalInfo);
-                            });
-                        }
+                        // Wire up transfer arrival callback to spawn resource particles
+                        // Uses the same particle system as mining for consistent mass-proportional sizing
+                        const solarSystemRef = this.solarSystem;
+                        this.transferViz.setArrivalCallback((arrivalInfo) => {
+                            if (!solarSystemRef) return;
+                            
+                            const { zoneId, resourceType, arrivals } = arrivalInfo;
+                            
+                            // Only handle resource types (metal, slag, methalox)
+                            // Probes use different handling
+                            if (resourceType === 'probe') return;
+                            
+                            // Spawn a particle for each arrival
+                            for (const arrival of arrivals || []) {
+                                const { position, massKg, velocityDir } = arrival;
+                                
+                                // Skip if no mass (shouldn't happen, but safety check)
+                                if (!massKg || massKg <= 0) continue;
+                                
+                                // Calculate visual size from mass (same as mining particles)
+                                const visualSize = solarSystemRef.massToVisualSize(massKg);
+                                
+                                // Spawn particle at arrival position with velocity direction
+                                const particle = solarSystemRef.spawnResourceParticleAtPosition(
+                                    zoneId,
+                                    resourceType,
+                                    massKg,
+                                    visualSize,
+                                    position,
+                                    velocityDir
+                                );
+                                
+                                // Add to particle data array for tracking
+                                if (particle && solarSystemRef.resourceParticleData[zoneId]) {
+                                    const particleData = solarSystemRef.resourceParticleData[zoneId];
+                                    if (particleData[resourceType]) {
+                                        particleData[resourceType].push(particle);
+                                    }
+                                }
+                            }
+                        });
                     }
                 }
             } catch (e) {
@@ -480,10 +515,15 @@ class App {
         
         // Set up new game button
         // Difficulty buttons - now open skill allocation modal
+        const endgameBtn = document.getElementById('endgame-game-btn');
         const easyBtn = document.getElementById('easy-game-btn');
         const mediumBtn = document.getElementById('medium-game-btn');
         const hardBtn = document.getElementById('hard-game-btn');
         
+        if (endgameBtn) {
+            endgameBtn.onclick = null;
+            endgameBtn.addEventListener('click', () => this.showSkillAllocationModal('endgame'));
+        }
         if (easyBtn) {
             easyBtn.onclick = null;
             easyBtn.addEventListener('click', () => this.showSkillAllocationModal('easy'));
@@ -524,7 +564,7 @@ class App {
         // Update difficulty label
         const difficultyLabel = document.getElementById('difficulty-label');
         if (difficultyLabel) {
-            const labels = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+            const labels = { endgame: 'Endgame', easy: 'Easy', medium: 'Medium', hard: 'Hard' };
             difficultyLabel.textContent = `${labels[difficulty]} Difficulty`;
         }
         
@@ -671,8 +711,10 @@ class App {
         
         switch (sliderId) {
             case 'mass-driver':
+                valueEl.textContent = `+${value} km/s`;
+                break;
             case 'probe-dv':
-                valueEl.textContent = `+${(value * 0.05).toFixed(2)} km/s`;
+                valueEl.textContent = `+${value} km/s, +${value * 100}s ISP`;
                 break;
             case 'mining':
                 valueEl.textContent = `+${value * 10} kg/day`;
@@ -735,8 +777,9 @@ class App {
     async startNewGameWithSkills() {
         // Calculate skill bonuses
         const skillBonuses = {
-            mass_driver_dv_bonus: this.skillPoints.mass_driver * 0.05,  // km/s (0.05 km/s per skill point)
-            probe_dv_bonus: this.skillPoints.probe_dv * 0.05,           // km/s (0.05 km/s per skill point)
+            mass_driver_dv_bonus: this.skillPoints.mass_driver * 1.0,   // km/s (1 km/s per skill point)
+            probe_dv_bonus: this.skillPoints.probe_dv * 1.0,            // km/s (1 km/s per skill point)
+            propulsion_isp_bonus: this.skillPoints.probe_dv * 100,      // seconds (100s ISP per skill point)
             mining_rate_bonus: this.skillPoints.mining * 10,           // kg/day bonus (base is 100 kg/day)
             replication_rate_bonus: this.skillPoints.replication * 5,  // kg/day bonus (base is 20 kg/day)
             compute_bonus: 1 + (this.skillPoints.compute * 0.1),       // Multiplier (1.0 + 10% per point)
@@ -870,17 +913,230 @@ class App {
         
         // Define difficulty configurations
         const difficultyConfigs = {
-            easy: {
-                initial_probes: 100,
+            endgame: {
+                initial_probes: 1000,
                 initial_metal: 100,
                 initial_energy: 100000,
                 initial_structures: {
                     power_station: 10,
                     data_center: 10,
-                    mass_driver: 1
+                    mass_driver: 2
                 },
                 initial_zone_resources: {
                     methalox: 1000
+                },
+                // Dyson sphere starts at 50% completion
+                initial_dyson_mass: 10e22,  // 50% of 20e22 target mass
+                // All research trees at tier 5 (first 5 tiers completed with all 10 tranches each)
+                initial_research_state: {
+                    propulsion: {
+                        raptor_3_engines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        vacuum_rated_nozzles: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        ssto_propulsion: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        aerospike_engines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        expander_cycle: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        dual_mode_propulsion: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    robotics: {
+                        basic_manipulators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        servo_actuators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        hydraulic_systems: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        pneumatic_actuators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        electric_motors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        brushless_motors: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    materials: {
+                        basic_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        steel_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        titanium_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        aluminum_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        carbon_composites: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        ceramic_composites: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    structures: {
+                        basic_construction: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        modular_design: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        prefabrication: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        automated_assembly: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        additive_manufacturing: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        laser_sintering: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    generation: {
+                        photovoltaic_cells: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        multi_junction_cells: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        concentrated_solar: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        solar_tracking: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        quantum_dot_solar: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        orbital_solar_arrays: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    storage_density: {
+                        battery_banks: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        lithium_ion: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        supercapacitors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        thermal_storage: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        compressed_air: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        flywheels: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    conversion: {
+                        basic_generators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        turbine_generators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        thermoelectric: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        heat_pipes: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        radiators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        vapor_chambers: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    transmission: {
+                        microwave_beams: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        laser_beams: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        optical_resonance: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        plasma_conduits: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        superconducting_lines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        quantum_entanglement: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    architecture: {
+                        von_neumann_architecture: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        harvard_architecture: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        systolic_arrays: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        dataflow_architecture: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        neuromorphic_mesh: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        cellular_automata_fabric: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    processor: {
+                        edge_compute: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        fpga_arrays: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        asic_interconnect: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        parallel_processors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        vector_processors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        neural_processors: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    memory: {
+                        serial_data_bus: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        parallel_interconnect: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        dram_memory: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        sram_memory: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        flash_memory: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        optical_neural_interface: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    sensors: {
+                        basic_sensors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        enhanced_sensors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        multi_spectral: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        radio_frequency_link: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        laser_communication: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        quantum_sensors: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    }
+                }
+            },
+            easy: {
+                initial_probes: 1000,
+                initial_metal: 100,
+                initial_energy: 100000,
+                initial_structures: {
+                    power_station: 10,
+                    data_center: 10,
+                    mass_driver: 2
+                },
+                initial_zone_resources: {
+                    methalox: 1000
+                },
+                // All research trees at tier 5 (first 5 tiers completed with all 10 tranches each)
+                initial_research_state: {
+                    propulsion: {
+                        raptor_3_engines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        vacuum_rated_nozzles: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        ssto_propulsion: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        aerospike_engines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        expander_cycle: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        dual_mode_propulsion: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    robotics: {
+                        basic_manipulators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        servo_actuators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        hydraulic_systems: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        pneumatic_actuators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        electric_motors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        brushless_motors: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    materials: {
+                        basic_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        steel_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        titanium_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        aluminum_alloys: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        carbon_composites: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        ceramic_composites: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    structures: {
+                        basic_construction: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        modular_design: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        prefabrication: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        automated_assembly: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        additive_manufacturing: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        laser_sintering: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    generation: {
+                        photovoltaic_cells: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        multi_junction_cells: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        concentrated_solar: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        solar_tracking: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        quantum_dot_solar: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        orbital_solar_arrays: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    storage_density: {
+                        battery_banks: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        lithium_ion: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        supercapacitors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        thermal_storage: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        compressed_air: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        flywheels: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    conversion: {
+                        basic_generators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        turbine_generators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        thermoelectric: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        heat_pipes: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        radiators: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        vapor_chambers: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    transmission: {
+                        microwave_beams: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        laser_beams: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        optical_resonance: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        plasma_conduits: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        superconducting_lines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        quantum_entanglement: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    architecture: {
+                        von_neumann_architecture: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        harvard_architecture: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        systolic_arrays: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        dataflow_architecture: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        neuromorphic_mesh: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        cellular_automata_fabric: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    processor: {
+                        edge_compute: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        fpga_arrays: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        asic_interconnect: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        parallel_processors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        vector_processors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        neural_processors: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    memory: {
+                        serial_data_bus: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        parallel_interconnect: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        dram_memory: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        sram_memory: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        flash_memory: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        optical_neural_interface: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    },
+                    sensors: {
+                        basic_sensors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        enhanced_sensors: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        multi_spectral: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        radio_frequency_link: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        laser_communication: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
+                        quantum_sensors: { tranches_completed: 0, progress: 0, enabled: true, completed: false }
+                    }
                 }
             },
             medium: {

@@ -43,6 +43,13 @@ class OrbitalZoneSelector {
         // Current probe count for chart display (set by probe slider for probe transfers)
         this.currentProbeTransferCount = 0;
         
+        // Computed actual delta-v values from backend trajectory solver
+        // This stores the true delta-v for probe transfers (not Hohmann approximations)
+        // Format: { sourceZoneId: { destZoneId: deltaV_km_s, ... }, ... }
+        this.computedProbeDeltaV = {};
+        this.computedProbeTransferTime = {}; // Store backend transfer times for speed bonus calculation
+        this.isComputingDeltaV = false;
+        
         this.init();
         this.loadData();
         this.setupKeyboardShortcuts();
@@ -106,7 +113,9 @@ class OrbitalZoneSelector {
             if (!this.orbitalMechanics || !this.transferSystem) {
                 if (typeof GameDataLoader !== 'undefined') {
                     this.dataLoader = new GameDataLoader();
-                    await this.dataLoader.init();
+                    // Load essential data (GameDataLoader doesn't have an init method)
+                    await this.dataLoader.loadOrbitalMechanics();
+                    await this.dataLoader.loadEconomicRules();
                     console.log('[OrbitalZoneSelector] GameDataLoader initialized');
                 }
                 
@@ -144,6 +153,10 @@ class OrbitalZoneSelector {
                         this.transferSystem = new TransferSystem(this.orbitalMechanics);
                         if (this.economicRules) {
                             this.transferSystem.initializeEconomicRules(this.economicRules);
+                        }
+                        // Initialize buildings data for muzzle velocity, power, efficiency calculations
+                        if (this.buildings) {
+                            this.transferSystem.initializeBuildingsData(this.buildings);
                         }
                         console.log('[OrbitalZoneSelector] TransferSystem instance created');
                     } catch (error) {
@@ -488,9 +501,10 @@ class OrbitalZoneSelector {
      */
     calculatePropulsionStatsWithBreakdown() {
         const skills = this.gameState?.skills || {};
+        const ispBonus = this.gameState?.skill_bonuses?.propulsion_isp_bonus || 0;
         
         // Get base values from economic rules
-        const baseIspSeconds = this.economicRules?.propulsion?.base_isp_seconds ?? 500;
+        const baseIspSeconds = (this.economicRules?.propulsion?.base_isp_seconds ?? 500) + ispBonus;
         const baseProbeMassKg = this.economicRules?.probe?.mass_kg ?? 100;
         const baseDeltaVKmS = this.economicRules?.probe_transfer?.base_delta_v_km_s ?? 7.5;
         const g0 = 9.80665; // Standard gravity m/s²
@@ -871,6 +885,11 @@ class OrbitalZoneSelector {
                         this.updateTransferDetails(upgradesDiv, this.transferSourceZone, this.transferDestinationZone, resourceType);
                     }
                 }
+                
+                // Update trajectory planner with new destination
+                if (typeof trajectoryPlanner !== 'undefined') {
+                    trajectoryPlanner.updateDestination(this.transferDestinationZone, this.transferMenuMode);
+                }
                 return;
             }
             
@@ -906,6 +925,11 @@ class OrbitalZoneSelector {
                 
                 this.transferMenuMode = newMode;
                 this.updateTransferMenu();
+                
+                // Update trajectory planner with new resource type
+                if (typeof trajectoryPlanner !== 'undefined') {
+                    trajectoryPlanner.updateResourceType(newMode);
+                }
                 return;
             }
             
@@ -965,6 +989,10 @@ class OrbitalZoneSelector {
                                 this.updateTransferDetails(upgradesDiv, this.transferSourceZone, 'dyson_sphere', resourceType);
                             }
                         }
+                        // Update trajectory planner with new destination
+                        if (typeof trajectoryPlanner !== 'undefined') {
+                            trajectoryPlanner.updateDestination('dyson_sphere');
+                        }
                     } else {
                         this.selectZone('dyson_sphere');
                     }
@@ -984,6 +1012,10 @@ class OrbitalZoneSelector {
                             if (upgradesDiv) {
                                 this.updateTransferDetails(upgradesDiv, this.transferSourceZone, zoneId, resourceType);
                             }
+                        }
+                        // Update trajectory planner with new destination
+                        if (typeof trajectoryPlanner !== 'undefined') {
+                            trajectoryPlanner.updateDestination(zoneId);
                         }
                     } else {
                         // Normal zone selection
@@ -1005,6 +1037,10 @@ class OrbitalZoneSelector {
                                 this.updateTransferDetails(upgradesDiv, this.transferSourceZone, 'kuiper', resourceType);
                             }
                         }
+                        // Update trajectory planner with new destination
+                        if (typeof trajectoryPlanner !== 'undefined') {
+                            trajectoryPlanner.updateDestination('kuiper');
+                        }
                     } else {
                         this.selectZone('kuiper');
                     }
@@ -1023,6 +1059,10 @@ class OrbitalZoneSelector {
                             if (upgradesDiv) {
                                 this.updateTransferDetails(upgradesDiv, this.transferSourceZone, 'oort_cloud', resourceType);
                             }
+                        }
+                        // Update trajectory planner with new destination
+                        if (typeof trajectoryPlanner !== 'undefined') {
+                            trajectoryPlanner.updateDestination('oort_cloud');
                         }
                     } else {
                         this.selectZone('oort_cloud');
@@ -2070,6 +2110,11 @@ class OrbitalZoneSelector {
                 }
             }
             
+            // Update trajectory planner with new destination
+            if (typeof trajectoryPlanner !== 'undefined') {
+                trajectoryPlanner.updateDestination(zoneId);
+            }
+            
             // Don't change selected zone - keep origin selected
             return;
         }
@@ -2131,6 +2176,14 @@ class OrbitalZoneSelector {
         // If clicking the same zone twice in a row, focus camera on it
         if (this.selectedZone === zoneId) {
             this.startCameraTracking(zoneId);
+            // Also start planet/moon tracking if this zone has a planet
+            const sceneManager = window.app?.sceneManager || window.sceneManager;
+            if (sceneManager && sceneManager.solarSystem) {
+                const hasPlanet = sceneManager.solarSystem.planets && sceneManager.solarSystem.planets[zoneId];
+                if (hasPlanet) {
+                    sceneManager.startPlanetMoonTracking(zoneId);
+                }
+            }
             return;
         }
         
@@ -2155,6 +2208,15 @@ class OrbitalZoneSelector {
         }
         if (window.zoneInfoPanel) {
             window.zoneInfoPanel.setSelectedZone(zoneId);
+        }
+        
+        // Start planet/moon tracking if this zone has a planet
+        const sceneManager = window.app?.sceneManager || window.sceneManager;
+        if (sceneManager && sceneManager.solarSystem) {
+            const hasPlanet = sceneManager.solarSystem.planets && sceneManager.solarSystem.planets[zoneId];
+            if (hasPlanet) {
+                sceneManager.startPlanetMoonTracking(zoneId);
+            }
         }
         
         // Update backend with selected harvest zone
@@ -2624,6 +2686,10 @@ class OrbitalZoneSelector {
                             if (this.updateTransferControls) {
                                 this.updateTransferControls(sourceZone, clickedZone.id, resourceType);
                             }
+                            // Update trajectory planner with new destination
+                            if (typeof trajectoryPlanner !== 'undefined') {
+                                trajectoryPlanner.updateDestination(clickedZone.id);
+                            }
                         }
                     }
                 }
@@ -3083,14 +3149,15 @@ class OrbitalZoneSelector {
                     // Calculate fuel cost based on delta-v required
                     // Use Tsiolkovsky rocket equation for TOTAL trip delta-v, then allocate proportionally
                     const skills = this.gameState?.skills || {};
+                    const ispBonus = this.gameState?.skill_bonuses?.propulsion_isp_bonus || 0;
                     
                     // Use centralized methods from transferSystem if available, otherwise fallback
                     let exhaustVelocityMS;
                     if (this.transferSystem) {
-                        exhaustVelocityMS = this.transferSystem.getExhaustVelocity(skills);
+                        exhaustVelocityMS = this.transferSystem.getExhaustVelocity(skills, ispBonus);
                     } else {
                         const propulsionSkill = skills?.propulsion || 1.0;
-                        const baseIsp = 500; // Base ISP in seconds
+                        const baseIsp = 500 + ispBonus; // Base ISP in seconds + starting bonus
                         const effectiveIsp = baseIsp * propulsionSkill;
                         const g0 = 9.80665; // Standard gravity m/s²
                         exhaustVelocityMS = effectiveIsp * g0;
@@ -3461,6 +3528,25 @@ class OrbitalZoneSelector {
             this.deltaVOverlayResourceType = resourceType;
             
             console.log('[Delta-V Overlay] Window created and drawn');
+            
+            // Show trajectory planner alongside the delta-v overlay
+            if (typeof trajectoryPlanner !== 'undefined') {
+                trajectoryPlanner.show(sourceZone, this.transferDestinationZone, resourceType);
+            }
+            
+            // For probe transfers, compute actual delta-v values from backend
+            // This runs asynchronously and will redraw the chart when done
+            if (resourceType === 'probe') {
+                this.computeActualProbeDeltaV(sourceZone);
+                
+                // Set up regular refresh interval to update delta-v values (every 2 seconds)
+                // This keeps the chart current as planets move
+                this.deltaVRefreshInterval = setInterval(() => {
+                    if (this.deltaVOverlayVisible && this.deltaVOverlayResourceType === 'probe') {
+                        this.computeActualProbeDeltaV(sourceZone);
+                    }
+                }, 2000);
+            }
         } catch (error) {
             console.error('[Delta-V Overlay] Failed to draw overlay:', error);
             // Clean up on failure
@@ -3482,10 +3568,197 @@ class OrbitalZoneSelector {
             this.deltaVOverlayResizeObserver.disconnect();
             this.deltaVOverlayResizeObserver = null;
         }
+        // Clear delta-v refresh interval
+        if (this.deltaVRefreshInterval) {
+            clearInterval(this.deltaVRefreshInterval);
+            this.deltaVRefreshInterval = null;
+        }
         this.deltaVOverlayCanvas = null;
         this.deltaVOverlayVisible = false;
         this.deltaVOverlaySourceZone = null;
         this.deltaVOverlayResourceType = null;
+        
+        // Hide trajectory planner alongside the delta-v overlay
+        if (typeof trajectoryPlanner !== 'undefined') {
+            trajectoryPlanner.hide();
+        }
+    }
+    
+    /**
+     * Get all current planet positions from the solar system visualization
+     * @returns {Object} Dictionary of zone positions {zoneId: [x, y]}
+     */
+    getAllPlanetPositions() {
+        const positions = {};
+        
+        if (!this.orbitalZones) return positions;
+        
+        const solarSystem = window.app?.solarSystem;
+        
+        for (const zone of this.orbitalZones) {
+            if (zone.id === 'dyson_sphere') continue;
+            
+            let angle = 0;
+            if (solarSystem && solarSystem.planets) {
+                const planet = solarSystem.planets[zone.id];
+                if (planet && planet.userData && planet.userData.orbitalAngle !== undefined) {
+                    angle = planet.userData.orbitalAngle;
+                }
+            }
+            
+            // If no angle found, calculate from orbital period
+            if (angle === 0 && zone.orbital_period_days) {
+                const gameTime = window.gameEngine?.getState?.()?.time || 0;
+                const orbitsCompleted = gameTime / zone.orbital_period_days;
+                angle = (orbitsCompleted * 2 * Math.PI) % (2 * Math.PI);
+            }
+            
+            const x = zone.radius_au * Math.cos(angle);
+            const y = zone.radius_au * Math.sin(angle);
+            positions[zone.id] = [x, y];
+        }
+        
+        return positions;
+    }
+    
+    /**
+     * Compute actual delta-v values for probe transfers using backend trajectory solver
+     * This calculates true orbital mechanics delta-v for all destination zones
+     * @param {string} sourceZoneId - The origin zone
+     */
+    async computeActualProbeDeltaV(sourceZoneId) {
+        if (this.isComputingDeltaV) {
+            console.log('[Delta-V Compute] Already computing, skipping...');
+            return;
+        }
+        
+        if (!this.orbitalZones || this.orbitalZones.length === 0) {
+            console.warn('[Delta-V Compute] No orbital zones available');
+            return;
+        }
+        
+        // Belt zones use Hohmann transfer (not actual planet rendezvous)
+        // PROBE TRANSFERS: Use backend for planets, Hohmann for Dyson/Asteroid/Kuiper
+        const beltZones = ['asteroid_belt', 'kuiper', 'oort_cloud', 'dyson_sphere', 'dyson'];
+        
+        this.isComputingDeltaV = true;
+        console.log(`[Delta-V Compute] Computing actual delta-v from ${sourceZoneId} to all destinations (planets only, belt zones use Hohmann)...`);
+        
+        const startTime = performance.now();
+        
+        try {
+            // Get current planet positions
+            const planetPositions = this.getAllPlanetPositions();
+            
+            // Build list of transfers (skip belt zones - they use Hohmann)
+            const transfers = [];
+            for (const zone of this.orbitalZones) {
+                if (zone.id === sourceZoneId) continue;
+                if (beltZones.includes(zone.id)) continue;
+                
+                transfers.push({
+                    from_zone: sourceZoneId,
+                    to_zone: zone.id
+                });
+            }
+            
+            if (transfers.length === 0) {
+                console.log('[Delta-V Compute] No transfers to compute');
+                this.isComputingDeltaV = false;
+                return;
+            }
+            
+            // Get current game time
+            const gameTime = window.gameEngine?.getState?.()?.time || 0;
+            
+            // Call backend API
+            const response = await api.computeTrajectoryBatch(
+                transfers,
+                gameTime,
+                30, // fewer points for just delta-v calculation
+                planetPositions
+            );
+            
+            const endTime = performance.now();
+            
+            console.log(`[Delta-V Compute] Computed ${transfers.length} trajectories in ${(endTime - startTime).toFixed(1)}ms`);
+            if (response.computation_time_ms) {
+                console.log(`[Delta-V Compute] Backend time: ${response.computation_time_ms.toFixed(2)}ms`);
+            }
+            
+            // Store computed values
+            if (!this.computedProbeDeltaV[sourceZoneId]) {
+                this.computedProbeDeltaV[sourceZoneId] = {};
+            }
+            // Store backend transfer times
+            if (!this.computedProbeTransferTime[sourceZoneId]) {
+                this.computedProbeTransferTime[sourceZoneId] = {};
+            }
+            
+            if (response.success && response.trajectories) {
+                for (const traj of response.trajectories) {
+                    if (!traj.error && traj.delta_v_km_s !== null && traj.delta_v_km_s !== undefined) {
+                        // Always use computed delta-v for probe transfers (real-time values)
+                        // This reflects actual launch window requirements
+                        this.computedProbeDeltaV[sourceZoneId][traj.to_zone] = traj.delta_v_km_s;
+                        // Store backend transfer time for speed bonus calculation
+                        if (traj.transfer_time_days !== null && traj.transfer_time_days !== undefined) {
+                            this.computedProbeTransferTime[sourceZoneId][traj.to_zone] = traj.transfer_time_days;
+                        }
+                        console.log(`  ✓ ${sourceZoneId} → ${traj.to_zone}: ${traj.delta_v_km_s.toFixed(2)} km/s, ${traj.transfer_time_days?.toFixed(2) || 'N/A'} days`);
+                    } else {
+                        // Solver failed - use 99 km/s to indicate unreachable
+                        this.computedProbeDeltaV[sourceZoneId][traj.to_zone] = 99;
+                        console.log(`  ❌ ${sourceZoneId} → ${traj.to_zone}: solver failed, using 99 km/s`);
+                    }
+                }
+            }
+            
+            // After computing, redraw the overlay if it's visible
+            if (this.deltaVOverlayVisible && this.deltaVOverlayCanvas && this.deltaVOverlayResourceType === 'probe') {
+                this.drawOverlayChart(this.deltaVOverlayCanvas, sourceZoneId, 'probe');
+            }
+            
+        } catch (error) {
+            console.error('[Delta-V Compute] Failed to compute trajectories:', error);
+        } finally {
+            this.isComputingDeltaV = false;
+        }
+    }
+    
+    /**
+     * Get the delta-v for a transfer
+     * 
+     * PROBE TRANSFERS: Use Python backend computed delta-v for planets (real-time launch windows)
+     *                 Use Hohmann for Dyson/Asteroid/Kuiper (no specific planet to rendezvous)
+     * MASS TRANSFERS: Always use Hohmann transfer calcs (pre-set trajectories, includes escape velocity)
+     * 
+     * @param {string} fromZoneId - Source zone
+     * @param {string} toZoneId - Destination zone  
+     * @param {string} resourceType - 'probe', 'metal', or 'methalox'
+     * @returns {number} Delta-v in km/s
+     */
+    getTransferDeltaV(fromZoneId, toZoneId, resourceType) {
+        // Belt zones (no specific planet) use Hohmann for all transfer types
+        const beltZones = ['asteroid_belt', 'kuiper', 'oort_cloud', 'dyson_sphere', 'dyson'];
+        const isBeltZone = beltZones.includes(toZoneId);
+        
+        if (resourceType === 'probe' && !isBeltZone) {
+            // Probe transfers to planets: use computed actual delta-v from backend (real-time)
+            const computed = this.computedProbeDeltaV[fromZoneId]?.[toZoneId];
+            if (computed !== undefined && computed !== null) {
+                return computed;
+            }
+            // Not yet computed - return 99 to indicate need to wait for calculation
+            return 99;
+        }
+        
+        // Mass transfers and belt zones: always use Hohmann (pre-set trajectories)
+        if (this.orbitalMechanics) {
+            return this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+        } else {
+            return this.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+        }
     }
     
     /**
@@ -3596,7 +3869,17 @@ class OrbitalZoneSelector {
             const slider = document.querySelector('#transfer-probe-slider');
             const count = slider ? parseInt(slider.value) : 1;
             
-            this.createTransfer(fromZone, toZone, 'probe', 'one-time', count, 0);
+            // Get the actual computed delta-v for this transfer (real-time value)
+            const computedDeltaV = this.computedProbeDeltaV?.[fromZone]?.[toZone];
+            
+            // Get trajectory points from trajectory planner if available
+            let trajectoryPoints = null;
+            if (typeof trajectoryPlanner !== 'undefined' && trajectoryPlanner.optimizedTrajectory) {
+                // Convert trajectory planner points format to backend format
+                trajectoryPoints = trajectoryPlanner.optimizedTrajectory.points.map(pt => [pt.x, pt.y]);
+            }
+            
+            this.createTransfer(fromZone, toZone, 'probe', 'one-time', count, 0, computedDeltaV, trajectoryPoints);
             this.showQuickMessage(`Transferring ${count} probe${count > 1 ? 's' : ''} to ${toName}`);
         } else if (this.transferMenuMode === 'metal') {
             // Read power allocation percentage from slider (default to 50% if not found)
@@ -3795,7 +4078,7 @@ class OrbitalZoneSelector {
             }
         }
         
-        html += `<div style="margin-left: 10px; margin-bottom: 3px;"><strong>Estimated Time:</strong> <span style="color: #4a9eff;">${transferTimeDays.toFixed(1)}</span> days</div>`;
+        html += `<div style="margin-left: 10px; margin-bottom: 3px;"><strong>Estimated Time:</strong> <span style="color: #4a9eff;">${this.formatTransferTime(transferTimeDays)}</span></div>`;
         html += `</div>`;
         
         // Show metal transfer throughput if applicable
@@ -3987,13 +4270,13 @@ class OrbitalZoneSelector {
             ? (probeCapacity + massDriverCapacity)  // Combined capacity for probes: probe propulsion + mass driver assist
             : massDriverCapacity;  // Mass driver only for metal transfers
         
-        // Calculate Hohmann transfer delta-v for all zones
+        // Calculate transfer delta-v for all zones
         const zoneData = [];
         // Fixed y-axis limits with UNIFIED SCALE (same pixels per km/s above and below zero)
-        const maxPositiveDeltaV = 30; // Upper limit for positive y-axis (km/s)
-        const maxNegativeDeltaV = 10; // Lower limit magnitude for negative y-axis (km/s)
+        const maxPositiveDeltaV = 42; // Upper limit for positive y-axis (km/s)
+        const maxNegativeDeltaV = 20; // Lower limit magnitude for negative y-axis (km/s)
         // Total range determines scale: chartHeight / (maxPositive + maxNegative) pixels per km/s
-        const totalDeltaVRange = maxPositiveDeltaV + maxNegativeDeltaV; // 40 km/s total
+        const totalDeltaVRange = maxPositiveDeltaV + maxNegativeDeltaV; // 62 km/s total
         let maxDeltaV = maxPositiveDeltaV; // For backwards compatibility with some calculations
         
         // Collect mass data for all zones (for background mass bars)
@@ -4027,14 +4310,10 @@ class OrbitalZoneSelector {
                 });
                 // Using fixed axis limits, no dynamic maxDeltaV update needed
             } else {
-                // Other zones - store Hohmann transfer delta-v and calculate reachability
-                let hohmannDeltaV = 0;
-                if (this.orbitalMechanics) {
-                    hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, zone.id);
-                } else {
-                    // Fallback: use inline calculation
-                    hohmannDeltaV = this.getHohmannDeltaVKmS(fromZoneId, zone.id);
-                }
+                // Other zones - get transfer delta-v and calculate reachability
+                // For probes: use computed actual delta-v (if available) or fall back to Hohmann
+                // For metal/methalox: always use Hohmann (continuous transfers)
+                let transferDeltaV = this.getTransferDeltaV(fromZoneId, zone.id, resourceType);
                 
                 // Calculate escape velocity for this zone
                 const zoneStateData = zones[zone.id] || {};
@@ -4048,8 +4327,8 @@ class OrbitalZoneSelector {
                     zoneEscapeDeltaV = this.calculateEscapeDeltaV(zone.id, zoneMass);
                 }
                 
-                // Calculate total required delta-v (escape + Hohmann) for reachability check
-                const totalRequiredDeltaV = escapeDeltaV + hohmannDeltaV;
+                // Calculate total required delta-v (escape + transfer) for reachability check
+                const totalRequiredDeltaV = escapeDeltaV + transferDeltaV;
                 
                 // Check if this zone is reachable with current upgraded capacity
                 // Different requirements based on resource type
@@ -4071,7 +4350,7 @@ class OrbitalZoneSelector {
                     isSource: false,
                     escapeDeltaV: zoneEscapeDeltaV,  // Store this zone's escape velocity
                     capacityDeltaV: 0,
-                    hohmannDeltaV: hohmannDeltaV,
+                    transferDeltaV: transferDeltaV,  // Use transfer delta-v (actual or Hohmann)
                     totalRequiredDeltaV: totalRequiredDeltaV,
                     isReachable: isReachable
                 });
@@ -4324,11 +4603,16 @@ class OrbitalZoneSelector {
                 }
                 
             } else {
-                // Other zones: draw Hohmann transfer delta-v bar (blue, positive)
+                // Other zones: draw transfer delta-v bar (blue/green, positive)
+                // For probes: uses actual computed delta-v, for metal/methalox: uses Hohmann
                 // UNIFIED SCALE: use pixelsPerKmS for consistent visual representation
-                const hohmannBarHeight = data.hohmannDeltaV * pixelsPerKmS;
-                const hohmannBarBottom = zeroY; // Starts at zero line
-                const hohmannBarTop = zeroY - hohmannBarHeight; // Extends upward
+                // Clip visual bar at maxPositiveDeltaV (45 km/s) but show true value as label
+                const actualDeltaV = data.transferDeltaV;
+                const visualDeltaV = Math.min(actualDeltaV, maxPositiveDeltaV);
+                const transferBarHeight = visualDeltaV * pixelsPerKmS;
+                const transferBarBottom = zeroY; // Starts at zero line
+                const transferBarTop = zeroY - transferBarHeight; // Extends upward
+                const isOverflow = actualDeltaV > maxPositiveDeltaV;
                 
                 // Check if this is the selected destination zone
                 const isSelectedDestination = this.transferMenuOpen && this.transferDestinationZone === data.zone.id;
@@ -4352,21 +4636,52 @@ class OrbitalZoneSelector {
                 }
                 
                 // Use different color intensity based on reachability
+                // High delta-v (e.g., 99 = solver failed) shown in red
                 const isReachable = data.isReachable !== undefined ? data.isReachable : false;
-                ctx.fillStyle = isReachable 
-                    ? 'rgba(74, 255, 74, 0.6)'  // Green tint if reachable
-                    : 'rgba(74, 158, 255, 0.8)'; // Blue if not reachable
-                ctx.fillRect(x, hohmannBarTop, barWidth, hohmannBarHeight);
+                const isSolverFailed = actualDeltaV >= 99;
+                let barColor;
+                if (isSolverFailed) {
+                    barColor = 'rgba(255, 60, 60, 0.8)';  // Red for solver failed
+                } else if (isReachable) {
+                    barColor = 'rgba(74, 255, 74, 0.6)';  // Green tint if reachable
+                } else {
+                    barColor = 'rgba(74, 158, 255, 0.8)'; // Blue if not reachable
+                }
+                ctx.fillStyle = barColor;
+                ctx.fillRect(x, transferBarTop, barWidth, transferBarHeight);
                 
-                // Label Hohmann transfer delta-v (at the top of blue bar)
-                ctx.fillStyle = isReachable ? '#4aff4a' : '#4a9eff';
+                // Draw overflow indicator (arrow pointing up with "+") if value exceeds max
+                if (isOverflow) {
+                    const arrowTipY = transferBarTop - 2;
+                    const arrowBaseY = transferBarTop + 8;
+                    const arrowWidth = 6;
+                    
+                    // Draw upward arrow
+                    ctx.fillStyle = isSolverFailed ? '#ff4444' : '#ff8844';
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, arrowTipY);  // Arrow tip
+                    ctx.lineTo(centerX - arrowWidth, arrowBaseY);  // Left base
+                    ctx.lineTo(centerX + arrowWidth, arrowBaseY);  // Right base
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Draw "+" sign next to the arrow
+                    ctx.font = 'bold 10px monospace';
+                    ctx.textAlign = 'left';
+                    ctx.fillText('+', centerX + arrowWidth + 2, arrowTipY + 6);
+                }
+                
+                // Label transfer delta-v (at the top of bar) - ALWAYS show true value
+                ctx.fillStyle = isSolverFailed ? '#ff4444' : (isReachable ? '#4aff4a' : '#4a9eff');
                 ctx.font = '11px monospace';
                 ctx.textAlign = 'center';
-                ctx.fillText(`${data.hohmannDeltaV.toFixed(2)}`, centerX, hohmannBarTop - 5);
+                // Show true value even if bar is clipped, position above overflow indicator if present
+                const labelY = isOverflow ? transferBarTop - 15 : transferBarTop - 5;
+                ctx.fillText(`${actualDeltaV.toFixed(actualDeltaV >= 99 ? 0 : 2)}`, centerX, labelY);
                 
                 // Draw reachability indicator (checkmark only for reachable zones)
                 if (isReachable) {
-                    const indicatorY = hohmannBarTop - 20;
+                    const indicatorY = isOverflow ? transferBarTop - 30 : transferBarTop - 20;
                     ctx.font = 'bold 16px monospace';
                     ctx.textAlign = 'center';
                     ctx.fillStyle = '#4aff4a';
@@ -5401,6 +5716,11 @@ class OrbitalZoneSelector {
             toZone = newToZone;
             toZoneId = newToZoneId;
             
+            // Update trajectory planner with new destination
+            if (typeof trajectoryPlanner !== 'undefined') {
+                trajectoryPlanner.updateDestination(newToZoneId);
+            }
+            
             // Update route display
             const routeEl = dialog.querySelector('.transfer-route');
             const toZoneSpan = routeEl.querySelector('.transfer-zone:last-child');
@@ -5639,7 +5959,9 @@ class OrbitalZoneSelector {
     
     calculateProbePropulsionStats() {
         // Base specific impulse (Isp) in seconds - typical chemical rocket
-        const baseIsp = 300; // seconds
+        // Add starting skill bonus for propulsion ISP
+        const startingIspBonus = this.gameState?.skill_bonuses?.propulsion_isp_bonus || 0;
+        const baseIsp = 300 + startingIspBonus; // seconds
         
         // Get research bonuses
         let specificImpulseBonus = 0.0;
@@ -5724,7 +6046,7 @@ class OrbitalZoneSelector {
                     const reachInfo = this.orbitalMechanics.getReachabilityInfo(
                         fromZoneId, toZoneId, skills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
                     );
-                    const netDeltaV = reachInfo.totalCapacity - escapeDeltaV;
+                    const netDeltaV = reachInfo.netDeltaV; // Use netDeltaV from reachInfo (already calculated correctly)
                     
                     let errorMsg = `Cannot transfer probes: transfer requires ${hohmannDeltaV.toFixed(2)} km/s, but net Δv is ${netDeltaV.toFixed(2)} km/s`;
                     errorMsg += ` (capacity: ${reachInfo.totalCapacity.toFixed(2)} - escape: ${escapeDeltaV.toFixed(2)})`;
@@ -5766,7 +6088,7 @@ class OrbitalZoneSelector {
         }
     }
     
-    createTransfer(fromZoneId, toZoneId, resourceType, type, count, rate) {
+    createTransfer(fromZoneId, toZoneId, resourceType, type, count, rate, computedDeltaV = null, trajectoryPoints = null) {
         // Execute transfer via game engine (arcs will be synced from game state)
         if (window.gameEngine) {
             const actionData = {
@@ -5779,12 +6101,34 @@ class OrbitalZoneSelector {
             if (type === 'one-time') {
                 if (resourceType === 'probe') {
                     actionData.probe_count = count;
+                    // Pass computed delta-v for probe transfers (real-time value from backend)
+                    if (computedDeltaV !== null && computedDeltaV !== undefined) {
+                        actionData.computed_delta_v = computedDeltaV;
+                    }
+                    // Pass backend transfer time if available (for speed bonus calculation)
+                    if (this.computedProbeTransferTime[fromZoneId] && 
+                        this.computedProbeTransferTime[fromZoneId][toZoneId] !== undefined) {
+                        actionData.backend_transfer_time_days = this.computedProbeTransferTime[fromZoneId][toZoneId];
+                    }
+                    // Pass trajectory points if available
+                    if (trajectoryPoints && trajectoryPoints.length > 0) {
+                        actionData.trajectory_points_au = trajectoryPoints;
+                    }
                 } else {
                     actionData.metal_kg = count;
                 }
             } else {
                 if (resourceType === 'probe') {
                     actionData.rate = rate; // Percentage of production for probes
+                    // For continuous transfers, also pass backend transfer time if available
+                    if (this.computedProbeTransferTime[fromZoneId] && 
+                        this.computedProbeTransferTime[fromZoneId][toZoneId] !== undefined) {
+                        actionData.backend_transfer_time_days = this.computedProbeTransferTime[fromZoneId][toZoneId];
+                    }
+                    // Pass computed delta-v for continuous probe transfers too
+                    if (computedDeltaV !== null && computedDeltaV !== undefined) {
+                        actionData.computed_delta_v = computedDeltaV;
+                    }
                 } else {
                     actionData.rate = rate; // Percentage of stored metal
                 }

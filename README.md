@@ -143,11 +143,11 @@ Complete the Dyson sphere by constructing **5×10²⁴ kg** of Dyson mass. Your 
 
 When starting a new game, choose your difficulty:
 
-| Difficulty | Starting Probes | Starting Structures |
-|------------|-----------------|---------------------|
-| **Easy** | 100 | 10 Power Stations, 10 Data Centers, 1 Mass Driver |
-| **Medium** | 10 | 2 Power Stations, 2 Data Centers |
-| **Hard** | 1 | None |
+| Difficulty | Starting Probes | Starting Structures | Research |
+|------------|-----------------|---------------------|----------|
+| **Easy** | 1,000 | 10 Power Stations, 10 Data Centers, 2 Mass Drivers | All at Tier 5 |
+| **Medium** | 10 | 2 Power Stations, 2 Data Centers | None |
+| **Hard** | 1 | None | None |
 
 ### Starting Conditions (Hard Mode)
 

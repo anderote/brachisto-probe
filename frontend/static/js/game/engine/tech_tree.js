@@ -755,7 +755,7 @@ class TechTree {
                 let prevTierComplete = true;
                 if (i > 0) {
                     const prevTier = tiers[i - 1];
-                    const prevTierKey = subcatId ? `${subcatId}_${prevTier.id}` : prevTier.id;
+                    const prevTierKey = prevTier.id;
                     const prevTierState = this.researchState[treeId][prevTierKey];
                     const prevTotalTranches = prevTier.tranches || this.TRANCHES_PER_TIER;
                     prevTierComplete = (prevTierState?.tranches_completed || 0) >= prevTotalTranches;
@@ -786,57 +786,74 @@ class TechTree {
     
     /**
      * Get legacy skills object for backward compatibility
+     * Maps new 12-skill system to old skill names
      * @returns {Object} Skills object in legacy format
      */
     getLegacySkills() {
+        // Get new core skills
+        const propulsion = this.getSkillValue('propulsion');
+        const robotics = this.getSkillValue('robotics');
+        const materials = this.getSkillValue('materials');
+        const structures = this.getSkillValue('structures');
+        const generation = this.getSkillValue('generation');
+        const storage_density = this.getSkillValue('storage_density');
+        const conversion = this.getSkillValue('conversion');
+        const transmission = this.getSkillValue('transmission');
+        const architecture = this.getSkillValue('architecture');
+        const processor = this.getSkillValue('processor');
+        const memory = this.getSkillValue('memory');
+        const sensors = this.getSkillValue('sensors');
+        
         return {
-            // Dexterity skills
-            propulsion: this.getSkillValue('propulsion'),
-            thrust: this.getSkillValue('thrust'),
-            locomotion: this.getSkillValue('locomotion'),
-            manipulation: this.getSkillValue('manipulation'),
-            strength: this.getSkillValue('strength'),
-            materials: this.getSkillValue('materials'),
-            production: this.getSkillValue('production'),
-            recycling: this.getSkillValue('recycling'),
-            dyson_construction: this.getSkillValue('dyson_construction'),
+            // Dexterity skills (mapped from new skills)
+            propulsion: propulsion,
+            thrust: propulsion, // Maps to propulsion
+            locomotion: propulsion, // Maps to propulsion
+            manipulation: robotics, // Maps to robotics
+            strength: robotics, // Maps to robotics
+            materials: materials,
+            production: structures, // Maps to structures
+            recycling: structures, // Maps to structures
+            dyson_construction: structures, // Maps to structures
             
-            // Energy skills
-            solar_pv: this.getSkillValue('solar_pv'),
-            radiator: this.getSkillValue('radiator'),
-            heat_pump: this.getSkillValue('heat_pump'),
-            battery_density: this.getSkillValue('battery_density'),
-            thermal_efficiency: this.getSkillValue('radiator'), // Alias
-            energy_converter: this.getSkillValue('energy_converter'),
-            energy_collection: this.getSkillValue('solar_pv'), // Alias
-            energy_storage: this.getSkillValue('battery_density'), // Alias
-            energy_transport: this.getSkillValue('energy_transport'),
+            // Energy skills (mapped from new skills)
+            solar_pv: generation, // Maps to generation
+            radiator: conversion, // Maps to conversion
+            heat_pump: conversion, // Maps to conversion
+            battery_density: storage_density,
+            thermal_efficiency: conversion, // Maps to conversion
+            energy_converter: conversion, // Maps to conversion
+            energy_collection: generation, // Maps to generation
+            energy_storage: storage_density,
+            energy_transport: transmission,
             
-            // Intelligence skills
-            cpu: this.getSkillValue('cpu'),
-            gpu: this.getSkillValue('gpu'),
-            interconnect: this.getSkillValue('interconnect'),
-            io_bandwidth: this.getSkillValue('io_bandwidth'),
-            sensors: this.getSkillValue('sensors'),
-            learning: this.getSkillValue('learning'),
+            // Intelligence skills (mapped from new skills)
+            cpu: processor,
+            gpu: processor, // Maps to processor
+            interconnect: sensors, // Maps to sensors
+            io_bandwidth: memory,
+            sensors: sensors,
+            learning: architecture, // Maps to architecture
+            research_rate: architecture, // Maps to architecture
+            substrate: architecture, // Legacy alias
             
             // Legacy computed skill
-            robotic: this.getSkillValue('manipulation'),
+            robotic: robotics, // Maps to robotics
             acds: 1.0, // ACDS is still a constant for now
             
-            // Computer skills object (geometric mean of 4 components)
+            // Computer skills object (geometric mean of processor, sensors, memory)
             computer: {
-                processing: this.getSkillValue('cpu'),
-                gpu: this.getSkillValue('gpu'),
-                interconnect: this.getSkillValue('interconnect'),
-                interface: this.getSkillValue('io_bandwidth'),
-                transmission: this.getSkillValue('interconnect'),
-                memory: this.getSkillValue('gpu'),
+                processing: processor,
+                gpu: processor,
+                interconnect: sensors,
+                interface: memory,
+                transmission: sensors,
+                memory: memory,
                 total: Math.pow(
-                    this.getSkillValue('cpu') *
-                    this.getSkillValue('gpu') *
-                    this.getSkillValue('interconnect') *
-                    this.getSkillValue('io_bandwidth'),
+                    processor *
+                    processor *
+                    sensors *
+                    memory,
                     0.25
                 )
             }

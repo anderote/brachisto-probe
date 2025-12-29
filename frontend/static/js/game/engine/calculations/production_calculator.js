@@ -115,21 +115,23 @@ class ProductionCalculator {
     /**
      * Get effective specific impulse with propulsion skill applied
      * @param {Object} skills - Current skills (for propulsion modifier)
+     * @param {number} ispBonus - Optional ISP bonus from starting skill points (seconds)
      * @returns {number} Effective ISP in seconds
      */
-    getEffectiveIsp(skills) {
+    getEffectiveIsp(skills, ispBonus = 0) {
         const propulsionSkill = skills?.propulsion || 1.0;
-        return this.BASE_ISP * propulsionSkill;
+        return (this.BASE_ISP + ispBonus) * propulsionSkill;
     }
     
     /**
      * Get exhaust velocity in m/s based on current propulsion skill
      * @param {Object} skills - Current skills (for propulsion modifier)
+     * @param {number} ispBonus - Optional ISP bonus from starting skill points (seconds)
      * @returns {number} Exhaust velocity in m/s
      */
-    getExhaustVelocity(skills) {
+    getExhaustVelocity(skills, ispBonus = 0) {
         const g0 = 9.80665; // Standard gravity m/s²
-        return this.getEffectiveIsp(skills) * g0;
+        return this.getEffectiveIsp(skills, ispBonus) * g0;
     }
     
     /**

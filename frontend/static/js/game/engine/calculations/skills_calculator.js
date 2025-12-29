@@ -6,6 +6,8 @@
  * 
  * NOTE: This class is now a legacy wrapper. The primary skills system is TechTree.
  * This class is kept for backward compatibility and will delegate to TechTree when available.
+ * 
+ * Simplified to 12 core skills (4 per category) with 20 tiers each.
  */
 
 class SkillsCalculator {
@@ -55,48 +57,76 @@ class SkillsCalculator {
         // Calculate each skill category from research
         // Dexterity skills
         skills.propulsion = this.calculatePropulsionSkill(researchState, currentTime);
-        skills.thrust = this.calculateThrustSkill(researchState, currentTime);
-        skills.locomotion = this.calculateLocomotionSkill(researchState, currentTime);
-        skills.manipulation = this.calculateManipulationSkill(researchState, currentTime);
-        skills.strength = this.calculateStrengthSkill(researchState, currentTime);
+        skills.robotics = this.calculateRoboticsSkill(researchState, currentTime);
         skills.materials = this.calculateMaterialsSkill(researchState, currentTime);
+        skills.structures = this.calculateStructuresSkill(researchState, currentTime);
         
         // Energy skills
-        skills.solar_pv = this.calculateSolarPVSkill(researchState, currentTime);
-        skills.radiator = this.calculateRadiatorSkill(researchState, currentTime);
-        skills.heat_pump = this.calculateHeatPumpSkill(researchState, currentTime);
-        skills.battery_density = this.calculateBatteryDensitySkill(researchState, currentTime);
-        skills.thermal_efficiency = this.calculateThermalEfficiencySkill(researchState, currentTime);
-        skills.energy_converter = this.calculateEnergyConverterSkill(researchState, currentTime);
+        skills.generation = this.calculateGenerationSkill(researchState, currentTime);
+        skills.storage_density = this.calculateStorageDensitySkill(researchState, currentTime);
+        skills.conversion = this.calculateConversionSkill(researchState, currentTime);
+        skills.transmission = this.calculateTransmissionSkill(researchState, currentTime);
         
         // Intelligence skills
-        skills.cpu = this.calculateCPUSkill(researchState, currentTime);
-        skills.gpu = this.calculateGPUSkill(researchState, currentTime);
-        skills.interconnect = this.calculateInterconnectSkill(researchState, currentTime);
-        skills.io_bandwidth = this.calculateIOBandwidthSkill(researchState, currentTime);
+        skills.architecture = this.calculateArchitectureSkill(researchState, currentTime);
+        skills.processor = this.calculateProcessorSkill(researchState, currentTime);
+        skills.memory = this.calculateMemorySkill(researchState, currentTime);
         skills.sensors = this.calculateSensorsSkill(researchState, currentTime);
-        skills.learning = this.calculateLearningSkill(researchState, currentTime);
         
-        // Production skills
-        skills.production = this.calculateProductionSkill(researchState, currentTime);
-        skills.recycling = this.calculateRecyclingSkill(researchState, currentTime);
+        // Legacy aliases for backward compatibility
+        skills.thrust = skills.propulsion;
+        skills.locomotion = skills.propulsion;
+        skills.manipulation = skills.robotics;
+        skills.strength = skills.robotics;
+        skills.production = skills.structures;
+        skills.recycling = skills.structures;
+        skills.dyson_construction = skills.structures;
         
-        // Legacy/Other skills (for backward compatibility)
-        skills.energy_collection = skills.solar_pv;  // Map to solar_pv
-        skills.energy_storage = skills.battery_density;  // Map to battery_density
-        skills.energy_transport = this.calculateEnergyTransportSkill(researchState, currentTime);
-        skills.dyson_construction = this.calculateDysonConstructionSkill(researchState, currentTime);
+        skills.solar_pv = skills.generation;
+        skills.pv_efficiency = skills.generation;
+        skills.energy_collection = skills.generation;
+        skills.battery_density = skills.storage_density;
+        skills.energy_storage = skills.storage_density;
+        skills.energy_converter = skills.conversion;
+        skills.thermal_efficiency = skills.conversion;
+        skills.radiator = skills.conversion;
+        skills.heat_pump = skills.conversion;
+        skills.energy_transport = skills.transmission;
         
-        // ACDS (Autonomous Control and Decision Systems) - defaults to 1.0 for now
-        // TODO: Add research tree for ACDS if needed
-        skills.acds = this.calculateACDSSkill(researchState, currentTime);
+        skills.cpu = skills.processor;
+        skills.gpu = skills.processor;
+        skills.computer_processing = skills.processor;
+        skills.computer_gpu = skills.processor;
+        skills.interconnect = skills.sensors;
+        skills.io_bandwidth = skills.memory;
+        skills.computer_interface = skills.memory;
+        skills.computer_interconnect = skills.sensors;
+        skills.learning = skills.architecture;
+        skills.machine_learning = skills.architecture;
+        skills.research_rate = skills.architecture;
+        skills.research_rate_efficiency = skills.architecture;
+        skills.substrate = skills.architecture; // Legacy alias
+        skills.sensor_systems = skills.sensors;
         
-        // Robotic skill (maps to manipulation for now)
-        skills.robotic = skills.manipulation;
+        skills.robotic = skills.robotics;
+        skills.acds = 1.0; // ACDS is computed, not from a tree
         
-        // Computer skills (geometric mean of 4 separate trees)
-        const computerSkills = this.calculateComputerSkills(researchState, currentTime);
-        skills.computer = computerSkills;
+        // Computer skills object (geometric mean of processor components)
+        skills.computer = {
+            processing: skills.processor,
+            gpu: skills.processor,
+            interconnect: skills.sensors,
+            interface: skills.memory,
+            transmission: skills.sensors,
+            memory: skills.memory,
+            total: Math.pow(
+                skills.processor *
+                skills.processor *
+                skills.sensors *
+                skills.memory,
+                0.25
+            )
+        };
         
         return skills;
     }
@@ -108,40 +138,25 @@ class SkillsCalculator {
     getBaseSkills() {
         return {
             // Dexterity skills
-            propulsion: 1.0,      // ISP multiplier (base ISP = 500 seconds)
-            thrust: 1.0,          // Thrust multiplier (base = 1000 N per probe)
-            locomotion: 1.0,      // Maneuverability multiplier
-            manipulation: 1.0,    // Robot arms / dexterity multiplier
-            strength: 1.0,        // Actuator torque multiplier (base = 100 N-m per probe)
-            materials: 1.0,       // Material strength multiplier
+            propulsion: 1.0,
+            robotics: 1.0,
+            materials: 1.0,
+            structures: 1.0,
             
             // Energy skills
-            solar_pv: 1.0,        // Solar PV efficiency
-            radiator: 1.0,        // Radiator efficiency
-            heat_pump: 1.0,       // Heat pump efficiency
-            battery_density: 1.0, // Battery energy density
-            thermal_efficiency: 1.0, // Thermal efficiency
-            energy_converter: 1.0, // Direct energy converter efficiency
+            generation: 1.0,
+            storage_density: 1.0,
+            conversion: 1.0,
+            transmission: 1.0,
             
             // Intelligence skills
-            cpu: 1.0,             // CPU power
-            gpu: 1.0,             // GPU power
-            interconnect: 1.0,    // Interconnect bandwidth
-            io_bandwidth: 1.0,    // I/O bandwidth
-            sensors: 1.0,         // Sensor signal-to-noise
-            learning: 1.0,        // Learning architecture
+            architecture: 1.0,
+            processor: 1.0,
+            memory: 1.0,
+            sensors: 1.0,
             
-            // Production skills
-            production: 1.0,      // Production efficiency
-            recycling: 0.75,       // Recycling efficiency (75% base)
-            
-            // Other skills
-            energy_collection: 1.0,  // Legacy - maps to solar_pv
-            energy_storage: 1.0,      // Legacy - maps to battery_density
-            energy_transport: 1.0,    // Energy transport efficiency
-            dyson_construction: 1.0,  // Dyson construction efficiency
-            acds: 1.0,                // Autonomous Control and Decision Systems
-            robotic: 1.0,             // Robotic systems (maps to manipulation)
+            // Legacy computed skill
+            acds: 1.0,
             
             // Computer skills (geometric mean)
             computer: {
@@ -151,140 +166,6 @@ class SkillsCalculator {
                 transmission: 1.0,
                 total: 1.0
             }
-        };
-    }
-    
-    /**
-     * Calculate ACDS skill (Autonomous Control and Decision Systems)
-     * For now, defaults to 1.0 - can be connected to research tree later
-     */
-    calculateACDSSkill(researchState, currentTime) {
-        // TODO: Add research tree for ACDS if needed
-        // For now, return base value
-        return 1.0;
-    }
-    
-    /**
-     * Calculate propulsion skill from propulsion_systems research tree
-     */
-    calculatePropulsionSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.propulsion_systems;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'propulsion_systems');
-    }
-    
-    /**
-     * Calculate locomotion skill from locomotion_systems research tree
-     */
-    calculateLocomotionSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.locomotion_systems;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'locomotion_systems');
-    }
-    
-    /**
-     * Calculate robotic skill from robotic_systems research tree
-     */
-    calculateRoboticSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.robotic_systems;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'robotic_systems');
-    }
-    
-    /**
-     * Calculate production skill from production_efficiency research tree
-     */
-    calculateProductionSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.production_efficiency;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'production_efficiency');
-    }
-    
-    /**
-     * Calculate recycling skill from recycling_efficiency research tree
-     */
-    calculateRecyclingSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.recycling_efficiency;
-        if (!tree) return 0.75;  // Base 75%
-        
-        const multiplier = this.calculateBonusFromTree(researchState, tree, currentTime, 'recycling_efficiency');
-        return 0.75 * multiplier;  // Start from 75%, multiply with research
-    }
-    
-    /**
-     * Calculate energy collection skill
-     */
-    calculateEnergyCollectionSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.energy_collection;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'energy_collection');
-    }
-    
-    /**
-     * Calculate energy storage skill
-     */
-    calculateEnergyStorageSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.energy_storage;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'energy_storage');
-    }
-    
-    /**
-     * Calculate energy transport skill
-     */
-    calculateEnergyTransportSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.energy_transport;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'energy_transport');
-    }
-    
-    /**
-     * Calculate Dyson construction skill
-     */
-    calculateDysonConstructionSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.dyson_swarm_construction;
-        if (!tree) return 1.0;
-        
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'dyson_swarm_construction');
-    }
-    
-    /**
-     * Calculate computer skills (4 sub-skills + geometric mean)
-     */
-    calculateComputerSkills(researchState, currentTime) {
-        // Computer systems are now separate trees
-        const processingTree = this.researchTrees?.computer_processing;
-        const gpuTree = this.researchTrees?.computer_gpu;
-        const interconnectTree = this.researchTrees?.computer_interconnect;
-        const interfaceTree = this.researchTrees?.computer_interface;
-        
-        const processing = processingTree ? 
-            this.calculateSkillFromTree(researchState, processingTree, currentTime, 1.0, 'computer_processing') : 1.0;
-        const gpu = gpuTree ? 
-            this.calculateSkillFromTree(researchState, gpuTree, currentTime, 1.0, 'computer_gpu') : 1.0;
-        const interconnect = interconnectTree ? 
-            this.calculateSkillFromTree(researchState, interconnectTree, currentTime, 1.0, 'computer_interconnect') : 1.0;
-        const interface_skill = interfaceTree ? 
-            this.calculateSkillFromTree(researchState, interfaceTree, currentTime, 1.0, 'computer_interface') : 1.0;
-        
-        // Geometric mean of all 4 components
-        const total = Math.pow(processing * gpu * interconnect * interface_skill, 0.25);
-        
-        return {
-            processing,
-            gpu,
-            interconnect,
-            interface: interface_skill,
-            transmission: interconnect, // Legacy alias
-            memory: gpu, // Legacy alias (GPU handles parallel/memory operations)
-            total
         };
     }
     
@@ -308,7 +189,7 @@ class SkillsCalculator {
      * @param {Object} tree - Research tree definition
      * @param {number} currentTime - Current time in days (not used, kept for compatibility)
      * @param {string} treeId - Tree ID (key in research_trees object)
-     * @returns {number} Total multiplier (1.0 to ~3.18x when fully researched)
+     * @returns {number} Total multiplier (1.0 to ~6.5x when fully researched with 20 tiers)
      */
     calculateBonusFromTree(researchState, tree, currentTime, treeId = null) {
         if (!tree || !tree.tiers) return 1.0; // Return 1.0 (no change) instead of 0.0
@@ -318,13 +199,14 @@ class SkillsCalculator {
         const treeState = researchState[lookupKey] || {};
         let totalMultiplier = 1.0; // Start at 1.0 for multiplicative compounding
         
-        // Default tier multiplier: 1.1228x (~12.3% per tier)
-        // At 8/10 tiers with all skills maxed: mass driver muzzle velocity ≈ 45 km/s
+        // Default tier multiplier: 1.1228x per tier (~12.3% per tier)
+        // Per-tranche: 1.1228^(1/10) ≈ 1.01162, full tier: 1.1228x
+        // Full tree (20 tiers): 1.1228^20 ≈ 10.5x (but with decay, ~6.5x)
         const DEFAULT_TIER_MULTIPLIER = 1.1228;
         const DEFAULT_TRANCHES_PER_TIER = 10;
         
         // Research exponential decay factor: each tier's benefit is multiplied by this
-        // At tier 9 (index 8): 0.857^8 ≈ 0.30 (30% of tier 1's benefit)
+        // At tier 19 (index 18): 0.857^18 ≈ 0.05 (5% of tier 1's benefit)
         const RESEARCH_EXPONENTIAL_DECAY_FACTOR = 0.857;
         
         for (let tierIndex = 0; tierIndex < tree.tiers.length; tierIndex++) {
@@ -341,7 +223,7 @@ class SkillsCalculator {
             const baseTierMultiplier = tier.tier_multiplier || DEFAULT_TIER_MULTIPLIER;
             
             // Apply exponential decay: higher tiers give less benefit
-            // Tier 1 (index 0): full benefit, Tier 9 (index 8): ~30% benefit
+            // Tier 1 (index 0): full benefit, Tier 19 (index 18): ~5% benefit
             const decayFactor = Math.pow(RESEARCH_EXPONENTIAL_DECAY_FACTOR, tierIndex);
             
             // The benefit portion (multiplier - 1) is decayed, then added back to 1
@@ -365,105 +247,80 @@ class SkillsCalculator {
         return totalMultiplier;
     }
     
+    // ========================================
+    // SKILL CALCULATION METHODS (12 skills)
+    // ========================================
     
-    // New skill calculation methods
-    
-    calculateThrustSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.thrust_systems;
+    calculatePropulsionSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.propulsion;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'thrust_systems');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'propulsion');
     }
     
-    calculateManipulationSkill(researchState, currentTime) {
-        // Maps to robotic_systems for now
-        const tree = this.researchTrees?.robotic_systems;
+    calculateRoboticsSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.robotics;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'robotic_systems');
-    }
-    
-    calculateStrengthSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.actuator_systems;
-        if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'actuator_systems');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'robotics');
     }
     
     calculateMaterialsSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.materials_science;
+        const tree = this.researchTrees?.materials;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'materials_science');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'materials');
     }
     
-    calculateSolarPVSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.energy_collection;
+    calculateStructuresSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.structures;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'energy_collection');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'structures');
     }
     
-    calculateRadiatorSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.thermal_management;
+    calculateGenerationSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.generation;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'thermal_management');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'generation');
     }
     
-    calculateHeatPumpSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.heat_pump_systems;
+    calculateStorageDensitySkill(researchState, currentTime) {
+        const tree = this.researchTrees?.storage_density;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'heat_pump_systems');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'storage_density');
     }
     
-    calculateBatteryDensitySkill(researchState, currentTime) {
-        const tree = this.researchTrees?.energy_storage;
+    calculateConversionSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.conversion;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'energy_storage');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'conversion');
     }
     
-    calculateThermalEfficiencySkill(researchState, currentTime) {
-        // Can use thermal_management or separate tree
-        const tree = this.researchTrees?.thermal_management;
+    calculateTransmissionSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.transmission;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'thermal_management');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'transmission');
     }
     
-    calculateEnergyConverterSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.energy_conversion;
+    calculateArchitectureSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.architecture;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'energy_conversion');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'architecture');
     }
     
-    calculateCPUSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.computer_processing;
+    calculateProcessorSkill(researchState, currentTime) {
+        const tree = this.researchTrees?.processor;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'computer_processing');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'processor');
     }
     
-    calculateGPUSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.computer_gpu;
+    calculateMemorySkill(researchState, currentTime) {
+        const tree = this.researchTrees?.memory;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'computer_gpu');
-    }
-    
-    calculateInterconnectSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.computer_interconnect;
-        if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'computer_interconnect');
-    }
-    
-    calculateIOBandwidthSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.computer_interface;
-        if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'computer_interface');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'memory');
     }
     
     calculateSensorsSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.sensor_systems;
+        const tree = this.researchTrees?.sensors;
         if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'sensor_systems');
-    }
-    
-    calculateLearningSkill(researchState, currentTime) {
-        const tree = this.researchTrees?.machine_learning;
-        if (!tree) return 1.0;
-        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'machine_learning');
+        return this.calculateSkillFromTree(researchState, tree, currentTime, 1.0, 'sensors');
     }
 }
 
@@ -471,4 +328,3 @@ class SkillsCalculator {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = SkillsCalculator;
 }
-

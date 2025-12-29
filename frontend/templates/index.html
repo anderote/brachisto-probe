@@ -38,6 +38,8 @@
             <div id="zone-hover-tooltip" class="zone-hover-tooltip" style="display: none;"></div>
             <!-- Transfer Info Overlay (shown when tracking a transfer with 't' key) -->
             <div id="transfer-info-overlay" class="transfer-info-overlay" style="display: none;"></div>
+            <!-- Planet/Moon Info Overlay (shown when tracking a planet/moon) -->
+            <div id="planet-moon-info-overlay" class="transfer-info-overlay" style="display: none;"></div>
             <!-- Command Panel - Center Left (separate window) -->
             <div id="command-panel-column" class="command-panel-column">
                 <div id="command-panel-content"></div>
@@ -149,6 +151,10 @@
                 <div id="game-menu-content">
                     <h3 style="margin-bottom: 15px; color: #4a9eff; text-align: center;">New Game</h3>
                     <div class="difficulty-buttons" style="display: flex; gap: 15px; margin-bottom: 25px;">
+                        <button id="endgame-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Endgame</div>
+                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">1000 Probes<br>10 Power Stations<br>10 Data Centers<br>2 Mass Drivers<br>50% Dyson Complete</div>
+                        </button>
                         <button id="easy-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
                             <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Easy</div>
                             <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">100 Probes<br>10 Power Stations<br>10 Data Centers<br>1 Mass Driver</div>
@@ -332,6 +338,7 @@
     <script src="/static/js/ui/resource_display.js?v=2"></script>
     <script src="/static/js/ui/probe_allocation.js"></script>
     <script src="/static/js/ui/orbital_zone_selector.js"></script>
+    <script src="/static/js/ui/trajectory_planner.js"></script>
     <script src="/static/js/ui/energy_display.js"></script>
     <script src="/static/js/ui/scripting_window.js"></script>
     <script src="/static/js/ui/leaderboard.js"></script>

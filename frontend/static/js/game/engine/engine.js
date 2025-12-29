@@ -1603,7 +1603,8 @@ class GameEngine {
      */
     createTransfer(actionData) {
         const { from_zone, to_zone, resource_type = 'probe', probe_type = 'probe', 
-                probe_count, metal_kg, transfer_type = 'one-time', rate } = actionData;
+                probe_count, metal_kg, transfer_type = 'one-time', rate, computed_delta_v,
+                trajectory_points_au, backend_transfer_time_days } = actionData;
         
         // Handle one-time vs continuous
         if (transfer_type === 'one-time') {
@@ -1619,6 +1620,8 @@ class GameEngine {
                 }
                 
                 // Create transfer with current propulsion skill (now returns {success, transfer, error})
+                // Pass computed_delta_v for real-time trajectory validation
+                // Pass backend_transfer_time_days for speed bonus calculation
                 const transferResult = this.transferSystem.createTransfer(
                     this.state, 
                     from_zone, 
@@ -1627,7 +1630,11 @@ class GameEngine {
                     probe_type, 
                     probe_count, 
                     this.state.skills,
-                    'one-time'
+                    'one-time',
+                    0,  // ratePercentage
+                    computed_delta_v,  // actual computed delta-v from backend
+                    trajectory_points_au,  // trajectory points from planner
+                    backend_transfer_time_days  // backend transfer time for speed bonus
                 );
                 
                 if (!transferResult.success) {
@@ -1714,7 +1721,10 @@ class GameEngine {
                     0, // resource_count not used for continuous
                     this.state.skills,
                     'continuous',
-                    ratePercentage
+                    ratePercentage,
+                    computed_delta_v,  // computed delta-v from backend
+                    null,  // trajectory_points_au (not needed for continuous)
+                    backend_transfer_time_days  // backend transfer time for speed bonus
                 );
                 
                 if (!transferResult.success) {

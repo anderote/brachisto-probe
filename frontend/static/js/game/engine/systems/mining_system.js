@@ -143,14 +143,6 @@ class MiningSystem {
             
             // Add slag to global pool (for global tracking, but also stored per-zone)
             newState.slag = (newState.slag || 0) + slagProduced;
-            
-            // Debug logging - log mining activity every 1000 ticks
-            if (newState.tick % 1000 === 0 && actualMassExtracted > 0) {
-                console.log(`[Mining] ${zoneId}: ${miningProbes.toFixed(2)} probes mining, rate=${totalMassMiningRate.toFixed(2)} kg/day, ` +
-                    `throttle=${energyThrottle.toFixed(2)}, extracted=${actualMassExtracted.toFixed(2)} kg, ` +
-                    `metal=${metalExtracted.toFixed(2)} kg, slag=${slagProduced.toFixed(2)} kg, ` +
-                    `stored_metal=${zone.stored_metal.toFixed(2)} kg`);
-            }
         }
         
         newState.zones = zones;

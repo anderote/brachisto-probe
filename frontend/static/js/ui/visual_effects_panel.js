@@ -57,6 +57,12 @@ class VisualEffectsPanel {
         setTimeout(() => this.syncFromScene(), 500);
     }
     
+    syncFromScene() {
+        // Sync initial values from scene if available
+        // This is a placeholder - can be implemented if needed to read current scene values
+        // For now, we use the default values set in the constructor
+    }
+    
     _isInputFocused() {
         const activeElement = document.activeElement;
         return activeElement.tagName === 'INPUT' || 

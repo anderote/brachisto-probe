@@ -624,6 +624,52 @@ class OrbitalMechanics {
     }
     
     /**
+     * Apply speed bonus to backend solver transfer time based on excess delta-v
+     * Takes the optimized transfer time from backend solver and improves it with excess delta-v.
+     * Uses logarithmic scaling for diminishing returns - more delta-v helps but with decreasing benefit.
+     * 
+     * @param {number} baseTransferTimeDays - Base transfer time from backend solver (days)
+     * @param {number} requiredDeltaVKmS - Required delta-v for the transfer (km/s)
+     * @param {Object} skills - Current skills
+     * @param {number} massDriverMuzzleVelocity - Mass driver muzzle velocity in km/s (0 if no mass driver)
+     * @param {number} fromZoneMass - Current mass of source zone in kg (optional)
+     * @param {number} probeDvBonus - Probe delta-v bonus from starting skill points (km/s)
+     * @param {string} fromZoneId - Source zone (for escape velocity calculation)
+     * @param {string} toZoneId - Destination zone (for reachability info)
+     * @returns {number} Improved transfer time in days (reduced by excess delta-v speed bonus)
+     */
+    applySpeedBonusToBackendTime(baseTransferTimeDays, requiredDeltaVKmS, skills, massDriverMuzzleVelocity = 0, fromZoneMass = null, probeDvBonus = 0, fromZoneId = null, toZoneId = null) {
+        if (!baseTransferTimeDays || baseTransferTimeDays <= 0 || !isFinite(baseTransferTimeDays)) {
+            return baseTransferTimeDays; // Return as-is if invalid
+        }
+        
+        // Get combined capacity (probe + mass driver + probe dv bonus)
+        const totalCapacity = this.getCombinedDeltaVCapacity(skills, massDriverMuzzleVelocity, probeDvBonus);
+        
+        // Calculate excess delta-v for speed bonus
+        // Excess = capacity beyond what's required for the transfer
+        const excessDeltaV = this.getExcessDeltaV(totalCapacity, requiredDeltaVKmS);
+        
+        // Apply speed bonus from excess delta-v
+        // Using logarithmic scaling so the bonus doesn't become too extreme
+        // With 0 excess: speed multiplier = 1.0 (no change)
+        // With 5 km/s excess: speed multiplier ≈ 1.7 (41% faster)
+        // With 10 km/s excess: speed multiplier ≈ 2.3 (57% faster)
+        // With 20 km/s excess: speed multiplier ≈ 3.0 (67% faster)
+        const EXCESS_DV_SCALE = 7.5; // km/s that gives ~2x speed bonus
+        let speedMultiplier = 1.0;
+        if (excessDeltaV > 0) {
+            speedMultiplier = 1.0 + Math.log(1 + excessDeltaV / EXCESS_DV_SCALE);
+        }
+        
+        // Final transfer time (reduced by speed bonus)
+        // Cap the speed improvement to prevent unrealistic times (minimum 20% of base time)
+        const improvedTime = Math.max(baseTransferTimeDays / speedMultiplier, baseTransferTimeDays * 0.2);
+        
+        return improvedTime;
+    }
+    
+    /**
      * Calculate transfer time with speed bonus from excess delta-v
      * Uses Kepler's third law for correct Hohmann transfer time, then applies speed bonus.
      * 

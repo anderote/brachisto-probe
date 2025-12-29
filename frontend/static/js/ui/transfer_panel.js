@@ -185,9 +185,9 @@ class TransferPanel {
     render() {
         if (!this.container) return;
 
-        // Filter to only show active transfers (active or in-progress)
+        // Filter to only show active transfers (active, in-progress, paused, or stopping)
         const activeTransfers = this.transferHistory.filter(t => 
-            t.status === 'active' || t.status === 'in-progress' || t.status === 'paused'
+            t.status === 'active' || t.status === 'in-progress' || t.status === 'paused' || t.status === 'stopping'
         );
 
         let html = '<div class="transfer-panel-content">';
@@ -258,7 +258,9 @@ class TransferPanel {
         const fromName = this.getZoneName(transfer.from);
         const toName = this.getZoneName(transfer.to);
         const statusClass = transfer.status === 'active' ? 'active' : 
-                           transfer.status === 'in-progress' ? 'in-progress' : 'completed';
+                           transfer.status === 'in-progress' ? 'in-progress' :
+                           transfer.status === 'stopping' ? 'stopping' :
+                           transfer.status === 'paused' ? 'paused' : 'completed';
         
         let html = `<div class="transfer-item ${statusClass}" data-transfer-id="${transfer.id}">`;
         html += `<div class="transfer-item-header">`;
@@ -335,12 +337,18 @@ class TransferPanel {
                 html += `</div>`;
             }
             
-            if (transfer.status === 'active') {
+            if (transfer.status === 'active' || transfer.status === 'paused') {
                 html += `<div class="transfer-item-actions">`;
                 html += `<button class="transfer-action-btn edit-btn" data-action="edit" data-transfer-id="${transfer.id}">Edit</button>`;
                 html += `<button class="transfer-action-btn reverse-btn" data-action="reverse" data-transfer-id="${transfer.id}">Reverse</button>`;
-                html += `<button class="transfer-action-btn pause-btn" data-action="pause" data-transfer-id="${transfer.id}">Pause</button>`;
+                const pauseLabel = transfer.status === 'paused' ? 'Resume' : 'Pause';
+                html += `<button class="transfer-action-btn pause-btn" data-action="pause" data-transfer-id="${transfer.id}">${pauseLabel}</button>`;
                 html += `<button class="transfer-action-btn delete-btn" data-action="delete" data-transfer-id="${transfer.id}">Delete</button>`;
+                html += `</div>`;
+            } else if (transfer.status === 'stopping') {
+                // Show info about stopping - no actions available
+                html += `<div class="transfer-stopping-info" style="font-size: 9px; color: rgba(255, 200, 100, 0.8); padding: 4px 0; font-style: italic;">`;
+                html += `Completing ${transfer.in_transit?.length || 0} shipment${transfer.in_transit?.length !== 1 ? 's' : ''} in transit...`;
                 html += `</div>`;
             }
         }
@@ -488,6 +496,7 @@ class TransferPanel {
             hash = ((hash << 5) - hash) + (transfer.metal_rate_percentage || 0);
             hash = ((hash << 5) - hash) + (transfer.status === 'completed' ? 1 : 0);
             hash = ((hash << 5) - hash) + (transfer.paused ? 1 : 0);
+            hash = ((hash << 5) - hash) + (transfer.stopping ? 2 : 0);
             hash = ((hash << 5) - hash) + (transfer.resource_type === 'metal' ? 2 : 1);
             // Include in_transit count for continuous transfers
             hash = ((hash << 5) - hash) + (transfer.in_transit ? transfer.in_transit.length : 0);
@@ -523,11 +532,18 @@ class TransferPanel {
                 existing.arrival_time = activeTransfer.arrival_time !== undefined ? activeTransfer.arrival_time : existing.arrival_time;
                 // Sync in-transit batches for continuous transfers
                 existing.in_transit = activeTransfer.in_transit || [];
+                // Sync stopping flag
+                existing.stopping = activeTransfer.stopping || false;
                 if (activeTransfer.type === 'one-time') {
                     existing.status = activeTransfer.status === 'completed' ? 'completed' : 
                                      activeTransfer.status === 'paused' ? 'paused' : 'in-progress';
                 } else {
-                    existing.status = activeTransfer.paused ? 'paused' : 'active';
+                    // Check for stopping state (graceful cancellation)
+                    if (activeTransfer.stopping) {
+                        existing.status = 'stopping';
+                    } else {
+                        existing.status = activeTransfer.paused ? 'paused' : 'active';
+                    }
                 }
             } else {
                 // Add new transfer
@@ -546,10 +562,12 @@ class TransferPanel {
                     departure_time: activeTransfer.departure_time || 0,
                     arrival_time: activeTransfer.arrival_time || 0,
                     in_transit: activeTransfer.in_transit || [],
+                    stopping: activeTransfer.stopping || false,
                     status: activeTransfer.type === 'one-time' ? 
                            (activeTransfer.status === 'completed' ? 'completed' : 
                             activeTransfer.status === 'paused' ? 'paused' : 'in-progress') :
-                           (activeTransfer.paused ? 'paused' : 'active'),
+                           (activeTransfer.stopping ? 'stopping' : 
+                            activeTransfer.paused ? 'paused' : 'active'),
                     startTime: activeTransfer.departure_time ? activeTransfer.departure_time * 86400000 : Date.now(),
                     completedTime: activeTransfer.status === 'completed' && activeTransfer.arrival_time ? 
                                   activeTransfer.arrival_time * 86400000 : null

@@ -32,6 +32,7 @@ function createInitialGameState(config = {}) {
         skill_bonuses: {
             mass_driver_dv_bonus: skillBonuses.mass_driver_dv_bonus || 0,    // km/s added to mass driver velocity
             probe_dv_bonus: skillBonuses.probe_dv_bonus || 0,                // km/s added to probe delta-v
+            propulsion_isp_bonus: skillBonuses.propulsion_isp_bonus || 0,    // seconds added to base ISP
             mining_rate_bonus: skillBonuses.mining_rate_bonus || 0,          // kg/day added to base mining rate
             replication_rate_bonus: skillBonuses.replication_rate_bonus || 0, // kg/day added to base build rate
             compute_bonus: skillBonuses.compute_bonus || 1.0,                // Multiplier for intelligence skills
@@ -42,7 +43,8 @@ function createInitialGameState(config = {}) {
         // Tech Tree - New unified research/skills system
         tech_tree: {
             // Research state: treeId -> { tierId -> { tranches_completed, progress, enabled, ... } }
-            research_state: {},
+            // Supports initial_research_state from config for difficulty presets
+            research_state: config.initial_research_state || {},
             // Cached skill values (updated when research changes)
             skills_cache: {},
             // Cached category factors (geometric mean of trees in each category)
@@ -141,15 +143,19 @@ function createInitialGameState(config = {}) {
         // }
         zones: {},
         
-        // Research progress
-        research: {},
+        // Research progress (legacy format, also uses initial_research_state for backwards compatibility)
+        research: config.initial_research_state || {},
         
         // Dyson sphere
-        dyson_sphere: {
-            target_mass: config.dyson_target_mass || 20e22,  // kg
-            mass: 0,  // kg - Start at 0% complete
-            progress: 0           // 0-1 - Start at 0% complete
-        },
+        dyson_sphere: (() => {
+            const targetMass = config.dyson_target_mass || 20e22;
+            const initialMass = config.initial_dyson_mass || 0;
+            return {
+                target_mass: targetMass,  // kg
+                mass: initialMass,  // kg - Start at configured mass (default 0)
+                progress: targetMass > 0 ? Math.min(1.0, initialMass / targetMass) : 0  // 0-1 - Calculated from mass/target_mass
+            };
+        })(),
         
         // Active transfers
         active_transfers: [],

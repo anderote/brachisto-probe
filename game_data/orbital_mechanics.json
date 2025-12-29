@@ -121,8 +121,9 @@
       "mining_rate_multiplier": 2.5,
       "mining_energy_cost_multiplier": 2.5,
       "escape_delta_v_km_s": 0.2,
-      "body_radius_km": 0,
-      "low_orbit_altitude_km": 0
+      "body_radius_km": 473,
+      "low_orbit_altitude_km": 50,
+      "home_planet": "ceres"
     },
     {
       "id": "jupiter",
@@ -226,8 +227,9 @@
       "mining_rate_multiplier": 1.0,
       "mining_energy_cost_multiplier": 1.2,
       "escape_delta_v_km_s": 0.1,
-      "body_radius_km": 0,
-      "low_orbit_altitude_km": 0
+      "body_radius_km": 1188,
+      "low_orbit_altitude_km": 100,
+      "home_planet": "pluto"
     },
     {
       "id": "oort_cloud",

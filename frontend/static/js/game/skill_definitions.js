@@ -3,193 +3,115 @@
  * 
  * Master mapping of skill names to research trees.
  * This is the canonical source of truth for all skills in the game.
+ * 
+ * Simplified to 12 core skills (4 per category) with 20 tiers each.
  */
 
 const SKILL_DEFINITIONS = {
     // ============================================
-    // DEXTERITY SKILLS (9 trees)
+    // DEXTERITY SKILLS (4 trees)
     // ============================================
-    strength: {
-        displayName: 'Actuator Strength',
+    propulsion: {
+        displayName: 'Propulsion',
         category: 'dexterity',
-        treeId: 'actuator_systems',
-        description: 'Actuator torque and force multiplier',
+        treeId: 'propulsion',
+        description: 'Propulsion efficiency and ISP multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    dyson_construction: {
-        displayName: 'Dyson Construction',
+    robotics: {
+        displayName: 'Robotics',
         category: 'dexterity',
-        treeId: 'dyson_swarm_construction',
-        description: 'Dyson sphere/swarm construction efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    locomotion: {
-        displayName: 'Locomotion',
-        category: 'dexterity',
-        treeId: 'locomotion_systems',
-        description: 'Fine movement and positioning efficiency',
+        treeId: 'robotics',
+        description: 'Robotic manipulation and dexterity multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
     materials: {
         displayName: 'Materials Science',
         category: 'dexterity',
-        treeId: 'materials_science',
-        description: 'Material strength and durability',
+        treeId: 'materials',
+        description: 'Material strength and durability multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    production: {
-        displayName: 'Production Efficiency',
+    structures: {
+        displayName: 'Structures',
         category: 'dexterity',
-        treeId: 'production_efficiency',
-        description: 'Manufacturing rates and efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    propulsion: {
-        displayName: 'Propulsion',
-        category: 'dexterity',
-        treeId: 'propulsion_systems',
-        description: 'ISP and propulsion efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    recycling: {
-        displayName: 'Resource Recovery',
-        category: 'dexterity',
-        treeId: 'recycling_efficiency',
-        description: 'Material recovery and salvage efficiency',
-        baseValue: 0.75,  // Base 75% recovery
-        unit: 'percentage'
-    },
-    manipulation: {
-        displayName: 'Robotic Systems',
-        category: 'dexterity',
-        treeId: 'robotic_systems',
-        description: 'Robotic manipulation and dexterity',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    thrust: {
-        displayName: 'Thrust Systems',
-        category: 'dexterity',
-        treeId: 'thrust_systems',
-        description: 'Thrust power and efficiency',
+        treeId: 'structures',
+        description: 'Construction, manufacturing, and recycling efficiency multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
 
     // ============================================
-    // INTELLIGENCE SKILLS (7 trees)
+    // ENERGY SKILLS (4 trees)
     // ============================================
-    gpu: {
-        displayName: 'GPU Computing',
-        category: 'intelligence',
-        treeId: 'computer_gpu',
-        description: 'Parallel computation power',
+    generation: {
+        displayName: 'Energy Generation',
+        category: 'energy',
+        treeId: 'generation',
+        description: 'Solar energy collection and generation efficiency multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    interconnect: {
-        displayName: 'Interconnect',
-        category: 'intelligence',
-        treeId: 'computer_interconnect',
-        description: 'Data transmission bandwidth',
+    storage_density: {
+        displayName: 'Storage Density',
+        category: 'energy',
+        treeId: 'storage_density',
+        description: 'Battery energy density multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    io_bandwidth: {
-        displayName: 'I/O Interface',
-        category: 'intelligence',
-        treeId: 'computer_interface',
-        description: 'Interface and I/O bandwidth',
+    conversion: {
+        displayName: 'Energy Conversion',
+        category: 'energy',
+        treeId: 'conversion',
+        description: 'Energy conversion efficiency and thermal management multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    cpu: {
-        displayName: 'CPU Processing',
-        category: 'intelligence',
-        treeId: 'computer_processing',
-        description: 'Central processing power',
+    transmission: {
+        displayName: 'Energy Transmission',
+        category: 'energy',
+        treeId: 'transmission',
+        description: 'Wireless energy transmission efficiency multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    learning: {
-        displayName: 'Machine Learning',
+
+    // ============================================
+    // INTELLIGENCE SKILLS (4 trees)
+    // ============================================
+    architecture: {
+        displayName: 'Architecture',
         category: 'intelligence',
-        treeId: 'machine_learning',
-        description: 'Learning and adaptation efficiency',
+        treeId: 'architecture',
+        description: 'Computational architecture and system design multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
-    research_rate: {
-        displayName: 'Research Efficiency',
+    processor: {
+        displayName: 'Processor',
         category: 'intelligence',
-        treeId: 'research_rate_efficiency',
-        description: 'Research speed multiplier',
+        treeId: 'processor',
+        description: 'Central processing power multiplier',
+        baseValue: 1.0,
+        unit: 'multiplier'
+    },
+    memory: {
+        displayName: 'Memory',
+        category: 'intelligence',
+        treeId: 'memory',
+        description: 'Memory and data storage bandwidth multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     },
     sensors: {
-        displayName: 'Sensor Systems',
+        displayName: 'Sensors',
         category: 'intelligence',
-        treeId: 'sensor_systems',
-        description: 'Sensor signal-to-noise ratio',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-
-    // ============================================
-    // ENERGY SKILLS (6 trees)
-    // ============================================
-    solar_pv: {
-        displayName: 'Energy Collection',
-        category: 'energy',
-        treeId: 'energy_collection',
-        description: 'Solar energy collection efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    energy_converter: {
-        displayName: 'Energy Conversion',
-        category: 'energy',
-        treeId: 'energy_conversion',
-        description: 'Energy conversion efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    battery_density: {
-        displayName: 'Energy Storage',
-        category: 'energy',
-        treeId: 'energy_storage',
-        description: 'Battery energy density',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    energy_transport: {
-        displayName: 'Energy Transport',
-        category: 'energy',
-        treeId: 'energy_transport',
-        description: 'Wireless energy transmission efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    heat_pump: {
-        displayName: 'Heat Pump',
-        category: 'energy',
-        treeId: 'heat_pump_systems',
-        description: 'Heat pump efficiency',
-        baseValue: 1.0,
-        unit: 'multiplier'
-    },
-    radiator: {
-        displayName: 'Thermal Management',
-        category: 'energy',
-        treeId: 'thermal_management',
-        description: 'Thermal management and heat rejection',
+        treeId: 'sensors',
+        description: 'Sensor systems and communication bandwidth multiplier',
         baseValue: 1.0,
         unit: 'multiplier'
     }
@@ -222,12 +144,47 @@ const CATEGORY_DISPLAY_NAMES = {
     energy: 'Energy'
 };
 
-// Legacy skill aliases (for backward compatibility)
+// Legacy skill aliases (for backward compatibility with old save states)
 const SKILL_ALIASES = {
-    'robotic': 'manipulation',
-    'energy_collection': 'solar_pv',
-    'energy_storage': 'battery_density',
-    'thermal_efficiency': 'radiator',
+    // Old dexterity skills
+    'thrust': 'propulsion',
+    'locomotion': 'propulsion',
+    'manipulation': 'robotics',
+    'strength': 'robotics',
+    'production': 'structures',
+    'recycling': 'structures',
+    'dyson_construction': 'structures',
+    
+    // Old energy skills
+    'solar_pv': 'generation',
+    'pv_efficiency': 'generation',
+    'energy_collection': 'generation',
+    'battery_density': 'storage_density',
+    'energy_storage': 'storage_density',
+    'energy_converter': 'conversion',
+    'thermal_efficiency': 'conversion',
+    'radiator': 'conversion',
+    'heat_pump': 'conversion',
+    'energy_transport': 'transmission',
+    
+    // Old intelligence skills
+    'cpu': 'processor',
+    'gpu': 'processor',
+    'computer_processing': 'processor',
+    'computer_gpu': 'processor',
+    'interconnect': 'sensors',
+    'io_bandwidth': 'memory',
+    'computer_interface': 'memory',
+    'computer_interconnect': 'sensors',
+    'learning': 'architecture',
+    'machine_learning': 'architecture',
+    'research_rate': 'architecture',
+    'research_rate_efficiency': 'architecture',
+    'substrate': 'architecture',
+    'sensor_systems': 'sensors',
+    
+    // Legacy computed skills
+    'robotic': 'robotics',
     'acds': null  // ACDS is computed, not from a tree
 };
 
@@ -279,4 +236,3 @@ if (typeof module !== 'undefined' && module.exports) {
         getSkillForTreeId
     };
 }
-

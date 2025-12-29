@@ -20,7 +20,10 @@ class SceneManager {
         this.infoKeyPressed = false; // Track if 'i' key was just pressed (to avoid rapid toggling)
         this.orbitalLinesVisible = true; // Current visibility state of orbital lines
         this.transferInfoVisible = true; // Current visibility state of transfer info overlay
-        this.trackingMode = null; // 'comet', 'transfer', or null
+        this.trackingMode = null; // 'comet', 'transfer', 'planet', or null
+        this.currentPlanetMoonIndex = -1; // -1 = planet, 0+ = moon index
+        this.currentPlanetZoneId = null; // Currently tracked planet zone ID
+        this.planetMoonInfoVisible = false; // Current visibility state of planet/moon info overlay
         
         // Post-processing
         this.composer = null;
@@ -228,7 +231,7 @@ class SceneManager {
         // Update camera controller
         const deltaTime = 0.016; // ~60fps
 
-        // Handle arrow keys for comet/transfer navigation when tracking
+        // Handle arrow keys for comet/transfer/planet navigation when tracking
         if (this.keys['ArrowLeft']) {
             if (this.trackingMode === 'comet' && !this.arrowLeftPressed) {
                 // Navigate to previous comet
@@ -238,6 +241,10 @@ class SceneManager {
                 // Navigate to previous transfer
                 this.arrowLeftPressed = true;
                 this.cycleToPreviousTransfer();
+            } else if (this.trackingMode === 'planet' && !this.arrowLeftPressed) {
+                // Navigate to previous planet/moon
+                this.arrowLeftPressed = true;
+                this.cycleToPreviousPlanetMoon();
             }
         } else {
             this.arrowLeftPressed = false;
@@ -251,23 +258,29 @@ class SceneManager {
                 // Navigate to next transfer
                 this.arrowRightPressed = true;
                 this.cycleToNextTransfer();
+            } else if (this.trackingMode === 'planet' && !this.arrowRightPressed) {
+                // Navigate to next planet/moon
+                this.arrowRightPressed = true;
+                this.cycleToNextPlanetMoon();
             }
         } else {
             this.arrowRightPressed = false;
         }
         
-        // WASD for panning
+        // WASD for solar-centric movement
+        // W/S: Move radially outward/inward from the sun
+        // A/D: Orbit clockwise/counter-clockwise around the sun
         if (this.keys['a'] || this.keys['A']) {
-            this.cameraController.pan(-1, 0, deltaTime);
+            this.cameraController.moveOrbital(-1, deltaTime); // Clockwise
         }
         if (this.keys['d'] || this.keys['D']) {
-            this.cameraController.pan(1, 0, deltaTime);
+            this.cameraController.moveOrbital(1, deltaTime); // Counter-clockwise
         }
         if (this.keys['w'] || this.keys['W']) {
-            this.cameraController.pan(0, 1, deltaTime);
+            this.cameraController.moveRadial(1, deltaTime); // Outward from sun
         }
         if (this.keys['s'] || this.keys['S']) {
-            this.cameraController.pan(0, -1, deltaTime);
+            this.cameraController.moveRadial(-1, deltaTime); // Inward towards sun
         }
         
         // Handle 'c' key to start tracking comets (only if not already tracking comets)
@@ -302,11 +315,15 @@ class SceneManager {
             this.tabKeyPressed = false;
         }
         
-        // Handle 'i' key to toggle transfer info overlay visibility (only when tracking transfers)
+        // Handle 'i' key to toggle transfer/planet/comet info overlay visibility
         if ((this.keys['i'] || this.keys['I']) && !this.infoKeyPressed) {
             this.infoKeyPressed = true;
             if (this.trackingMode === 'transfer') {
                 this.toggleTransferInfo();
+            } else if (this.trackingMode === 'planet') {
+                this.togglePlanetMoonInfo();
+            } else if (this.trackingMode === 'comet') {
+                this.toggleCometInfo();
             }
         } else if (!this.keys['i'] && !this.keys['I']) {
             this.infoKeyPressed = false;
@@ -323,6 +340,16 @@ class SceneManager {
         // Update transfer info overlay with real-time values
         if (this.trackingMode === 'transfer') {
             this.updateTransferInfoRealtime();
+        }
+        
+        // Update planet/moon info overlay with real-time values
+        if (this.trackingMode === 'planet') {
+            this.updatePlanetMoonInfoRealtime();
+        }
+        
+        // Update comet info overlay with real-time values
+        if (this.trackingMode === 'comet') {
+            this.updateCometInfoRealtime();
         }
 
         // Update god rays light position based on sun's screen position
@@ -488,6 +515,19 @@ class SceneManager {
         }
         this.currentCometIndex = -1;
         this.currentTransferIndex = -1;
+        
+        // Hide planet/moon info if we were tracking a planet
+        if (this.trackingMode === 'planet') {
+            this.hidePlanetMoonInfo();
+            this.currentPlanetZoneId = null;
+            this.currentPlanetMoonIndex = -1;
+        }
+        
+        // Hide comet info if we were tracking a comet
+        if (this.trackingMode === 'comet') {
+            this.hideCometInfo();
+        }
+        
         this.trackingMode = null;
         this.hideTransferInfo();
     }
@@ -777,6 +817,418 @@ class SceneManager {
             return `Year ${years}, Day ${remainingDays}`;
         }
     }
+    
+    /**
+     * Start tracking a planet or moon when a zone is selected
+     * Called when user selects a zone that has a planet/moon system
+     * @param {string} zoneId - Zone ID of the planet
+     */
+    startPlanetMoonTracking(zoneId) {
+        if (!this.solarSystem || !this.solarSystem.planets || !this.solarSystem.planets[zoneId]) {
+            return;
+        }
+        
+        // Reset other tracking modes
+        this.currentCometIndex = -1;
+        this.currentTransferIndex = -1;
+        this.hideTransferInfo();
+        
+        // Start tracking planet (index -1 means planet, 0+ means moon)
+        this.currentPlanetZoneId = zoneId;
+        this.currentPlanetMoonIndex = -1; // Start with planet
+        this.trackingMode = 'planet';
+        
+        // Show planet/moon info overlay
+        this.showPlanetMoonInfo();
+        
+        // Start tracking the planet
+        this.startTracking(() => {
+            return this.getPlanetMoonPosition(zoneId, -1);
+        });
+    }
+    
+    /**
+     * Get the current position of a planet or moon
+     * @param {string} zoneId - Zone ID of the planet
+     * @param {number} moonIndex - Moon index (-1 for planet, 0+ for moon)
+     * @returns {THREE.Vector3|null} Position of the planet/moon
+     */
+    getPlanetMoonPosition(zoneId, moonIndex) {
+        if (!this.solarSystem) return null;
+        
+        if (moonIndex === -1) {
+            // Get planet position
+            const planet = this.solarSystem.planets[zoneId];
+            if (planet && planet.position) {
+                return planet.position.clone();
+            }
+        } else {
+            // Get moon position
+            const moons = this.solarSystem.moons[zoneId];
+            if (moons && moons[moonIndex] && moons[moonIndex].position) {
+                return moons[moonIndex].position.clone();
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Cycle to next planet/moon (right arrow)
+     */
+    cycleToNextPlanetMoon() {
+        if (!this.currentPlanetZoneId || !this.solarSystem) return;
+        
+        const moons = this.solarSystem.moons[this.currentPlanetZoneId] || [];
+        
+        // Move to next object: -1 (planet) -> 0 (first moon) -> ... -> last moon -> -1 (planet)
+        if (this.currentPlanetMoonIndex === -1) {
+            // Currently on planet, go to first moon (if any)
+            this.currentPlanetMoonIndex = moons.length > 0 ? 0 : -1;
+        } else {
+            // Currently on a moon
+            if (this.currentPlanetMoonIndex < moons.length - 1) {
+                // Go to next moon
+                this.currentPlanetMoonIndex++;
+            } else {
+                // Last moon, wrap to planet
+                this.currentPlanetMoonIndex = -1;
+            }
+        }
+        
+        // Update tracking
+        this.startTracking(() => {
+            return this.getPlanetMoonPosition(this.currentPlanetZoneId, this.currentPlanetMoonIndex);
+        });
+        
+        // Update info overlay
+        this.showPlanetMoonInfo();
+    }
+    
+    /**
+     * Cycle to previous planet/moon (left arrow)
+     */
+    cycleToPreviousPlanetMoon() {
+        if (!this.currentPlanetZoneId || !this.solarSystem) return;
+        
+        const moons = this.solarSystem.moons[this.currentPlanetZoneId] || [];
+        const totalObjects = 1 + moons.length; // Planet + moons
+        
+        // Move to previous object
+        if (this.currentPlanetMoonIndex === -1) {
+            // Currently on planet, go to last moon
+            this.currentPlanetMoonIndex = moons.length > 0 ? moons.length - 1 : -1;
+        } else {
+            // Currently on a moon
+            if (this.currentPlanetMoonIndex === 0) {
+                // First moon, go to planet
+                this.currentPlanetMoonIndex = -1;
+            } else {
+                // Previous moon
+                this.currentPlanetMoonIndex--;
+            }
+        }
+        
+        // Update tracking
+        this.startTracking(() => {
+            return this.getPlanetMoonPosition(this.currentPlanetZoneId, this.currentPlanetMoonIndex);
+        });
+        
+        // Update info overlay
+        this.showPlanetMoonInfo();
+    }
+    
+    /**
+     * Toggle visibility of planet/moon info overlay
+     */
+    togglePlanetMoonInfo() {
+        this.planetMoonInfoVisible = !this.planetMoonInfoVisible;
+        
+        const overlay = document.getElementById('planet-moon-info-overlay');
+        if (overlay) {
+            if (this.planetMoonInfoVisible && this.trackingMode === 'planet') {
+                overlay.style.display = 'block';
+            } else {
+                overlay.style.display = 'none';
+            }
+        }
+        
+        console.log(`Planet/moon info ${this.planetMoonInfoVisible ? 'shown' : 'hidden'} (press I to toggle)`);
+    }
+    
+    /**
+     * Show planet/moon info overlay with details
+     */
+    showPlanetMoonInfo() {
+        const overlay = document.getElementById('planet-moon-info-overlay');
+        if (!overlay || !this.currentPlanetZoneId || !this.solarSystem) return;
+        
+        const zoneId = this.currentPlanetZoneId;
+        const moonIndex = this.currentPlanetMoonIndex;
+        const isPlanet = moonIndex === -1;
+        
+        // Get planet or moon data
+        let name, mass, radiusKm, orbitKm, periodDays, zoneData;
+        
+        if (isPlanet) {
+            // Planet data
+            const planet = this.solarSystem.planets[zoneId];
+            if (!planet) return;
+            
+            zoneData = this.solarSystem.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+            const planetInfo = this.solarSystem.planetData[zoneId];
+            
+            name = zoneData?.name?.replace(/\s+Orbit\s*$/i, '') || zoneId.charAt(0).toUpperCase() + zoneId.slice(1);
+            mass = planetInfo?.mass_kg || zoneData?.total_mass_kg || 0;
+            radiusKm = planetInfo?.radius_km || zoneData?.body_radius_km || 0;
+            orbitKm = planetInfo?.orbit_km || zoneData?.radius_km || 0;
+            periodDays = this.solarSystem.getOrbitalPeriod(zoneId);
+        } else {
+            // Moon data
+            const moons = this.solarSystem.moons[zoneId] || [];
+            const moon = moons[moonIndex];
+            if (!moon || !moon.userData) return;
+            
+            // Get moon data from userData (stored during creation)
+            const moonData = moon.userData.moonData;
+            if (!moonData) return;
+            
+            name = moonData.name || moon.userData.moonName || `Moon ${moonIndex + 1}`;
+            mass = moonData.mass_kg || 0;
+            radiusKm = moonData.radius_km || 0;
+            orbitKm = moonData.orbit_km || 0;
+            periodDays = moonData.period_days || 0;
+        }
+        
+        // Calculate orbital velocities
+        const velocityWrtSun = this.calculateOrbitalVelocityWrtSun(orbitKm, periodDays);
+        const velocityWrtHomePlanet = isPlanet ? 0 : this.calculateOrbitalVelocityWrtPlanet(orbitKm, periodDays, zoneId);
+        
+        // Format values
+        const formatMass = (kg) => {
+            if (kg >= 1e27) return (kg / 1e27).toFixed(2) + ' × 10²⁷ kg';
+            if (kg >= 1e24) return (kg / 1e24).toFixed(2) + ' × 10²⁴ kg';
+            if (kg >= 1e21) return (kg / 1e21).toFixed(2) + ' × 10²¹ kg';
+            if (kg >= 1e18) return (kg / 1e18).toFixed(2) + ' × 10¹⁸ kg';
+            if (kg >= 1e15) return (kg / 1e15).toFixed(2) + ' × 10¹⁵ kg';
+            return kg.toFixed(2) + ' kg';
+        };
+        
+        const formatDistance = (km) => {
+            if (km >= 1e9) return (km / 1e9).toFixed(2) + ' × 10⁹ km';
+            if (km >= 1e6) return (km / 1e6).toFixed(2) + ' × 10⁶ km';
+            if (km >= 1e3) return (km / 1e3).toFixed(2) + ' × 10³ km';
+            return km.toFixed(2) + ' km';
+        };
+        
+        const formatPeriod = (days) => {
+            if (days >= 365) {
+                const years = days / 365;
+                return `${years.toFixed(2)} years`;
+            }
+            return `${days.toFixed(2)} days`;
+        };
+        
+        // Build overlay content
+        let html = `<div class="transfer-info-line"><strong>${name}</strong></div>`;
+        if (mass > 0) {
+            html += `<div class="transfer-info-line">Mass: ${formatMass(mass)}</div>`;
+        }
+        if (radiusKm > 0) {
+            html += `<div class="transfer-info-line">Radius: ${formatDistance(radiusKm)}</div>`;
+        }
+        if (orbitKm > 0) {
+            html += `<div class="transfer-info-line">Orbit: ${formatDistance(orbitKm)}</div>`;
+        }
+        if (velocityWrtSun > 0) {
+            html += `<div class="transfer-info-line">Velocity (w.r.t. Sun): ${velocityWrtSun.toFixed(2)} km/s</div>`;
+        }
+        if (!isPlanet && velocityWrtHomePlanet > 0) {
+            html += `<div class="transfer-info-line">Velocity (w.r.t. ${this.formatZoneName(zoneId)}): ${velocityWrtHomePlanet.toFixed(2)} km/s</div>`;
+        }
+        if (periodDays > 0) {
+            html += `<div class="transfer-info-line">Orbital Period: ${formatPeriod(periodDays)}</div>`;
+        }
+        
+        const moons = this.solarSystem.moons[zoneId] || [];
+        const totalObjects = 1 + moons.length;
+        const currentIndex = moonIndex === -1 ? 1 : moonIndex + 2;
+        html += `<div class="transfer-info-nav">[${currentIndex}/${totalObjects}] ← → cycle | I toggle info | ESC exit</div>`;
+        
+        overlay.innerHTML = html;
+        
+        // Respect visibility toggle
+        overlay.style.display = this.planetMoonInfoVisible ? 'block' : 'none';
+    }
+    
+    /**
+     * Hide planet/moon info overlay
+     */
+    hidePlanetMoonInfo() {
+        const overlay = document.getElementById('planet-moon-info-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Update planet/moon info overlay with real-time values
+     */
+    updatePlanetMoonInfoRealtime() {
+        // For now, just refresh the info
+        // In the future, we could update velocities if they change
+        if (this.planetMoonInfoVisible) {
+            this.showPlanetMoonInfo();
+        }
+    }
+    
+    /**
+     * Calculate orbital velocity with respect to the Sun
+     * @param {number} orbitKm - Orbital distance in km
+     * @param {number} periodDays - Orbital period in days
+     * @returns {number} Velocity in km/s
+     */
+    calculateOrbitalVelocityWrtSun(orbitKm, periodDays) {
+        if (orbitKm <= 0 || periodDays <= 0) return 0;
+        
+        // v = 2πr / T
+        const periodSeconds = periodDays * 86400;
+        const circumference = 2 * Math.PI * orbitKm;
+        return circumference / periodSeconds;
+    }
+    
+    /**
+     * Calculate orbital velocity with respect to the home planet
+     * @param {number} orbitKm - Orbital distance in km
+     * @param {number} periodDays - Orbital period in days
+     * @param {string} planetZoneId - Zone ID of the planet
+     * @returns {number} Velocity in km/s
+     */
+    calculateOrbitalVelocityWrtPlanet(orbitKm, periodDays, planetZoneId) {
+        if (orbitKm <= 0 || periodDays <= 0) return 0;
+        
+        // Same formula as Sun, but for moon orbit around planet
+        const periodSeconds = periodDays * 86400;
+        const circumference = 2 * Math.PI * orbitKm;
+        return circumference / periodSeconds;
+    }
+    
+    /**
+     * Toggle visibility of comet info overlay
+     */
+    toggleCometInfo() {
+        this.planetMoonInfoVisible = !this.planetMoonInfoVisible;
+        
+        const overlay = document.getElementById('planet-moon-info-overlay');
+        if (overlay) {
+            if (this.planetMoonInfoVisible && this.trackingMode === 'comet') {
+                this.showCometInfo();
+            } else {
+                overlay.style.display = 'none';
+            }
+        }
+        
+        console.log(`Comet info ${this.planetMoonInfoVisible ? 'shown' : 'hidden'} (press I to toggle)`);
+    }
+    
+    /**
+     * Show comet info overlay with details
+     */
+    showCometInfo() {
+        const overlay = document.getElementById('planet-moon-info-overlay');
+        if (!overlay || this.currentCometIndex < 0 || !this.solarSystem || !this.solarSystem.comets) return;
+        
+        const comet = this.solarSystem.comets[this.currentCometIndex];
+        if (!comet || !comet.userData) return;
+        
+        const orbitalData = comet.userData;
+        
+        // Calculate real orbital parameters from period using Kepler's law: T^2 ∝ a^3
+        // T (days) = sqrt((a/AU)^3) * 365.25, so a = (T / 365.25)^(2/3) AU
+        const periodYears = orbitalData.orbitalPeriod / 365.25;
+        const semiMajorAxisAU = Math.pow(periodYears, 2/3);
+        const semiMajorAxisKm = semiMajorAxisAU * this.solarSystem.AU_KM;
+        
+        // Calculate perihelion and aphelion from semi-major axis and eccentricity
+        // perihelion = a(1-e), aphelion = a(1+e)
+        const perihelionAU = semiMajorAxisAU * (1 - orbitalData.eccentricity);
+        const aphelionAU = semiMajorAxisAU * (1 + orbitalData.eccentricity);
+        const perihelionKm = perihelionAU * this.solarSystem.AU_KM;
+        const aphelionKm = aphelionAU * this.solarSystem.AU_KM;
+        
+        // Calculate current distance from sun
+        const currentDistanceVisual = comet.position.length();
+        // Approximate conversion: use semi-major axis ratio
+        // This is approximate since the visual scaling is complex
+        const currentDistanceAU = semiMajorAxisAU * (currentDistanceVisual / orbitalData.semiMajorAxis);
+        const currentDistanceKm = currentDistanceAU * this.solarSystem.AU_KM;
+        
+        // Calculate orbital velocity at current position (approximate)
+        // v = sqrt(GM(2/r - 1/a)) where r is current distance, a is semi-major axis
+        // For circular approximation: v ≈ sqrt(GM/r) ≈ sqrt(1.327e20 / r) km/s
+        // Simplified: v ≈ sqrt(1.327e20 / r_km) / 1000 km/s
+        const GM = 1.327e20; // Standard gravitational parameter for Sun (km^3/s^2)
+        const velocityKmS = Math.sqrt(GM * (2 / currentDistanceKm - 1 / semiMajorAxisKm)) / 1000;
+        
+        // Format values
+        const formatDistance = (km) => {
+            if (km >= 1e9) return (km / 1e9).toFixed(2) + ' × 10⁹ km';
+            if (km >= 1e6) return (km / 1e6).toFixed(2) + ' × 10⁶ km';
+            if (km >= 1e3) return (km / 1e3).toFixed(2) + ' × 10³ km';
+            return km.toFixed(2) + ' km';
+        };
+        
+        const formatAU = (au) => {
+            return au.toFixed(2) + ' AU';
+        };
+        
+        const formatPeriod = (days) => {
+            if (days >= 365) {
+                const years = days / 365;
+                return `${years.toFixed(2)} years`;
+            }
+            return `${days.toFixed(2)} days`;
+        };
+        
+        // Build overlay content
+        let html = `<div class="transfer-info-line"><strong>Comet ${this.currentCometIndex + 1}</strong></div>`;
+        html += `<div class="transfer-info-line">Orbital Period: ${formatPeriod(orbitalData.orbitalPeriod)}</div>`;
+        html += `<div class="transfer-info-line">Semi-major Axis: ${formatAU(semiMajorAxisAU)} (${formatDistance(semiMajorAxisKm)})</div>`;
+        html += `<div class="transfer-info-line">Eccentricity: ${orbitalData.eccentricity.toFixed(3)}</div>`;
+        html += `<div class="transfer-info-line">Perihelion: ${formatAU(perihelionAU)} (${formatDistance(perihelionKm)})</div>`;
+        html += `<div class="transfer-info-line">Aphelion: ${formatAU(aphelionAU)} (${formatDistance(aphelionKm)})</div>`;
+        html += `<div class="transfer-info-line">Current Distance: ${formatAU(currentDistanceAU)} (${formatDistance(currentDistanceKm)})</div>`;
+        html += `<div class="transfer-info-line">Velocity: ${velocityKmS.toFixed(2)} km/s</div>`;
+        html += `<div class="transfer-info-line">Inclination: ${(orbitalData.inclination * 180 / Math.PI).toFixed(1)}°</div>`;
+        
+        const totalComets = this.solarSystem.comets.length;
+        html += `<div class="transfer-info-nav">[${this.currentCometIndex + 1}/${totalComets}] ← → cycle | I toggle info | ESC exit</div>`;
+        
+        overlay.innerHTML = html;
+        
+        // Respect visibility toggle
+        overlay.style.display = this.planetMoonInfoVisible ? 'block' : 'none';
+    }
+    
+    /**
+     * Hide comet info overlay
+     */
+    hideCometInfo() {
+        const overlay = document.getElementById('planet-moon-info-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Update comet info overlay with real-time values
+     */
+    updateCometInfoRealtime() {
+        // Refresh the info to update current distance and velocity
+        if (this.planetMoonInfoVisible) {
+            this.showCometInfo();
+        }
+    }
 
     /**
      * Start tracking the first comet (called when 'c' is pressed and not already tracking)
@@ -803,6 +1255,10 @@ class SceneManager {
                 }
                 return null;
             });
+            
+            // Show comet info overlay
+            this.planetMoonInfoVisible = true; // Reuse the same visibility flag
+            this.showCometInfo();
         }
     }
     
@@ -833,6 +1289,9 @@ class SceneManager {
                 }
                 return null;
             });
+            
+            // Update comet info overlay
+            this.showCometInfo();
         }
     }
     
@@ -863,6 +1322,9 @@ class SceneManager {
                 }
                 return null;
             });
+            
+            // Update comet info overlay
+            this.showCometInfo();
         }
     }
     
@@ -1145,6 +1607,68 @@ class CameraController {
         const upPan = up.clone().multiplyScalar(panAmountY);
         this.targetPanOffset.add(rightPan);
         this.targetPanOffset.add(upPan);
+    }
+
+    /**
+     * Move the camera radially towards/away from the sun (origin)
+     * @param {number} direction - Positive for outward, negative for inward
+     * @param {number} deltaTime - Time delta for smooth movement
+     */
+    moveRadial(direction, deltaTime) {
+        const moveAmount = this.panSpeed * deltaTime * 60;
+        
+        // Get the current position in XZ plane (ignore Y for orbital plane movement)
+        const currentPos = new THREE.Vector2(this.targetPanOffset.x, this.targetPanOffset.z);
+        const distance = currentPos.length();
+        
+        if (distance < 0.001) {
+            // If at origin, move in the direction the camera is facing
+            const radialDir = new THREE.Vector2(
+                -Math.cos(this.theta),
+                -Math.sin(this.theta)
+            ).normalize();
+            this.targetPanOffset.x += radialDir.x * moveAmount * direction;
+            this.targetPanOffset.z += radialDir.y * moveAmount * direction;
+        } else {
+            // Move along the radial direction from origin
+            const radialDir = currentPos.clone().normalize();
+            this.targetPanOffset.x += radialDir.x * moveAmount * direction;
+            this.targetPanOffset.z += radialDir.y * moveAmount * direction;
+        }
+    }
+
+    /**
+     * Move the camera orbitally around the sun (counter-clockwise/clockwise)
+     * The camera theta rotates with the movement so the camera "follows" the orbit
+     * @param {number} direction - Positive for counter-clockwise, negative for clockwise
+     * @param {number} deltaTime - Time delta for smooth movement
+     */
+    moveOrbital(direction, deltaTime) {
+        const orbitSpeed = 0.5; // Radians per second base speed
+        const angularMove = orbitSpeed * deltaTime * direction;
+        
+        // Get current orbital radius in XZ plane
+        const currentPos = new THREE.Vector2(this.targetPanOffset.x, this.targetPanOffset.z);
+        const orbitalRadius = currentPos.length();
+        
+        if (orbitalRadius < 0.001) {
+            // If at origin, just rotate the camera view
+            this.theta += angularMove;
+        } else {
+            // Calculate current angle in XZ plane
+            const currentAngle = Math.atan2(this.targetPanOffset.z, this.targetPanOffset.x);
+            
+            // Calculate new angle
+            const newAngle = currentAngle + angularMove;
+            
+            // Update position while maintaining orbital radius
+            this.targetPanOffset.x = orbitalRadius * Math.cos(newAngle);
+            this.targetPanOffset.z = orbitalRadius * Math.sin(newAngle);
+            
+            // Rotate the camera theta by the same amount so it "follows" the orbit
+            // This keeps the sun in the same relative position in the view
+            this.theta += angularMove;
+        }
     }
 
     zoom(delta) {

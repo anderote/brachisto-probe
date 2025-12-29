@@ -53,21 +53,23 @@ class TransferSystem {
     /**
      * Get effective specific impulse with propulsion skill applied
      * @param {Object} skills - Current skills
+     * @param {number} ispBonus - Optional ISP bonus from starting skill points (seconds)
      * @returns {number} Effective ISP in seconds
      */
-    getEffectiveIsp(skills) {
+    getEffectiveIsp(skills, ispBonus = 0) {
         const propulsionSkill = skills?.propulsion || 1.0;
-        return this.getBaseIsp() * propulsionSkill;
+        return (this.getBaseIsp() + ispBonus) * propulsionSkill;
     }
     
     /**
      * Get exhaust velocity in m/s based on current propulsion skill
      * @param {Object} skills - Current skills
+     * @param {number} ispBonus - Optional ISP bonus from starting skill points (seconds)
      * @returns {number} Exhaust velocity in m/s
      */
-    getExhaustVelocity(skills) {
+    getExhaustVelocity(skills, ispBonus = 0) {
         const g0 = 9.80665; // Standard gravity m/s²
-        return this.getEffectiveIsp(skills) * g0;
+        return this.getEffectiveIsp(skills, ispBonus) * g0;
     }
     
     /**
@@ -278,6 +280,12 @@ class TransferSystem {
                 }
                 // Process arrivals for continuous transfers
                 this.processContinuousArrivals(newState, transfer, currentTime);
+                
+                // Check if transfer is stopping and all in-transit items have arrived
+                if (transfer.stopping && (!transfer.in_transit || transfer.in_transit.length === 0)) {
+                    console.log(`[Transfer] Continuous transfer ${transfer.id} completed stopping - all batches arrived. Removing.`);
+                    completedTransfers.push(i);
+                }
             } else {
                 // Process one-time transfer
                 if (transfer.status === 'paused') {
@@ -351,15 +359,37 @@ class TransferSystem {
         const probeDvBonus = state.skill_bonuses?.probe_dv_bonus || 0;
         
         // Calculate transfer time with speed bonus from excess delta-v
-        // Uses combined probe + mass driver delta-v, with excess providing speed bonus
-        let baseTransferTime = this.orbitalMechanics.calculateTransferTimeWithBoost(
-            fromZoneId,
-            toZoneId,
-            skills,
-            massDriverMuzzleVelocity,
-            fromZoneMass,
-            probeDvBonus
-        );
+        // If transfer has backend_transfer_time_days, use it as base and apply speed bonuses
+        // Otherwise, use Hohmann-based calculation
+        let baseTransferTime;
+        if (transfer.backend_transfer_time_days !== undefined && 
+            transfer.backend_transfer_time_days !== null &&
+            transfer.backend_transfer_time_days > 0 &&
+            transferResourceType === 'probe') {
+            // Use backend transfer time with speed bonuses
+            const requiredDeltaV = transfer.computed_delta_v || 
+                this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+            baseTransferTime = this.orbitalMechanics.applySpeedBonusToBackendTime(
+                transfer.backend_transfer_time_days,
+                requiredDeltaV,
+                skills,
+                massDriverMuzzleVelocity,
+                fromZoneMass,
+                probeDvBonus,
+                fromZoneId,
+                toZoneId
+            );
+        } else {
+            // Use Hohmann-based calculation with speed bonus
+            baseTransferTime = this.orbitalMechanics.calculateTransferTimeWithBoost(
+                fromZoneId,
+                toZoneId,
+                skills,
+                massDriverMuzzleVelocity,
+                fromZoneMass,
+                probeDvBonus
+            );
+        }
         
         // Slow down metal transfers to Dyson sphere for visual effect
         const isDysonDestination = toZoneId === 'dyson_sphere' || toZoneId === 'dyson';
@@ -515,6 +545,9 @@ class TransferSystem {
             // Minimum batch size: 100kg (accumulate until we have at least 100kg)
             const MIN_METAL_BATCH_KG = 100.0;
             
+            // Track total metal sent this tick for logging
+            let totalMetalSentThisTick = 0;
+            
             // Send batches while we have accumulated >= 100kg and available metal
             while (accumulated >= MIN_METAL_BATCH_KG && available >= MIN_METAL_BATCH_KG) {
                 // Send at least 100kg, or all accumulated if less than available
@@ -548,9 +581,17 @@ class TransferSystem {
                     transfer.arrival_time = arrivalTime;
                     
                     accumulated -= batchMass;
+                    totalMetalSentThisTick += batchMass;
                 } else {
                     break;
                 }
+            }
+            
+            // Log significant metal transfers (every 10Mt sent)
+            if (totalMetalSentThisTick > 10e6) {
+                console.log(`[Transfer] Metal batch sent: ${(totalMetalSentThisTick/1e6).toFixed(2)}Mt from ${fromZoneId} to ${toZoneId}, ` +
+                    `in_transit batches: ${transfer.in_transit?.length || 0}, ` +
+                    `total in-transit mass: ${((transfer.in_transit || []).reduce((sum, b) => sum + (b.mass_kg || 0), 0)/1e6).toFixed(2)}Mt`);
             }
             
             // Store accumulator
@@ -586,12 +627,6 @@ class TransferSystem {
         
         if (arrivedBatches.length === 0) return;
         
-        console.log(`[Transfer] Processing ${arrivedBatches.length} arrived batches to ${toZoneId}:`, {
-            resourceType: transferResourceType,
-            arrivedBatches: arrivedBatches.map(b => ({ count: b.count, mass_kg: b.mass_kg })),
-            transferId: transfer.id
-        });
-        
         if (transferResourceType === 'probe') {
             // Add arrived probes to destination zone
             const probesByZone = state.probes_by_zone || {};
@@ -625,8 +660,6 @@ class TransferSystem {
             zones[toZoneId].probe_mass = (zones[toZoneId].probe_mass || 0) + (totalArrived * probeMass);
             state.zones = zones;
             state.probes_by_zone = probesByZone;
-            
-            console.log(`[Transfer] Continuous: Added ${totalArrived} probes to ${toZoneId}. New count: ${probesByZone[toZoneId][probeType]}`);
         } else if (transferResourceType === 'metal') {
             // Add arrived metal to destination zone's stored_metal
             const totalArrived = arrivedBatches.reduce((sum, batch) => sum + (batch.mass_kg || 0), 0);
@@ -634,10 +667,15 @@ class TransferSystem {
             if (!zones[toZoneId]) {
                 zones[toZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
             }
-            zones[toZoneId].stored_metal = (zones[toZoneId].stored_metal || 0) + totalArrived;
+            const previousStored = zones[toZoneId].stored_metal || 0;
+            zones[toZoneId].stored_metal = previousStored + totalArrived;
             state.zones = zones;
             
-            console.log(`[Transfer] Continuous: Added ${totalArrived} kg metal to ${toZoneId}. New stored_metal: ${zones[toZoneId].stored_metal}`);
+            // Log significant arrivals (>1Mt)
+            if (totalArrived > 1e6) {
+                console.log(`[Transfer] Metal arrived at ${toZoneId}: ${(totalArrived/1e6).toFixed(2)}Mt from ${arrivedBatches.length} batches, ` +
+                    `stored_metal: ${(previousStored/1e6).toFixed(2)}Mt -> ${(zones[toZoneId].stored_metal/1e6).toFixed(2)}Mt`);
+            }
         }
     }
     
@@ -1302,7 +1340,7 @@ class TransferSystem {
      * @param {number} ratePercentage - Percentage of production rate (for continuous probes) or kg/day (for metal)
      * @returns {Object} {success: boolean, transfer: Object, error: string}
      */
-    createTransfer(state, fromZoneId, toZoneId, resourceType = 'probe', probeType = 'probe', resourceCount = 0, skills, type = 'one-time', ratePercentage = 0) {
+    createTransfer(state, fromZoneId, toZoneId, resourceType = 'probe', probeType = 'probe', resourceCount = 0, skills, type = 'one-time', ratePercentage = 0, computedDeltaV = null, trajectoryPointsAU = null, backendTransferTimeDays = null) {
         const currentTime = state.time || 0;
         
         // Debug: verify zones exist
@@ -1344,22 +1382,34 @@ class TransferSystem {
         const probeDvBonus = state.skill_bonuses?.probe_dv_bonus || 0;
         
         // Check delta-v access gating
-        // Probe transfers: combine probe delta-v + mass driver boost (if available)
-        // Metal transfers: use mass driver muzzle velocity only
+        // PROBE TRANSFERS: Use Python backend computed delta-v for planets (real-time launch windows)
+        //                 Use Hohmann for Dyson/Asteroid/Kuiper (no specific planet to rendezvous)
+        // MASS TRANSFERS: Always use Hohmann transfer calcs (pre-set trajectories, includes escape velocity)
+        const beltZones = ['dyson_sphere', 'dyson', 'asteroid_belt', 'kuiper', 'oort_cloud'];
+        const isBeltZone = beltZones.includes(toZoneId);
+        
         if (resourceType === 'probe') {
-            // Probe transfers: use combined probe + mass driver delta-v capacity
-            if (!this.orbitalMechanics.canProbeReach(fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus)) {
-                // Show error in terms of net delta-v vs Hohmann (matches chart visualization)
-                // Net delta-v = total capacity - escape velocity
-                const escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
-                const hohmannDeltaV = this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
-                const reachInfo = this.orbitalMechanics.getReachabilityInfo(
-                    fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
-                );
-                const netDeltaV = reachInfo.totalCapacity - escapeDeltaV;
-                
-                let errorMsg = `Insufficient Δv: transfer requires ${hohmannDeltaV.toFixed(2)} km/s, net Δv is ${netDeltaV.toFixed(2)} km/s`;
+            // For probe transfers, use computed delta-v (real-time) if available and not a belt zone
+            // Belt zones (Dyson/Asteroid/Kuiper) use Hohmann since there's no specific planet to rendezvous with
+            const requiredDeltaV = (!isBeltZone && computedDeltaV !== null && computedDeltaV !== undefined) 
+                ? computedDeltaV 
+                : this.orbitalMechanics.getHohmannDeltaVKmS(fromZoneId, toZoneId);
+            const escapeDeltaV = this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+            const reachInfo = this.orbitalMechanics.getReachabilityInfo(
+                fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
+            );
+            const netDeltaV = reachInfo.totalCapacity - escapeDeltaV;
+            
+            // Check if probe can reach with the computed (or Hohmann) delta-v
+            if (netDeltaV < requiredDeltaV) {
+                const deltaVSource = computedDeltaV ? 'current window' : 'Hohmann';
+                let errorMsg = `Insufficient Δv: transfer requires ${requiredDeltaV.toFixed(2)} km/s (${deltaVSource}), net Δv is ${netDeltaV.toFixed(2)} km/s`;
                 errorMsg += ` (capacity: ${reachInfo.totalCapacity.toFixed(2)} - escape: ${escapeDeltaV.toFixed(2)})`;
+                
+                if (computedDeltaV && computedDeltaV >= 99) {
+                    errorMsg = 'Trajectory solver failed - destination unreachable at current positions. Wait for better launch window.';
+                }
+                
                 return { 
                     success: false, 
                     transfer: null, 
@@ -1409,23 +1459,51 @@ class TransferSystem {
         const deltaV = deltaVKmS * 1000; // Convert to m/s for compatibility
         
         // Calculate transfer time with speed bonus from excess delta-v
-        // Combined probe + mass driver delta-v determines both reachability AND speed bonus
-        let transferTime = this.orbitalMechanics.calculateTransferTimeWithBoost(
-            fromZoneId, toZoneId, currentSkills, massDriverMuzzleVelocity, fromZoneMass, probeDvBonus
+        // PROBE TRANSFERS: Use backend transfer time if available (for planets), otherwise Hohmann
+        // MASS TRANSFERS: Always use Hohmann-based calculation
+        let transferTime;
+        const reachInfo = this.orbitalMechanics.getReachabilityInfo(
+            fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
         );
+        
+        // Use backend transfer time for probe transfers to planets (not belt zones)
+        if (backendTransferTimeDays !== null && backendTransferTimeDays !== undefined && 
+            backendTransferTimeDays > 0 && isFinite(backendTransferTimeDays) && 
+            resourceType === 'probe' && !isBeltZone && computedDeltaV !== null) {
+            // Use backend solver time as base and apply speed bonuses
+            const requiredDeltaV = computedDeltaV; // Use computed delta-v from backend
+            transferTime = this.orbitalMechanics.applySpeedBonusToBackendTime(
+                backendTransferTimeDays,
+                requiredDeltaV,
+                currentSkills,
+                massDriverMuzzleVelocity,
+                fromZoneMass,
+                probeDvBonus,
+                fromZoneId,
+                toZoneId
+            );
+            
+            if (reachInfo.excessDeltaV > 0) {
+                const improvement = ((backendTransferTimeDays - transferTime) / backendTransferTimeDays * 100).toFixed(1);
+                console.log(`[Transfer] Backend time ${backendTransferTimeDays.toFixed(2)} days improved to ${transferTime.toFixed(2)} days (${improvement}% faster) with excess Δv: +${reachInfo.excessDeltaV.toFixed(2)} km/s`);
+            } else {
+                console.log(`[Transfer] Using backend transfer time: ${transferTime.toFixed(2)} days (no excess Δv for speed bonus)`);
+            }
+        } else {
+            // Use Hohmann-based calculation with speed bonus
+            transferTime = this.orbitalMechanics.calculateTransferTimeWithBoost(
+                fromZoneId, toZoneId, currentSkills, massDriverMuzzleVelocity, fromZoneMass, probeDvBonus
+            );
+            
+            if (reachInfo.excessDeltaV > 0) {
+                console.log(`[Transfer] Speed bonus from excess delta-v: +${reachInfo.excessDeltaV.toFixed(2)} km/s (total capacity: ${reachInfo.totalCapacity.toFixed(2)} km/s, required: ${reachInfo.requiredDeltaV.toFixed(2)} km/s)`);
+            }
+        }
         
         // Validate transfer time
         if (!transferTime || !isFinite(transferTime) || transferTime <= 0) {
             console.error(`[Transfer] Invalid transfer time calculated: ${transferTime} for ${fromZoneId} -> ${toZoneId}`);
             return { success: false, transfer: null, error: `Invalid transfer time: ${transferTime} days` };
-        }
-        
-        // Log the speed bonus if applicable
-        const reachInfo = this.orbitalMechanics.getReachabilityInfo(
-            fromZoneId, toZoneId, currentSkills, fromZoneMass, massDriverMuzzleVelocity, probeDvBonus
-        );
-        if (reachInfo.excessDeltaV > 0) {
-            console.log(`[Transfer] Speed bonus from excess delta-v: +${reachInfo.excessDeltaV.toFixed(2)} km/s (total capacity: ${reachInfo.totalCapacity.toFixed(2)} km/s, required: ${reachInfo.requiredDeltaV.toFixed(2)} km/s)`);
         }
         
         // Slow down metal transfers to Dyson sphere for visual effect
@@ -1478,6 +1556,19 @@ class TransferSystem {
             status: 'traveling',
             paused: false
         };
+        
+        // Store backend transfer time and computed delta-v for speed bonus recalculation
+        if (backendTransferTimeDays !== null && backendTransferTimeDays !== undefined && resourceType === 'probe') {
+            transfer.backend_transfer_time_days = backendTransferTimeDays;
+        }
+        if (computedDeltaV !== null && computedDeltaV !== undefined && resourceType === 'probe') {
+            transfer.computed_delta_v = computedDeltaV;
+        }
+        
+        // Store trajectory points if provided (for probe transfers)
+        if (resourceType === 'probe' && trajectoryPointsAU && trajectoryPointsAU.length > 0) {
+            transfer.trajectory_points_au = trajectoryPointsAU;
+        }
         
         if (resourceType === 'probe') {
             transfer.probe_type = probeType;
@@ -1615,6 +1706,11 @@ class TransferSystem {
     
     /**
      * Delete transfer
+     * For continuous transfers with in-transit items, this sets the transfer to "stopping" mode:
+     * - Pauses new transfers (frees up power immediately)
+     * - Lets existing in-transit batches complete their journey
+     * - Auto-removes the transfer once all in-transit items arrive
+     * 
      * @param {Object} state - Game state (mutated)
      * @param {string} transferId - Transfer ID
      * @returns {boolean} Success
@@ -1629,47 +1725,22 @@ class TransferSystem {
         
         const transfer = activeTransfers[index];
         
-        // For continuous transfers, return resources in transit to source
+        // For continuous transfers with in-transit items, set to "stopping" mode
+        // This pauses new transfers but lets existing batches complete
         if (transfer.type === 'continuous' && transfer.in_transit && transfer.in_transit.length > 0) {
-            const resourceType = transfer.resource_type || 'probe';
+            // Mark as stopping - this will:
+            // 1. Stop new transfers from being created (like pause)
+            // 2. Free up power allocation immediately
+            // 3. Let in-transit batches complete normally
+            // 4. Auto-remove once all in-transit items arrive
+            transfer.stopping = true;
+            transfer.paused = true;  // Ensure no new transfers are created
             
-            if (resourceType === 'probe') {
-                const probesByZone = state.probes_by_zone || {};
-                const fromZoneId = transfer.from_zone;
-                const probeType = transfer.probe_type || 'probe';
-                
-                if (!probesByZone[fromZoneId]) {
-                    probesByZone[fromZoneId] = {};
-                }
-                if (!probesByZone[fromZoneId][probeType]) {
-                    probesByZone[fromZoneId][probeType] = 0;
-                }
-                
-                const totalInTransit = transfer.in_transit.reduce((sum, batch) => {
-                    if (batch.resource_type === 'probe' || !batch.resource_type) {
-                        return sum + (batch.count || 0);
-                    }
-                    return sum;
-                }, 0);
-                probesByZone[fromZoneId][probeType] += totalInTransit;
-                
-                state.probes_by_zone = probesByZone;
-            } else if (resourceType === 'metal') {
-                // Return metal to source zone's stored_metal
-                const fromZoneId = transfer.from_zone;
-                const totalInTransit = transfer.in_transit.reduce((sum, batch) => {
-                    if (batch.resource_type === 'metal') {
-                        return sum + (batch.mass_kg || 0);
-                    }
-                    return sum;
-                }, 0);
-                const zones = state.zones || {};
-                if (!zones[fromZoneId]) {
-                    zones[fromZoneId] = { stored_metal: 0, probe_mass: 0, structure_mass: 0, slag_mass: 0, methalox: 0, mass_remaining: 0, depleted: false };
-                }
-                zones[fromZoneId].stored_metal = (zones[fromZoneId].stored_metal || 0) + totalInTransit;
-                state.zones = zones;
-            }
+            // Clear accumulator to prevent partial batches
+            this.continuousAccumulators.delete(transferId);
+            
+            console.log(`[Transfer] Continuous transfer ${transferId} set to stopping mode. ${transfer.in_transit.length} batches still in transit.`);
+            return true;
         }
         
         // Remove accumulator if continuous
@@ -1677,7 +1748,7 @@ class TransferSystem {
             this.continuousAccumulators.delete(transferId);
         }
         
-        // Remove transfer
+        // Immediately remove transfer (no in-transit items or not continuous)
         activeTransfers.splice(index, 1);
         
         return true;

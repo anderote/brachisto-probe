@@ -191,8 +191,8 @@ class PurchasePanel {
         }
         
         this._constructionToggleHandler = (e) => {
-            // Find the closest building card element
-            const buildingCard = e.target.closest('.building-card');
+            // Find the closest building card element (works with both old and new styles)
+            const buildingCard = e.target.closest('.building-card, .structure-card-enhanced');
             if (!buildingCard) return;
             
             // Don't trigger if clicking on disabled cards
@@ -283,10 +283,6 @@ class PurchasePanel {
                 buildingId: buildingId
             };
             
-            // Format building stats for display (one stat per line)
-            let statsHtml = '';
-            const effects = building.effects || {};
-            
             // Get current structure count in selected zone for geometric scaling
             const structuresByZone = this.gameState?.structures_by_zone || {};
             const zoneStructures = this.selectedZone ? (structuresByZone[this.selectedZone] || {}) : {};
@@ -298,203 +294,115 @@ class PurchasePanel {
             const upgradeFactors = this.gameState?.upgrade_factors || {};
             const structureUpgrades = upgradeFactors.structure || {};
             
-            // New format: calculate base values from multipliers
+            // Determine header color class based on building type
+            let headerClass = 'header-factory';
+            if (building.power_output_mw && !building.compute_eflops) {
+                headerClass = 'header-power';
+            } else if (building.mining_rate_multiplier && !building.build_rate_multiplier) {
+                headerClass = 'header-mining';
+            } else if (building.compute_eflops) {
+                headerClass = 'header-compute';
+            } else if (building.build_rate_multiplier) {
+                headerClass = 'header-factory';
+            } else if (building.base_delta_v || building.base_capacity_kg) {
+                headerClass = 'header-transport';
+            } else if (building.production_rate_kg_per_day) {
+                headerClass = 'header-fuel';
+            }
+            
+            // Build stats blocks for input/output visualization
+            let outputStats = [];
+            let inputStats = [];
+            
+            // Calculate output stats based on building type
             if (building.build_rate_multiplier) {
-                // Factory - show scaled replication rate with upgrade factors
-                const baseProbeBuildRate = Config.PROBE_BUILD_RATE || 20; // kg/day per probe
+                // Factory - probes per day
+                const baseProbeBuildRate = Config.PROBE_BUILD_RATE || 20;
                 const baseRate = baseProbeBuildRate * building.build_rate_multiplier;
                 const perfFactor = structureUpgrades.building?.performance || 1.0;
                 const scaledRate = baseRate * geometricFactor * perfFactor;
-                const probesPerDay = scaledRate / Config.PROBE_MASS; // probes per day
-                const probesDisplay = this.formatScientific(probesPerDay);
-                statsHtml = '<div class="building-stats">';
-                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
-                statsHtml += `<div class="building-stat-line">${probesDisplay} probes/day${countLabel}</div>`;
-                if (building.energy_cost_multiplier) {
-                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
-                }
-                statsHtml += '</div>';
-            } else if (building.mining_rate_multiplier && !building.build_rate_multiplier) {
-                // Refinery - show scaled mining rate with upgrade factors
-                const baseProbeMiningRate = Config.PROBE_HARVEST_RATE || 100; // kg/day per probe
+                const probesPerDay = scaledRate / Config.PROBE_MASS;
+                outputStats.push({ label: 'Output', value: this.formatScientific(probesPerDay), unit: 'probes/day', positive: true });
+            }
+            
+            if (building.mining_rate_multiplier && !building.build_rate_multiplier) {
+                // Mining - kg per day
+                const baseProbeMiningRate = Config.PROBE_HARVEST_RATE || 100;
                 const baseRate = baseProbeMiningRate * building.mining_rate_multiplier;
                 const perfFactor = structureUpgrades.mining?.performance || 1.0;
                 const scaledRate = baseRate * geometricFactor * perfFactor;
-                const metalDisplay = this.formatScientific(scaledRate);
-                statsHtml = '<div class="building-stats">';
-                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
-                statsHtml += `<div class="building-stat-line">${metalDisplay} kg/day${countLabel}</div>`;
-                if (building.energy_cost_multiplier) {
-                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
-                }
-                statsHtml += '</div>';
-            } else if (building.power_output_mw) {
-                // Power station - show scaled power output with upgrade factors
+                outputStats.push({ label: 'Mining Rate', value: this.formatScientific(scaledRate), unit: 'kg/day', positive: true });
+            }
+            
+            if (building.power_output_mw) {
+                // Power station
                 const basePowerMW = building.power_output_mw;
                 const perfFactor = structureUpgrades.energy?.performance || 1.0;
-                const scaledPowerMW = basePowerMW * geometricFactor * perfFactor;
-                const scaledPowerW = scaledPowerMW * 1e6; // Convert to watts for display
-                const powerDisplay = this.formatScientific(scaledPowerW);
-                statsHtml = '<div class="building-stats">';
-                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
-                statsHtml += `<div class="building-stat-line">${powerDisplay} W${countLabel}</div>`;
-                statsHtml += '</div>';
-            } else if (building.compute_eflops) {
-                // Data center - show scaled compute output with upgrade factors
+                const buildingExponent = building.geometric_scaling_exponent || geometricScalingExponent;
+                const afterUpgradeCount = currentCount + 1;
+                const afterUpgradeGeometricFactor = Math.pow(afterUpgradeCount, buildingExponent);
+                const scaledPowerMW = basePowerMW * afterUpgradeGeometricFactor * perfFactor;
+                const scaledPowerW = scaledPowerMW * 1e6;
+                outputStats.push({ label: 'Power Output', value: this.formatScientific(scaledPowerW), unit: 'W', positive: true });
+            }
+            
+            if (building.compute_eflops) {
+                // Data center
                 const baseComputeEFLOPS = building.compute_eflops;
                 const perfFactor = structureUpgrades.compute?.performance || 1.0;
-                const scaledComputeEFLOPS = baseComputeEFLOPS * geometricFactor * perfFactor;
-                const computeDisplay = this.formatScientific(scaledComputeEFLOPS);
-                statsHtml = '<div class="building-stats">';
-                const countLabel = currentCount > 0 ? ` (${currentCount} built)` : '';
-                statsHtml += `<div class="building-stat-line">${computeDisplay} EFLOPS${countLabel}</div>`;
-                if (building.energy_cost_multiplier) {
-                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
-                }
-                statsHtml += '</div>';
-            } else if (building.efficiency !== undefined && building.efficiency < 1.0) {
-                // Omni-fab - show all capabilities at reduced efficiency
-                statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">50% efficiency (all functions)</div>`;
-                if (building.mining_rate_multiplier) {
-                    const baseRate = (Config.PROBE_HARVEST_RATE || 100) * building.mining_rate_multiplier;
-                    statsHtml += `<div class="building-stat-line">Mining: ${this.formatScientific(baseRate)} kg/day</div>`;
-                }
-                if (building.build_rate_multiplier) {
-                    const baseRate = (Config.PROBE_BUILD_RATE || 20) * building.build_rate_multiplier;
-                    statsHtml += `<div class="building-stat-line">Build: ${this.formatScientific(baseRate)} kg/day</div>`;
-                }
-                if (building.power_output_mw) {
-                    const powerW = building.power_output_mw * 1e6;
-                    statsHtml += `<div class="building-stat-line">Power: ${this.formatScientific(powerW)} W</div>`;
-                }
-                if (building.compute_eflops) {
-                    statsHtml += `<div class="building-stat-line">Compute: ${this.formatScientific(building.compute_eflops)} EFLOPS</div>`;
-                }
-                statsHtml += '</div>';
-            } else if (building.base_capacity_kg || building.base_delta_v) {
+                const buildingExponent = building.geometric_scaling_exponent || geometricScalingExponent;
+                const afterUpgradeCount = currentCount + 1;
+                const afterUpgradeGeometricFactor = Math.pow(afterUpgradeCount, buildingExponent);
+                const scaledComputeEFLOPS = baseComputeEFLOPS * afterUpgradeGeometricFactor * perfFactor;
+                const scaledComputeFLOPS = scaledComputeEFLOPS * 1e18;
+                outputStats.push({ label: 'Compute', value: this.formatScientific(scaledComputeFLOPS), unit: 'FLOPS', positive: true });
+            }
+            
+            if (building.base_delta_v || building.base_muzzle_velocity_km_s) {
                 // Mass driver
-                statsHtml = '<div class="building-stats">';
-                if (building.base_capacity_kg) {
-                    statsHtml += `<div class="building-stat-line">Capacity: ${this.formatScientific(building.base_capacity_kg)} kg</div>`;
-                }
-                if (building.base_delta_v) {
-                    statsHtml += `<div class="building-stat-line">Delta-V: ${this.formatScientific(building.base_delta_v)} m/s</div>`;
-                }
-                statsHtml += '</div>';
-            } else if (building.production_rate_kg_per_day) {
-                // Methalox refinery - uses LINEAR scaling (not geometric)
-                // Display what the next refinery will add (base rate per refinery)
-                // and optionally show total production if some are already built
+                const deltaV = building.base_muzzle_velocity_km_s || (building.base_delta_v / 1000);
+                outputStats.push({ label: 'Delta-V', value: deltaV.toFixed(1), unit: 'km/s', positive: true });
+            }
+            
+            if (building.production_rate_kg_per_day) {
+                // Methalox refinery
                 const baseRate = building.production_rate_kg_per_day;
-                // Methalox refineries don't use geometric scaling or performance upgrades
-                // Each refinery produces exactly baseRate kg/day
-                const nextRefineryRate = baseRate;
-                const totalRate = baseRate * (currentCount + 1); // After building the next one
-                const currentTotalRate = baseRate * currentCount;
-                
-                // Get zone limit for methalox refineries
-                const zoneLimit = building.max_per_zone?.[this.selectedZone] || 0;
-                const atLimit = zoneLimit > 0 && currentCount >= zoneLimit;
-                
-                statsHtml = '<div class="building-stats">';
-                if (currentCount > 0) {
-                    // Show current total and what the next one adds
-                    const limitDisplay = zoneLimit > 0 ? ` / ${zoneLimit} max` : '';
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(currentTotalRate)} kg/day total (${currentCount}${limitDisplay})</div>`;
-                    if (!atLimit) {
-                        statsHtml += `<div class="building-stat-line">+${this.formatScientific(nextRefineryRate)} kg/day each</div>`;
-                    } else {
-                        statsHtml += `<div class="building-stat-line" style="color: #ff6b6b;">Zone limit reached</div>`;
-                    }
-                } else {
-                    // No refineries yet, show what the first one produces
-                    const limitDisplay = zoneLimit > 0 ? ` (max ${zoneLimit} in zone)` : '';
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(nextRefineryRate)} kg/day methalox${limitDisplay}</div>`;
-                }
-                if (building.energy_cost_multiplier) {
-                    const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyCost)} W</div>`;
-                }
-                statsHtml += '</div>';
+                const totalRate = baseRate * (currentCount + 1);
+                outputStats.push({ label: 'Fuel Output', value: this.formatScientific(totalRate), unit: 'kg/day', positive: true });
             }
             
-            // Legacy format: Factory stats
-            if (statsHtml === '' && effects.probe_production_per_day !== undefined) {
-                const probesPerDay = effects.probe_production_per_day;
-                const metalPerProbe = effects.metal_per_probe || 10;
-                // Use energy_per_probe_kw if available, otherwise calculate from total energy / probes per day
-                let energyPerProbeKw = effects.energy_per_probe_kw;
-                if (energyPerProbeKw === undefined && effects.energy_consumption_per_second !== undefined && probesPerDay > 0) {
-                    energyPerProbeKw = effects.energy_consumption_per_second / probesPerDay;
-                }
-                
-                statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(probesPerDay)} probes/s</div>`;
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(metalPerProbe)} kg/probe</div>`;
-                if (energyPerProbeKw !== undefined) {
-                    const energyW = energyPerProbeKw * 1000; // Convert kW to W
-                    statsHtml += `<div class="building-stat-line">${this.formatScientific(energyW)} W/probe/s</div>`;
-                }
-                statsHtml += '</div>';
-            } else if (effects.metal_production_per_day !== undefined) {
-                // Mining building
-                const metalRate = effects.metal_production_per_day;
-                const powerKw = effects.energy_consumption_per_second || 0;
-                const powerW = powerKw * 1000; // Convert kW to W
-                statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(metalRate)} kg/s metal</div>`;
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(powerW)} W</div>`;
-                statsHtml += '</div>';
-            } else if (effects.energy_production_per_second !== undefined) {
-                // Energy building
-                const energyRate = effects.energy_production_per_second;
-                statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(energyRate)} W/s</div>`;
-                statsHtml += '</div>';
-            } else if (effects.intelligence_flops !== undefined) {
-                // Computing building (orbital data center)
-                const flops = effects.intelligence_flops;
-                const powerKw = effects.energy_consumption_per_second || 0;
-                const powerW = powerKw * 1000; // Convert kW to W
-                statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(flops)} FLOPS</div>`;
-                statsHtml += `<div class="building-stat-line">${this.formatScientific(powerW)} W</div>`;
-                statsHtml += '</div>';
-            } else if (effects.energy_consumption_per_second !== undefined) {
-                // Other building with power draw
-                const powerKw = effects.energy_consumption_per_second;
-                const powerW = powerKw * 1000; // Convert kW to W
-                statsHtml = '<div class="building-stats">';
-                statsHtml += `<div class="building-stat-line">Power draw: ${this.formatScientific(powerW)} W</div>`;
-                statsHtml += '</div>';
+            // Calculate input stats (energy cost)
+            if (building.energy_cost_multiplier && building.energy_cost_multiplier > 0) {
+                const energyCost = this.STRUCTURE_BASE_ENERGY_COST * building.energy_cost_multiplier;
+                inputStats.push({ label: 'Power Draw', value: this.formatScientific(energyCost), unit: 'W', negative: true });
             }
             
-            // Check if building is allowed in selected zone (if zone is selected)
+            // Zone limit info for methalox
+            let zoneLimitInfo = '';
+            if (building.max_per_zone && this.selectedZone) {
+                const zoneLimit = building.max_per_zone[this.selectedZone];
+                if (zoneLimit !== undefined && zoneLimit > 0) {
+                    zoneLimitInfo = `${currentCount}/${zoneLimit} max`;
+                }
+            }
+            
+            // Check if building is allowed in selected zone
             let isAllowed = true;
             let atZoneLimit = false;
             let zoneLimitReason = '';
             if (this.selectedZone) {
-                // Check if this is the Dyson zone
                 const zone = this.orbitalZones.find(z => z.id === this.selectedZone);
                 const isDysonZone = zone && zone.is_dyson_zone;
                 
-                // Mining buildings cannot be built in Dyson zone (no minerals to mine)
                 if (isDysonZone && buildingCategory === 'mining') {
                     isAllowed = false;
                 } else if (isDysonZone) {
-                    // Non-mining buildings can be built in Dyson zone even if not in allowed_orbital_zones
                     isAllowed = true;
                 } else {
-                    // For other zones, check allowed_orbital_zones
                     const allowedZones = building.allowed_orbital_zones || [];
                     isAllowed = allowedZones.includes(this.selectedZone);
                 }
                 
-                // Check max_per_zone limit
                 if (isAllowed && building.max_per_zone) {
                     const zoneLimit = building.max_per_zone[this.selectedZone];
                     if (zoneLimit !== undefined && zoneLimit > 0) {
@@ -507,45 +415,79 @@ class PurchasePanel {
             }
             
             const disabledClass = (!this.selectedZone || !isAllowed || atZoneLimit) ? 'disabled' : '';
-            const clickableClass = (!disabledClass) ? 'building-card-clickable' : '';
+            
+            // Build stats grid HTML
+            let statsGridHtml = '';
+            if (outputStats.length > 0 || inputStats.length > 0) {
+                statsGridHtml = '<div class="structure-stats-grid">';
+                outputStats.forEach(stat => {
+                    statsGridHtml += `
+                        <div class="structure-stat-block output">
+                            <div class="structure-stat-label">${stat.label}</div>
+                            <div class="structure-stat-value positive">${stat.value}<span class="structure-stat-unit">${stat.unit}</span></div>
+                        </div>`;
+                });
+                inputStats.forEach(stat => {
+                    statsGridHtml += `
+                        <div class="structure-stat-block input">
+                            <div class="structure-stat-label">${stat.label}</div>
+                            <div class="structure-stat-value negative">${stat.value}<span class="structure-stat-unit">${stat.unit}</span></div>
+                        </div>`;
+                });
+                statsGridHtml += '</div>';
+            }
+            
+            // Build action hint
+            let actionHint = '';
+            if (!this.selectedZone) {
+                actionHint = '<div class="structure-zone-notice">Select a zone to enable construction</div>';
+            } else if (!isAllowed) {
+                actionHint = `<div class="structure-zone-notice">Not available in ${this.selectedZone}</div>`;
+            } else if (atZoneLimit) {
+                actionHint = `<div class="structure-zone-notice">${zoneLimitReason}</div>`;
+            } else {
+                actionHint = '<div class="structure-action-hint">Click to toggle construction</div>';
+            }
             
             html += `
-                <div class="probe-summary-item building-card ${disabledClass} ${clickableClass}" 
+                <div class="structure-card-enhanced building-card ${disabledClass}" 
                      id="building-${buildingId}" 
                      data-building-id="${buildingId}" 
-                     data-category="${buildingCategory}"
-                     ${!disabledClass ? 'style="cursor: pointer;"' : ''}>
-                    <div class="probe-summary-label">
-                        ${building.name}
-                        <span style="color: rgba(255, 255, 255, 0.4); font-weight: normal; margin-left: 4px;">[${hotkey.toUpperCase()}]</span>
-                        <span class="construction-status-indicator" id="status-${buildingId}" style="float: right; font-size: 9px; color: rgba(255, 255, 255, 0.4);"></span>
-                    </div>
-                    ${building.description ? `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px; margin-top: 2px;">${building.description}</div>` : ''}
-                    ${statsHtml ? `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 5px; font-family: 'Courier New', monospace; line-height: 1.4;">${statsHtml}</div>` : ''}
-                    <div class="probe-summary-breakdown" style="margin-top: 5px;">
-                        <div class="probe-summary-breakdown-item">
-                            <span class="probe-summary-breakdown-label">Cost:</span>
-                            <span class="probe-summary-breakdown-count" id="cost-${buildingId}">${this.formatScientific(this.getBuildingCost(building, buildingId))} kg</span>
+                     data-category="${buildingCategory}">
+                    <div class="structure-card-header ${headerClass}">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>${building.name}</span>
+                            <span class="hotkey-badge">${hotkey.toUpperCase()}</span>
                         </div>
-                        <div class="probe-summary-breakdown-item">
-                            <span class="probe-summary-breakdown-label">Count:</span>
-                            <span class="probe-summary-breakdown-count" id="count-${buildingId}">0</span>
+                        <div class="status-badge" id="status-${buildingId}">
+                            ${zoneLimitInfo ? `<span style="opacity: 0.7;">${zoneLimitInfo}</span>` : ''}
                         </div>
                     </div>
-                    <div class="building-progress-container" id="progress-${buildingId}" style="margin-top: 8px; padding: 6px; background: rgba(0, 0, 0, 0.2); border-radius: 3px;">
-                        <div style="font-size: 9px; color: rgba(255, 255, 255, 0.6); margin-bottom: 4px;">Building Progress</div>
-                        <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
-                            <div id="progress-bar-${buildingId}" style="height: 100%; width: 0%; background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(74, 158, 255, 1)); transition: width 0.3s ease;"></div>
+                    <div class="structure-card-body">
+                        ${building.description ? `<div class="structure-card-description">${building.description}</div>` : ''}
+                        ${statsGridHtml}
+                        <div class="structure-cost-row">
+                            <div class="structure-cost-item">
+                                <div class="structure-cost-icon metal">M</div>
+                                <div>
+                                    <div class="structure-cost-label">Build Cost</div>
+                                    <div class="structure-cost-value" id="cost-${buildingId}">${this.formatScientific(this.getBuildingCost(building, buildingId))} kg</div>
+                                </div>
+                            </div>
+                            <div class="structure-count-badge" id="count-${buildingId}">${currentCount} built</div>
                         </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span class="probe-summary-breakdown-count" id="progress-percent-${buildingId}" style="font-size: 10px;">0%</span>
-                            <span class="probe-summary-breakdown-count" id="progress-time-${buildingId}" style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">—</span>
+                        <div class="structure-progress-section building-progress-container" id="progress-${buildingId}">
+                            <div class="structure-progress-header">
+                                <span class="structure-progress-title">Construction Progress</span>
+                                <span class="structure-progress-time" id="progress-time-${buildingId}">—</span>
+                            </div>
+                            <div class="structure-progress-bar-container">
+                                <div class="structure-progress-bar" id="progress-bar-${buildingId}" style="width: 0%;"></div>
+                            </div>
+                            <div class="structure-progress-percent" id="progress-percent-${buildingId}">0%</div>
                         </div>
+                        ${actionHint}
                     </div>
-                    ${!this.selectedZone ? '<div style="font-size: 9px; color: rgba(255, 255, 255, 0.4); margin-top: 8px;">Select a zone to enable construction</div>' : ''}
-                    ${this.selectedZone && !isAllowed ? `<div style="font-size: 9px; color: rgba(255, 100, 100, 0.8); margin-top: 8px;">Not allowed in ${this.selectedZone}</div>` : ''}
-                    ${this.selectedZone && isAllowed && atZoneLimit ? `<div style="font-size: 9px; color: rgba(255, 100, 100, 0.8); margin-top: 8px;">${zoneLimitReason}</div>` : ''}
-                    ${!disabledClass ? '<div style="font-size: 9px; color: rgba(74, 158, 255, 0.7); margin-top: 8px;">Click to toggle construction</div>' : ''}
                 </div>
             `;
         });
@@ -676,13 +618,14 @@ class PurchasePanel {
                         if (!enabled) {
                             card.classList.add('construction-enabled');
                             if (statusIndicator) {
-                                statusIndicator.textContent = '● Building';
-                                statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                                statusIndicator.innerHTML = '<span class="pulse-dot"></span> BUILDING';
+                                statusIndicator.classList.add('active');
                             }
                         } else {
                             card.classList.remove('construction-enabled');
                             if (statusIndicator) {
-                                statusIndicator.textContent = '';
+                                statusIndicator.innerHTML = '';
+                                statusIndicator.classList.remove('active');
                             }
                         }
                     }
@@ -715,13 +658,14 @@ class PurchasePanel {
                         if (enabled) {
                             card.classList.add('construction-enabled');
                             if (statusIndicator) {
-                                statusIndicator.textContent = '● Building';
-                                statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                                statusIndicator.innerHTML = '<span class="pulse-dot"></span> BUILDING';
+                                statusIndicator.classList.add('active');
                             }
                         } else {
                             card.classList.remove('construction-enabled');
                             if (statusIndicator) {
-                                statusIndicator.textContent = '';
+                                statusIndicator.innerHTML = '';
+                                statusIndicator.classList.remove('active');
                             }
                         }
                     }
@@ -739,14 +683,15 @@ class PurchasePanel {
                             // Tried to enable but failed - remove enabled class
                             card.classList.remove('construction-enabled');
                             if (statusIndicator) {
-                                statusIndicator.textContent = '';
+                                statusIndicator.innerHTML = '';
+                                statusIndicator.classList.remove('active');
                             }
                         } else {
                             // Tried to disable but failed - keep enabled
                             card.classList.add('construction-enabled');
                             if (statusIndicator) {
-                                statusIndicator.textContent = '● Building';
-                                statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                                statusIndicator.innerHTML = '<span class="pulse-dot"></span> BUILDING';
+                                statusIndicator.classList.add('active');
                             }
                         }
                     }
@@ -762,13 +707,14 @@ class PurchasePanel {
                 if (!enabled) {
                     card.classList.add('construction-enabled');
                     if (statusIndicator) {
-                        statusIndicator.textContent = '● Building';
-                        statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                        statusIndicator.innerHTML = '<span class="pulse-dot"></span> BUILDING';
+                        statusIndicator.classList.add('active');
                     }
                 } else {
                     card.classList.remove('construction-enabled');
                     if (statusIndicator) {
-                        statusIndicator.textContent = '';
+                        statusIndicator.innerHTML = '';
+                        statusIndicator.classList.remove('active');
                     }
                 }
             }
@@ -787,7 +733,7 @@ class PurchasePanel {
         this.updateZoneInfo();
         
         // If container is empty or doesn't have buildings rendered, render first
-        if (!this.container.querySelector('.probe-summary-item[data-building-id]')) {
+        if (!this.container.querySelector('.structure-card-enhanced[data-building-id], .probe-summary-item[data-building-id]')) {
             this.render();
             return;
         }
@@ -807,7 +753,8 @@ class PurchasePanel {
             Object.entries(zoneStructures).forEach(([buildingId, count]) => {
                 const countElement = document.getElementById(`count-${buildingId}`);
                 if (countElement) {
-                    countElement.textContent = `Count: ${count}`;
+                    // Use new format for enhanced cards
+                    countElement.textContent = `${count} built`;
                 }
                 // Update cost display (cost increases with count)
                 const costElement = document.getElementById(`cost-${buildingId}`);
@@ -820,9 +767,9 @@ class PurchasePanel {
                 }
             });
             // Set count to 0 and update cost for buildings not in this zone
-            // Cache purchase items to avoid repeated queries
+            // Cache purchase items to avoid repeated queries (updated selector for new cards)
             if (!this.cachedElements.purchaseItems) {
-                this.cachedElements.purchaseItems = Array.from(this.container.querySelectorAll('.probe-summary-item[data-building-id]'));
+                this.cachedElements.purchaseItems = Array.from(this.container.querySelectorAll('.structure-card-enhanced[data-building-id], .probe-summary-item[data-building-id]'));
                 this.cachedElements.lastCacheTime = Date.now();
             }
             this.cachedElements.purchaseItems.forEach(item => {
@@ -830,7 +777,7 @@ class PurchasePanel {
                 if (buildingId && !(buildingId in zoneStructures)) {
                     const countElement = document.getElementById(`count-${buildingId}`);
                     if (countElement) {
-                        countElement.textContent = `Count: 0`;
+                        countElement.textContent = `0 built`;
                     }
                     // Update cost display (base cost when count is 0)
                     const costElement = document.getElementById(`cost-${buildingId}`);
@@ -848,7 +795,7 @@ class PurchasePanel {
             Object.entries(gameState.structures || {}).forEach(([buildingId, count]) => {
                 const countElement = document.getElementById(`count-${buildingId}`);
                 if (countElement) {
-                    countElement.textContent = `Count: ${count}`;
+                    countElement.textContent = `${count} built`;
                 }
             });
         }
@@ -856,9 +803,9 @@ class PurchasePanel {
         // Update enabled construction state on building cards - zone-specific
         const enabledConstruction = gameState.enabled_construction || [];
         
-        // Cache building cards to avoid repeated queries
+        // Cache building cards to avoid repeated queries (updated selector for new cards)
         if (!this.cachedElements.buildingCards) {
-            this.cachedElements.buildingCards = Array.from(this.container.querySelectorAll('.building-card[data-building-id]'));
+            this.cachedElements.buildingCards = Array.from(this.container.querySelectorAll('.structure-card-enhanced[data-building-id], .building-card[data-building-id]'));
             this.cachedElements.lastCacheTime = Date.now();
         }
         this.cachedElements.buildingCards.forEach(card => {
@@ -875,14 +822,15 @@ class PurchasePanel {
                     if (shouldBeEnabled) {
                         card.classList.add('construction-enabled');
                         if (statusIndicator) {
-                            statusIndicator.textContent = '● Building';
-                            statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                            statusIndicator.innerHTML = '<span class="pulse-dot"></span> BUILDING';
+                            statusIndicator.classList.add('active');
                         }
                         console.log(`[PurchasePanel] ✓ Enabled construction for ${buildingId} in ${this.selectedZone}`);
                     } else {
                         card.classList.remove('construction-enabled');
                         if (statusIndicator) {
-                            statusIndicator.textContent = '';
+                            statusIndicator.innerHTML = '';
+                            statusIndicator.classList.remove('active');
                         }
                         console.log(`[PurchasePanel] ✗ Disabled construction for ${buildingId} in ${this.selectedZone}`);
                     }
@@ -897,13 +845,14 @@ class PurchasePanel {
                     if (shouldBeEnabled) {
                         card.classList.add('construction-enabled');
                         if (statusIndicator) {
-                            statusIndicator.textContent = '● Building';
-                            statusIndicator.style.color = 'rgba(74, 158, 255, 0.9)';
+                            statusIndicator.innerHTML = '<span class="pulse-dot"></span> BUILDING';
+                            statusIndicator.classList.add('active');
                         }
                     } else {
                         card.classList.remove('construction-enabled');
                         if (statusIndicator) {
-                            statusIndicator.textContent = '';
+                            statusIndicator.innerHTML = '';
+                            statusIndicator.classList.remove('active');
                         }
                     }
                 }
@@ -995,9 +944,9 @@ class PurchasePanel {
             
             const { buildRateByZone, enabledBuildingsByZone } = this.cachedProgressData || { buildRateByZone: {}, enabledBuildingsByZone: {} };
             
-            // Cache progress containers to avoid repeated queries
+            // Cache progress containers to avoid repeated queries (works with new and old cards)
             if (!this.cachedElements.buildingProgressContainers) {
-                this.cachedElements.buildingProgressContainers = Array.from(this.container.querySelectorAll('.building-progress-container'));
+                this.cachedElements.buildingProgressContainers = Array.from(this.container.querySelectorAll('.structure-progress-section, .building-progress-container'));
                 this.cachedElements.lastCacheTime = Date.now();
             }
             

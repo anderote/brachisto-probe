@@ -160,7 +160,8 @@ class GameEngine:
         self.research = {}
         
         # Dyson sphere
-        self.dyson_sphere_mass = 0.0
+        initial_dyson_mass = self.config.get('initial_dyson_mass', 0.0)
+        self.dyson_sphere_mass = initial_dyson_mass
         self.dyson_sphere_target_mass = self.config.get('dyson_sphere_target_mass', Config.DYSON_SPHERE_TARGET_MASS)
         
         # Probe construction progress tracking: {probe_type: progress_in_kg}

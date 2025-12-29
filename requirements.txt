@@ -7,3 +7,8 @@ PyJWT==2.8.0
 psycopg2-binary==2.9.9
 python-dotenv==1.0.0
 Werkzeug==3.0.1
+
+# Astrodynamics / Trajectory Calculation
+poliastro==0.17.0
+astropy>=5.0
+numpy>=1.20

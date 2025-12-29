@@ -38,7 +38,7 @@ class TransferVisualization {
         this.ellipseCache = new Map();
         
         // Callback for when transfers arrive at destination
-        // Called with: {zoneId, resourceType, positions: [THREE.Vector3], dotCount}
+        // Called with: {zoneId, resourceType, arrivals: [{position, massKg, velocityDir}], dotCount}
         this.onTransferArrival = null;
         
         // Animation state for smooth interpolation
@@ -751,6 +751,291 @@ class TransferVisualization {
     
     /**
      * Calculate position along ellipse based on transfer progress
+    /**
+     * Create probe transfer visualization from trajectory points in transfer object
+     * @param {string} transferId - Transfer ID
+     * @param {Object} transfer - Transfer object from game state (with trajectory_points_au)
+     * @param {string} fromZoneId - Origin zone ID
+     * @param {string} toZoneId - Destination zone ID
+     * @param {Object} gameState - Game state
+     * @returns {Object} Transfer visualization object
+     */
+    createProbeTransferFromPoints(transferId, transfer, fromZoneId, toZoneId, gameState) {
+        try {
+            const trajectoryPointsAU = transfer.trajectory_points_au;
+            
+            if (!trajectoryPointsAU || trajectoryPointsAU.length < 2) {
+                console.error('[TransferViz] Invalid trajectory points in transfer object');
+                return null;
+            }
+            
+            // Create trajectory curve
+            const trajectoryCurve = this.createTrajectoryCurve(trajectoryPointsAU);
+            if (!trajectoryCurve) {
+                console.error('[TransferViz] Failed to create trajectory curve');
+                return null;
+            }
+            
+            // Calculate arc length along trajectory
+            const arcLength = this.calculateTrajectoryArcLength(trajectoryCurve);
+            
+            // Create trajectory line visualization
+            const curvePoints = trajectoryCurve.getPoints(100);
+            const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+            const material = new THREE.LineDashedMaterial({
+                color: this.colors.probe,
+                dashSize: 0.1,
+                gapSize: 0.05,
+                opacity: 0.6,
+                transparent: true
+            });
+            const line = new THREE.Line(geometry, material);
+            line.computeLineDistances();
+            this.scene.add(line);
+            line.visible = this.linesVisible;
+            
+            // Create probe dot
+            const dot = this.createCargoDot('probe', null);
+            this.scene.add(dot);
+            
+            // Calculate velocities based on trajectory
+            const departureTime = transfer.departure_time || 0;
+            const transferTimeDays = transfer.transfer_time || 0;
+            const avgVelocity = arcLength > 0 && transferTimeDays > 0 ? arcLength / transferTimeDays : 0.01;
+            
+            // Estimate velocities at start and end (simplified - could be improved with actual velocity vectors)
+            const fromVelocity = avgVelocity * 1.2; // Start faster
+            const toVelocity = avgVelocity * 0.8;   // End slower
+            
+            const transferViz = {
+                ellipse: line, // Store line in ellipse field for compatibility
+                trajectoryCurve: trajectoryCurve,
+                trajectoryPointsAU: trajectoryPointsAU,
+                fromZoneId: fromZoneId,
+                toZoneId: toZoneId,
+                dot: dot,
+                transferId: transferId,
+                resourceType: 'probe',
+                fromVelocity: fromVelocity,
+                toVelocity: toVelocity,
+                avgVelocity: avgVelocity,
+                arcLength: arcLength,
+                visualTransferTimeDays: transferTimeDays,
+                departureTime: departureTime,
+                arrivalTime: departureTime + transferTimeDays,
+                // Fallback ellipse params (not used but kept for compatibility)
+                params: null,
+                fromAngle: 0,
+                toAngle: 0,
+                transferAngle: 0,
+                fromAU: 0,
+                toAU: 0
+            };
+            
+            return transferViz;
+        } catch (error) {
+            console.error(`[TransferViz] Error creating probe transfer from points:`, error);
+            return null;
+        }
+    }
+    
+    /**
+     * Create fallback transfer visualization using Hohmann ellipse (for metal transfers or when trajectory fetch fails)
+     * @param {string} transferId - Transfer ID
+     * @param {Object} transfer - Transfer object
+     * @param {string} fromZoneId - Origin zone ID
+     * @param {string} toZoneId - Destination zone ID
+     * @param {string} resourceType - Resource type
+     * @param {Object} gameState - Game state
+     */
+    createFallbackTransfer(transferId, transfer, fromZoneId, toZoneId, resourceType, gameState) {
+        const ellipseData = this.createEllipseLine(fromZoneId, toZoneId, resourceType);
+        if (!ellipseData) {
+            return; // Skip if can't create ellipse
+        }
+        
+        // Get mass for one-time transfers (metal_kg for metal, probe mass for probes)
+        const transferMassKg = resourceType === 'metal' ? (transfer.metal_kg || 0) : null;
+        const dot = this.createCargoDot(resourceType, transferMassKg);
+        
+        this.scene.add(ellipseData.line);
+        // Add dot(s) to scene - handle both single dot and array of dots
+        if (this.isMultiDot(dot)) {
+            for (const d of dot) {
+                this.scene.add(d);
+            }
+        } else {
+            this.scene.add(dot);
+        }
+        
+        // Get probe delta-v capacity from skills
+        let probeDeltaVCapacity = null;
+        if (gameState && gameState.skills) {
+            probeDeltaVCapacity = this.calculateProbeDeltaVCapacity(gameState.skills);
+        }
+        
+        // Calculate Hohmann transfer velocities with detailed info
+        const fromVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, true, probeDeltaVCapacity);
+        const toVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, false, probeDeltaVCapacity);
+        
+        // Check if mass driver exists at origin zone
+        let hasMassDriver = false;
+        if (gameState && gameState.structures_by_zone) {
+            const zoneStructures = gameState.structures_by_zone[fromZoneId] || {};
+            hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
+        }
+        
+        // Apply mass driver boost: 1.5x origin velocity if mass driver exists
+        const massDriverMultiplier = hasMassDriver ? 1.5 : 1.0;
+        const fromVelocity = fromVelocityInfo.velocity * massDriverMultiplier;
+        const toVelocity = toVelocityInfo.velocity;
+        const avgVelocity = (fromVelocity + toVelocity) / 2;
+        
+        // Calculate visual arc length and visual transfer time
+        const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
+        const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
+        let arcLength = 0;
+        const gameTransferTime = transfer.transfer_time || 0;
+        let visualTransferTimeDays = gameTransferTime; // Fallback to game time
+        
+        if (fromVisualRadius && toVisualRadius && ellipseData.params) {
+            arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
+            if (arcLength > 0 && avgVelocity > 0) {
+                visualTransferTimeDays = arcLength / avgVelocity;
+            }
+        }
+        
+        const transferViz = {
+            ellipse: ellipseData.line,
+            params: ellipseData.params,
+            fromAngle: ellipseData.fromAngle,
+            toAngle: ellipseData.toAngle,
+            transferAngle: ellipseData.transferAngle,
+            fromAU: ellipseData.fromAU,
+            toAU: ellipseData.toAU,
+            fromZoneId: fromZoneId,
+            toZoneId: toZoneId,
+            dot: dot,
+            transferId: transferId,
+            resourceType: resourceType,
+            fromVelocity: fromVelocity,
+            toVelocity: toVelocity,
+            avgVelocity: avgVelocity,
+            hasMassDriver: hasMassDriver,
+            massDriverMultiplier: massDriverMultiplier,
+            arcLength: arcLength,
+            visualTransferTimeDays: visualTransferTimeDays,
+            probeDeltaVCapacity: probeDeltaVCapacity,
+            excessDeltaV: fromVelocityInfo.excessDeltaV,
+            isOutbound: fromVelocityInfo.isOutbound,
+            fromCircularVelocity: fromVelocityInfo.circularVelocity,
+            fromHohmannMultiplier: fromVelocityInfo.hohmannMultiplier,
+            fromSpeedMultiplier: fromVelocityInfo.speedMultiplier,
+            toCircularVelocity: toVelocityInfo.circularVelocity,
+            toHohmannMultiplier: toVelocityInfo.hohmannMultiplier,
+            toBlendFactor: toVelocityInfo.blendFactor
+        };
+        
+        // Respect current visibility state (Tab toggle)
+        ellipseData.line.visible = this.linesVisible;
+        
+        this.transfers.set(transferId, transferViz);
+    }
+    
+    /**
+     * Inverse scale function to convert visual units back to AU (approximate)
+     * @param {number} visualR - Visual radius
+     * @returns {number} Radius in AU
+     */
+    inverseScaleAUToVisual(visualR) {
+        if (!this.solarSystem) return visualR / 80;
+        
+        // This is approximate - for exact conversion we'd need to invert the hybrid scaling
+        // For now, use a simple approximation
+        const MARS_AU = 1.52;
+        const OUTER_BOUNDARY_AU = 140.0;
+        const INNER_VISUAL_FRACTION = 0.1;
+        const orbitScale = this.solarSystem.orbitScale || 800.0;
+        
+        const visualFraction = visualR / orbitScale;
+        
+        if (visualFraction <= INNER_VISUAL_FRACTION) {
+            // Linear scaling region
+            return (visualFraction / INNER_VISUAL_FRACTION) * MARS_AU;
+        } else {
+            // Logarithmic scaling region
+            const logNorm = (visualFraction - INNER_VISUAL_FRACTION) / (1 - INNER_VISUAL_FRACTION);
+            return Math.exp(Math.log(MARS_AU) + logNorm * (Math.log(OUTER_BOUNDARY_AU) - Math.log(MARS_AU)));
+        }
+    }
+    
+    /**
+     * Calculate position along trajectory curve at given progress (0.0 to 1.0)
+     * Uses trajectory points if available, otherwise falls back to ellipse calculation
+     * @param {Object} viz - Transfer visualization object (may contain trajectoryCurve)
+     * @param {number} progress - Progress along transfer (0.0 to 1.0)
+     * @returns {THREE.Vector3} Position in visual space
+     */
+    calculatePositionOnTrajectory(viz, progress) {
+        // If trajectory curve is available, use it
+        if (viz.trajectoryCurve) {
+            const point = viz.trajectoryCurve.getPoint(Math.max(0, Math.min(1, progress)));
+            return point;
+        }
+        
+        // Fall back to ellipse calculation
+        return this.calculatePositionOnEllipse(
+            viz.params,
+            viz.fromAngle,
+            viz.toAngle,
+            viz.transferAngle,
+            viz.fromAU,
+            viz.toAU,
+            progress,
+            viz.fromZoneId,
+            viz.toZoneId
+        );
+    }
+    
+    /**
+     * Calculate arc length along trajectory curve
+     * @param {THREE.Curve} curve - Trajectory curve
+     * @param {number} segments - Number of segments for integration (default 100)
+     * @returns {number} Arc length in visual units
+     */
+    calculateTrajectoryArcLength(curve, segments = 100) {
+        let length = 0;
+        const prevPoint = curve.getPoint(0);
+        
+        for (let i = 1; i <= segments; i++) {
+            const t = i / segments;
+            const point = curve.getPoint(t);
+            length += prevPoint.distanceTo(point);
+            prevPoint.copy(point);
+        }
+        
+        return length;
+    }
+    
+    /**
+     * Create trajectory curve from backend points
+     * @param {Array<Array<number>>} trajectoryPointsAU - Array of [x, y] positions in AU
+     * @returns {THREE.Curve} Catmull-Rom spline curve
+     */
+    createTrajectoryCurve(trajectoryPointsAU) {
+        // Convert AU coordinates to visual coordinates
+        const visualPoints = this.convertAUPointsToVisual(trajectoryPointsAU);
+        
+        if (visualPoints.length < 2) {
+            return null;
+        }
+        
+        // Create smooth curve through the points using Catmull-Rom spline
+        const curve = new THREE.CatmullRomCurve3(visualPoints, false, 'catmullrom', 0.5);
+        return curve;
+    }
+    
+    /**
      * @param {Object} params - Ellipse parameters
      * @param {number} fromAngle - Angle of origin planet at launch time
      * @param {number} toAngle - Angle of destination planet at arrival time
@@ -960,23 +1245,31 @@ class TransferVisualization {
     
     /**
      * Create cargo icon(s) for a transfer
-     * Metal transfers use a single silver square
+     * Metal transfers use a single cube sized proportionally to mass
      * Probes use a single dot (Points) matching the probe particle system
+     * @param {string} resourceType - Type of resource being transferred
+     * @param {number} massKg - Optional mass in kg for mass-proportional sizing
      */
-    createCargoDot(resourceType) {
+    createCargoDot(resourceType, massKg = null) {
         const color = this.colors[resourceType] || this.colors.probe;
         
         if (resourceType === 'metal') {
-            // Create a single square for metal transfers
-            const size = 0.06;
+            // Calculate size from mass using the same distribution as resource particles
+            let size;
+            if (massKg && massKg > 0) {
+                size = this.calculateMassVisualSize(massKg);
+            } else {
+                // Fallback to minimum visible size if no mass provided
+                size = 0.02;
+            }
+            
             const geometry = new THREE.BoxGeometry(size, size, size);
             const material = new THREE.MeshBasicMaterial({
-                color: color,
-                emissive: color,
-                emissiveIntensity: 0.5
+                color: color
             });
             
             const icon = new THREE.Mesh(geometry, material);
+            icon.userData.massKg = massKg || 0;
             return icon;
         } else {
             // Create a single dot (Points) for probe transfers
@@ -1012,7 +1305,7 @@ class TransferVisualization {
             return this.solarSystem.probeParticleConfig.transferSize;
         }
         // Fallback default
-        return 0.4;
+        return 0.16;
     }
     
     /**
@@ -1023,90 +1316,139 @@ class TransferVisualization {
     }
     
     /**
-     * Calculate number of dots for a mass stream based on mass
-     * Uses logarithmic scaling: 1 dot at 100k kg, 5 dots at 1M kg, 10 dots at 10M kg
+     * Calculate visual size for a mass using the same distribution as resource particles.
+     * Uses solarSystem's massToVisualSize for consistency.
      * @param {number} massKg - Mass in kg
-     * @returns {number} Number of dots (1-30)
+     * @returns {number} Visual size for THREE.js rendering
      */
-    calculateMassStreamDotCount(massKg) {
-        const MIN_MASS_KG = 100000; // 100k kg minimum for 1 dot
-        const MAX_DOTS = 30; // Performance limit
-        
-        if (massKg < MIN_MASS_KG) {
-            return 0;
+    calculateMassVisualSize(massKg) {
+        // Use solarSystem's unified particle sizing if available
+        if (this.solarSystem && this.solarSystem.massToVisualSize) {
+            return this.solarSystem.massToVisualSize(massKg);
         }
         
-        // Logarithmic scaling: dots = 1 + log10(mass / 100k) * scale_factor
-        // At 100k: 1 dot
-        // At 1M: ~5 dots
-        // At 10M: ~10 dots
-        // At 100M: ~15 dots
-        const logMass = Math.log10(massKg / MIN_MASS_KG);
-        const dots = 1 + logMass * 4; // Scale factor tuned for visual appeal
+        // Fallback: use same algorithm as solarSystem.massToVisualSize
+        // Config defaults from applyDefaultParticleConfig
+        const minMass = 1e6;        // 1 megakilogram
+        const maxMass = 1e22;       // 10 zettakilograms
+        const minVisualSize = 0.05; // Tiny dot
+        const maxVisualSize = 3.5;  // Huge asteroid
+        const sizeExponent = 0.4;   // Power transform
         
-        return Math.min(MAX_DOTS, Math.max(1, Math.floor(dots)));
+        const logMass = Math.log10(Math.max(minMass, Math.min(maxMass, massKg)));
+        const logMin = Math.log10(minMass);  // 6
+        const logMax = Math.log10(maxMass);  // 22
+        
+        // Normalize to [0, 1] in log-space
+        let t = (logMass - logMin) / (logMax - logMin);
+        
+        // Apply power transform to shift size distribution
+        t = Math.pow(t, sizeExponent);
+        
+        // Exponential scaling: size = minSize * (maxSize/minSize)^t
+        const sizeRatio = maxVisualSize / minVisualSize;
+        const size = minVisualSize * Math.pow(sizeRatio, t);
+        
+        return size;
     }
     
     /**
-     * Calculate dot size based on mass per dot
-     * Larger mass per dot = larger visual size
-     * @param {number} massPerDotKg - Mass represented by each dot
-     * @returns {number} Dot size (0.03 to 0.12)
-     */
-    calculateMassStreamDotSize(massPerDotKg) {
-        const MIN_SIZE = 0.03;
-        const MAX_SIZE = 0.12;
-        const BASE_SIZE = 0.04;
-        
-        // Scale size logarithmically with mass per dot
-        // At 100k per dot: MIN_SIZE
-        // At 1M per dot: BASE_SIZE
-        // At 10M per dot: MAX_SIZE
-        const logMass = Math.log10(Math.max(100000, massPerDotKg) / 100000);
-        const size = BASE_SIZE + logMass * 0.02; // Scale factor
-        
-        return Math.min(MAX_SIZE, Math.max(MIN_SIZE, size));
-    }
-    
-    /**
-     * Create a mass stream - cluster of dots representing mass being transferred
-     * All dots follow the same trajectory, spread along the path
+     * Create mass dots for a transfer, split by mass driver count.
+     * Multiple mass drivers create multiple dots launched at staggered times within 1 day.
      * @param {number} massKg - Total mass in kg
-     * @param {number} arcLength - Arc length of the transfer path in visual units
+     * @param {number} arcLength - Arc length of the transfer path
+     * @param {number} massDriverCount - Number of mass drivers (1-20, saturates at 20)
      * @returns {Array<THREE.Mesh>} Array of dot meshes
      */
-    createMassStream(massKg, arcLength) {
+    createMassStream(massKg, arcLength, massDriverCount = 1) {
         const color = this.colors.metal;
         const dots = [];
         
-        // Calculate dot count and size
-        const dotCount = this.calculateMassStreamDotCount(massKg);
-        if (dotCount === 0) {
+        // Minimum mass threshold for visibility
+        const MIN_MASS_KG = 10000; // 10 tons minimum
+        if (massKg < MIN_MASS_KG) {
             return dots;
         }
         
-        const massPerDot = massKg / dotCount;
-        const dotSize = this.calculateMassStreamDotSize(massPerDot);
+        // Determine number of dots based on mass driver count
+        // - Saturates at 20 mass drivers
+        // - Only split if mass >= 1e6 kg (1 megatonne)
+        const MAX_DOTS = 20;
+        const MIN_MASS_FOR_SPLIT = 1e6; // 1 megatonne
         
-        // Create dots with spacing along the trajectory
-        // Dot spacing: 0.8% of arc length between dots
-        const dotSpacing = arcLength * 0.008;
+        let numDots = 1;
+        if (massKg >= MIN_MASS_FOR_SPLIT && massDriverCount > 1) {
+            numDots = Math.min(massDriverCount, MAX_DOTS);
+        }
         
-        for (let i = 0; i < dotCount; i++) {
-            const geometry = new THREE.BoxGeometry(dotSize, dotSize, dotSize);
+        // Calculate mass per dot
+        const massPerDot = massKg / numDots;
+        const visualSize = this.calculateMassVisualSize(massPerDot);
+        
+        // Create dots with staggered launch times
+        // All shots happen within 1 game day, evenly spaced
+        for (let i = 0; i < numDots; i++) {
+            const geometry = new THREE.BoxGeometry(visualSize, visualSize, visualSize);
             const material = new THREE.MeshBasicMaterial({
-                color: color,
-                emissive: color,
-                emissiveIntensity: 0.5
+                color: color
             });
             
             const dot = new THREE.Mesh(geometry, material);
-            // Store spacing offset for animation
-            dot.userData.spacingOffset = i * dotSpacing;
+            
+            // Launch offset in days (0 to just under 1 day, evenly spaced)
+            // First dot launches at t=0, last dot launches at t = (numDots-1)/numDots days
+            const launchOffset = numDots > 1 ? (i / numDots) : 0;
+            
+            dot.userData.launchOffset = launchOffset;
+            dot.userData.massKg = massPerDot;
+            dot.userData.dotIndex = i;
+            dot.visible = false; // Start hidden until launched
+            
             dots.push(dot);
         }
         
         return dots;
+    }
+    
+    /**
+     * Update the mass and visual size of an existing chunk visualization
+     * Called when new batches are added to an existing 7-day chunk
+     * @param {Object} batchViz - The existing batch visualization object
+     * @param {number} newTotalMassKg - The new total mass for this chunk
+     */
+    updateChunkVisualizationMass(batchViz, newTotalMassKg) {
+        if (!batchViz || !batchViz.dot) return;
+        
+        const oldMass = batchViz.totalMassKg || 0;
+        batchViz.totalMassKg = newTotalMassKg;
+        
+        // Update dot(s) - handle both single dot and array of dots
+        if (this.isMultiDot(batchViz.dot)) {
+            // Multi-dot: divide mass among all dots
+            const numDots = batchViz.dot.length;
+            const massPerDot = newTotalMassKg / numDots;
+            const newVisualSize = this.calculateMassVisualSize(massPerDot);
+            
+            for (const d of batchViz.dot) {
+                // Update geometry size
+                if (d.geometry) {
+                    d.geometry.dispose();
+                    d.geometry = new THREE.BoxGeometry(newVisualSize, newVisualSize, newVisualSize);
+                }
+                d.userData.massKg = massPerDot;
+            }
+        } else if (batchViz.dot.geometry) {
+            // Single dot - update its geometry with full mass
+            const newVisualSize = this.calculateMassVisualSize(newTotalMassKg);
+            batchViz.dot.geometry.dispose();
+            batchViz.dot.geometry = new THREE.BoxGeometry(newVisualSize, newVisualSize, newVisualSize);
+            batchViz.dot.userData.massKg = newTotalMassKg;
+        }
+        
+        // Log the update for debugging
+        if (newTotalMassKg > oldMass * 1.1) { // Only log if significant increase (>10%)
+            console.log(`[TransferViz] Updated chunk ${batchViz.batchId} mass: ${(oldMass/1e6).toFixed(2)}Mt -> ${(newTotalMassKg/1e6).toFixed(2)}Mt`);
+        }
     }
     
     /**
@@ -1175,6 +1517,7 @@ class TransferVisualization {
         // This fixes the trajectory for this specific visualization
         const ellipseData = this.createEllipseLine(fromZoneId, toZoneId, resourceType);
         if (!ellipseData) {
+            console.warn(`[TransferViz] Failed to create ellipse for ${fromZoneId} -> ${toZoneId}`);
             return null;
         }
         
@@ -1186,12 +1529,22 @@ class TransferVisualization {
             arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
         }
         
-        // For metal transfers, create mass stream; for probes, use single dot
+        // For metal transfers, create mass-proportioned dot(s); for probes, use single dot
+        // Multiple mass drivers create multiple staggered dots
         let dot;
-        if (resourceType === 'metal' && batchMassKg !== null && batchMassKg > 0 && arcLength > 0) {
-            dot = this.createMassStream(batchMassKg, arcLength);
+        const willCreateMassStream = resourceType === 'metal' && batchMassKg !== null && batchMassKg > 0 && arcLength > 0;
+        
+        if (willCreateMassStream) {
+            // Get mass driver count from game state for multi-shot visualization
+            let massDriverCount = 1;
+            if (gameState && gameState.structures_by_zone) {
+                const zoneStructures = gameState.structures_by_zone[fromZoneId] || {};
+                massDriverCount = zoneStructures['mass_driver'] || 1;
+            }
+            dot = this.createMassStream(batchMassKg, arcLength, massDriverCount);
         } else {
-            dot = this.createCargoDot(resourceType);
+            // Pass mass for proper sizing (metal transfers)
+            dot = this.createCargoDot(resourceType, batchMassKg);
         }
         
         this.scene.add(ellipseData.line);
@@ -1257,6 +1610,7 @@ class TransferVisualization {
             departureTime: departureTime,
             arrivalTime: arrivalTime,
             resourceType: resourceType,
+            totalMassKg: batchMassKg || 0, // Track total mass for this chunk (for updates)
             fromVelocity: fromVelocity,
             toVelocity: toVelocity,
             avgVelocity: avgVelocity,
@@ -1384,6 +1738,7 @@ class TransferVisualization {
                                 }
                             }
                             
+                            
                             // Second pass: create visualizations
                             for (const batch of transfer.in_transit) {
                                 const batchDepartureTime = batch.departure_time || 0;
@@ -1393,9 +1748,31 @@ class TransferVisualization {
                                 seenChunks.add(chunkId);
                                 
                                 // Create visualization for this chunk if it doesn't exist
-                                if (!this.continuousBatches.has(chunkId)) {
+                                // Also recreate if existing visualization has 0 dots (creation failed)
+                                // Also update mass if new batches were added to existing chunk
+                                let needsCreation = !this.continuousBatches.has(chunkId);
+                                const currentChunkMass = resourceType === 'metal' ? (chunkMasses.get(chunkId) || 0) : 0;
+                                
+                                if (!needsCreation) {
+                                    const existingViz = this.continuousBatches.get(chunkId);
+                                    if (existingViz && existingViz.dot) {
+                                        const dotCount = Array.isArray(existingViz.dot) ? existingViz.dot.length : 1;
+                                        if (dotCount === 0) {
+                                            // Recreate visualizations that failed to create dots
+                                            this.removeBatch(chunkId);
+                                            needsCreation = true;
+                                        } else if (resourceType === 'metal' && existingViz.totalMassKg !== undefined) {
+                                            // Check if mass has increased - update visualization size if so
+                                            if (currentChunkMass > existingViz.totalMassKg) {
+                                                this.updateChunkVisualizationMass(existingViz, currentChunkMass);
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if (needsCreation) {
                                     // Get accumulated mass for this chunk (metal transfers only)
-                                    const batchMassKg = resourceType === 'metal' ? (chunkMasses.get(chunkId) || 0) : null;
+                                    const batchMassKg = resourceType === 'metal' ? currentChunkMass : null;
                                     
                                     // Create visualization for this chunk (weekly for metal, 120 days for probes)
                                     // Use chunk start time as departure time
@@ -1427,6 +1804,9 @@ class TransferVisualization {
                 }
                 
                 // Update all existing visualizations for this continuous transfer
+                // Collect batches to remove after iteration (avoid modifying Map while iterating)
+                const batchesToRemove = [];
+                
                 for (const [batchId, batchViz] of this.continuousBatches.entries()) {
                     if (batchViz.transferId === transferId) {
                         seenBatchIds.add(batchId);
@@ -1447,31 +1827,67 @@ class TransferVisualization {
                         const v0 = batchViz.fromVelocity || 0.01;
                         const vEnd = batchViz.toVelocity || 0.01;
                         const arcLength = batchViz.arcLength || 0;
-                        const progress = this.calculateVelocityIntegratedProgress(v0, vEnd, elapsed, visualTripTime, arcLength);
                         
-                        // Check if transfer has completed: both visual progress and actual arrival time
-                        const hasArrived = currentTime >= batchViz.arrivalTime;
-                        const isComplete = progress >= 1.0 || hasArrived;
-                        
-                        if (isComplete) {
-                            // Collect dot position BEFORE hiding (for arrival event)
-                            // Emit arrival event before removing
-                            this.emitArrivalEvent(batchViz);
+                        // For multi-dot batches with staggered launches, check each dot individually
+                        if (this.isMultiDot(batchViz.dot)) {
+                            let allDotsComplete = true;
+                            const arrivedDots = [];
                             
-                            // Hide dot after collecting position
-                            if (batchViz.dot) {
-                                if (this.isMultiDot(batchViz.dot)) {
-                                    batchViz.dot.forEach(d => d.visible = false);
-                                } else {
-                                    batchViz.dot.visible = false;
+                            for (const dot of batchViz.dot) {
+                                const launchOffset = dot.userData.launchOffset || 0;
+                                const effectiveElapsed = elapsed - launchOffset;
+                                
+                                // Check if this specific dot has completed
+                                const dotProgress = effectiveElapsed >= 0 
+                                    ? this.calculateVelocityIntegratedProgress(v0, vEnd, effectiveElapsed, visualTripTime, arcLength)
+                                    : 0;
+                                const dotHasArrived = dotProgress >= 1.0;
+                                
+                                if (!dotHasArrived) {
+                                    allDotsComplete = false;
+                                } else if (!dot.userData.arrivalEmitted) {
+                                    // This dot just arrived - collect for arrival event
+                                    dot.userData.arrivalEmitted = true;
+                                    dot.visible = false;
+                                    arrivedDots.push(dot);
                                 }
                             }
                             
-                            // Visualization completed, remove it
-                            this.removeBatch(batchId);
+                            // Emit arrival events for newly arrived dots
+                            if (arrivedDots.length > 0) {
+                                this.emitDotArrivals(batchViz, arrivedDots);
+                            }
+                            
+                            // Only remove batch when ALL dots have completed
+                            if (allDotsComplete) {
+                                batchesToRemove.push(batchId);
+                            }
+                        } else {
+                            // Single dot - use original logic
+                            const progress = this.calculateVelocityIntegratedProgress(v0, vEnd, elapsed, visualTripTime, arcLength);
+                            const hasArrived = currentTime >= batchViz.arrivalTime;
+                            const isComplete = progress >= 1.0 || hasArrived;
+                            
+                            if (isComplete) {
+                                // Emit arrival event before removing
+                                this.emitArrivalEvent(batchViz);
+                                
+                                // Hide dot
+                                if (batchViz.dot) {
+                                    batchViz.dot.visible = false;
+                                }
+                                
+                                // Mark for removal
+                                batchesToRemove.push(batchId);
+                            }
                         }
                         // Note: Dot positioning is now handled by animate() method for smooth 60fps updates
                     }
+                }
+                
+                // Remove completed batch visualizations
+                for (const batchId of batchesToRemove) {
+                    this.removeBatch(batchId);
                 }
             } else {
                 // One-time transfer: single visualization
@@ -1487,105 +1903,29 @@ class TransferVisualization {
                 let transferViz = this.transfers.get(transferId);
                 
                 if (!transferViz) {
-                    // Create new transfer visualization (fixed trajectory at launch time)
-                    const ellipseData = this.createEllipseLine(fromZoneId, toZoneId, resourceType);
-                    if (!ellipseData) {
-                        continue; // Skip if can't create ellipse
-                    }
-                    
-                    const dot = this.createCargoDot(resourceType);
-                    
-                    this.scene.add(ellipseData.line);
-                    // Add dot(s) to scene - handle both single dot and array of dots
-                    if (this.isMultiDot(dot)) {
-                        for (const d of dot) {
-                            this.scene.add(d);
+                    // For probe transfers, use trajectory points if available in transfer object
+                    // Otherwise fall back to Hohmann ellipse
+                    if (resourceType === 'probe' && transfer.trajectory_points_au && transfer.trajectory_points_au.length > 0) {
+                        // Use trajectory points from transfer object
+                        transferViz = this.createProbeTransferFromPoints(transferId, transfer, fromZoneId, toZoneId, gameState);
+                        if (transferViz) {
+                            this.transfers.set(transferId, transferViz);
+                        } else {
+                            // Fall back to Hohmann if creation failed
+                            this.createFallbackTransfer(transferId, transfer, fromZoneId, toZoneId, resourceType, gameState);
+                            transferViz = this.transfers.get(transferId);
                         }
                     } else {
-                        this.scene.add(dot);
+                        // Metal transfers or probe transfers without trajectory points use Hohmann ellipse
+                        this.createFallbackTransfer(transferId, transfer, fromZoneId, toZoneId, resourceType, gameState);
+                        // Get the newly created transferViz
+                        transferViz = this.transfers.get(transferId);
                     }
-                    
-        // Get probe delta-v capacity from skills
-        let probeDeltaVCapacity = null;
-        if (gameState && gameState.skills) {
-            probeDeltaVCapacity = this.calculateProbeDeltaVCapacity(gameState.skills);
-        }
-        
-        // Calculate Hohmann transfer velocities with detailed info
-        // At periapsis (inner): faster than circular, at apoapsis (outer): slower than circular
-        // Excess delta-v provides speed bonus at origin and blend toward circular at destination
-        const fromVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, true, probeDeltaVCapacity);
-        const toVelocityInfo = this.getHohmannTransferVelocityInfo(fromZoneId, toZoneId, false, probeDeltaVCapacity);
-        
-        // Check if mass driver exists at origin zone
-        let hasMassDriver = false;
-        if (gameState && gameState.structures_by_zone) {
-            const zoneStructures = gameState.structures_by_zone[fromZoneId] || {};
-            hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
-        }
-        
-        // Apply mass driver boost: 1.5x origin velocity if mass driver exists
-        const massDriverMultiplier = hasMassDriver ? 1.5 : 1.0;
-        const fromVelocity = fromVelocityInfo.velocity * massDriverMultiplier;
-        const toVelocity = toVelocityInfo.velocity;
-        const avgVelocity = (fromVelocity + toVelocity) / 2;
-                    
-                    // Calculate visual arc length and visual transfer time
-                    const fromVisualRadius = this.getVisualOrbitRadius(fromZoneId);
-                    const toVisualRadius = this.getVisualOrbitRadius(toZoneId);
-                    let arcLength = 0;
-                    const gameTransferTime = transfer.transfer_time || 0;
-                    let visualTransferTimeDays = gameTransferTime; // Fallback to game time
-                    
-                    if (fromVisualRadius && toVisualRadius && ellipseData.params) {
-                        arcLength = this.calculateArcLength(ellipseData.params, fromVisualRadius, toVisualRadius);
-                        if (arcLength > 0 && avgVelocity > 0) {
-                            // Calculate visual transfer time using average velocity
-                            // Units: arcLength (visual units) / avgVelocity (visual units/day) = days
-                            // This ensures progress reaches exactly 1.0 at completion
-                            // Visual speed varies linearly from fromVelocity to toVelocity
-                            visualTransferTimeDays = arcLength / avgVelocity;
-                        }
-                    }
-                    
-                    transferViz = {
-                        ellipse: ellipseData.line,
-                        params: ellipseData.params,
-                        fromAngle: ellipseData.fromAngle,
-                        toAngle: ellipseData.toAngle,
-                        transferAngle: ellipseData.transferAngle,
-                        fromAU: ellipseData.fromAU,
-                        toAU: ellipseData.toAU,
-                        fromZoneId: fromZoneId, // Store for visual position calculation
-                        toZoneId: toZoneId, // Store for visual radius calculation
-                        dot: dot,
-                        transferId: transferId,
-                        resourceType: resourceType,
-                        fromVelocity: fromVelocity,
-                        toVelocity: toVelocity,
-                        avgVelocity: avgVelocity,
-                        hasMassDriver: hasMassDriver,
-                        massDriverMultiplier: massDriverMultiplier,
-                        arcLength: arcLength,
-                        visualTransferTimeDays: visualTransferTimeDays,
-                        // Velocity detail info
-                        probeDeltaVCapacity: probeDeltaVCapacity,
-                        excessDeltaV: fromVelocityInfo.excessDeltaV,
-                        isOutbound: fromVelocityInfo.isOutbound,
-                        // Origin velocity breakdown
-                        fromCircularVelocity: fromVelocityInfo.circularVelocity,
-                        fromHohmannMultiplier: fromVelocityInfo.hohmannMultiplier,
-                        fromSpeedMultiplier: fromVelocityInfo.speedMultiplier,
-                        // Destination velocity breakdown
-                        toCircularVelocity: toVelocityInfo.circularVelocity,
-                        toHohmannMultiplier: toVelocityInfo.hohmannMultiplier,
-                        toBlendFactor: toVelocityInfo.blendFactor
-                    };
-                    
-                    // Respect current visibility state (Tab toggle)
-                    ellipseData.line.visible = this.linesVisible;
-                    
-                    this.transfers.set(transferId, transferViz);
+                }
+                
+                // Skip if transferViz still doesn't exist (async creation in progress)
+                if (!transferViz) {
+                    continue;
                 }
                 
                 // Calculate progress by integrating velocity over time
@@ -1662,84 +2002,140 @@ class TransferVisualization {
      * @param {Object} viz - Transfer or batch visualization object
      */
     emitArrivalEvent(viz) {
-        if (!this.onTransferArrival) return;
+        if (!this.onTransferArrival) {
+            return;
+        }
         
         const toZoneId = viz.toZoneId;
         const resourceType = viz.resourceType || 'probe';
         
-        // Collect dot positions at destination
-        const positions = [];
+        // Collect dot positions and masses at destination
+        const arrivals = [];
+        
+        // Calculate velocity direction at destination (tangent to transfer orbit)
+        // This is used to give arriving particles forward momentum
+        const velocityDir = this.calculateArrivalVelocityDirection(viz);
+        
         if (viz.dot) {
             if (this.isMultiDot(viz.dot)) {
-                // Mass stream: calculate final positions for all dots
-                // Each dot arrives at progress=1.0, accounting for spacing offset
-                const arcLength = viz.arcLength || 0;
+                // Mass stream: collect mass and position for each dot
                 for (const d of viz.dot) {
-                    const spacingOffset = d.userData.spacingOffset || 0;
-                    // Calculate final progress for this dot (1.0 minus offset)
-                    const progressOffset = arcLength > 0 ? spacingOffset / arcLength : 0;
-                    const finalProgress = Math.max(0, Math.min(1.0, 1.0 - progressOffset));
-                    
-                    // Calculate position at final progress (ensures smooth arrival)
-                    const destPos = this.calculatePositionOnEllipse(
-                        viz.params,
-                        viz.fromAngle,
-                        viz.toAngle,
-                        viz.transferAngle,
-                        viz.fromAU,
-                        viz.toAU,
-                        finalProgress,
-                        viz.fromZoneId,
-                        viz.toZoneId
-                    );
-                    positions.push(destPos);
+                    const massKg = d.userData.massKg || 0;
+                    const destPos = this.calculatePositionOnTrajectory(viz, 1.0); // At destination
+                    arrivals.push({
+                        position: destPos,
+                        massKg: massKg,
+                        velocityDir: velocityDir
+                    });
                 }
             } else {
-                // Single dot: use current position or calculate destination
+                // Single dot with mass
+                const massKg = viz.dot.userData?.massKg || 0;
+                let destPos;
                 if (viz.dot.visible && viz.dot.position) {
-                    positions.push(viz.dot.position.clone());
+                    destPos = viz.dot.position.clone();
                 } else {
-                    // Calculate destination position from ellipse
-                    const destPos = this.calculatePositionOnEllipse(
-                        viz.params,
-                        viz.fromAngle,
-                        viz.toAngle,
-                        viz.transferAngle,
-                        viz.fromAU,
-                        viz.toAU,
-                        1.0, // At destination (progress = 1.0)
-                        viz.fromZoneId,
-                        viz.toZoneId
-                    );
-                    positions.push(destPos);
+                    destPos = this.calculatePositionOnTrajectory(viz, 1.0);
                 }
+                arrivals.push({
+                    position: destPos,
+                    massKg: massKg,
+                    velocityDir: velocityDir
+                });
             }
         }
         
-        // If no positions collected, calculate destination position from ellipse
-        // This gives us the position at the destination orbit radius where the transfer arrives
-        if (positions.length === 0) {
-            const destPos = this.calculatePositionOnEllipse(
-                viz.params,
-                viz.fromAngle,
-                viz.toAngle,
-                viz.transferAngle,
-                viz.fromAU,
-                viz.toAU,
-                1.0, // At destination (progress = 1.0)
-                viz.fromZoneId,
-                viz.toZoneId
-            );
-            positions.push(destPos);
+        // If no arrivals collected, calculate destination position
+        if (arrivals.length === 0) {
+            const destPos = this.calculatePositionOnTrajectory(viz, 1.0);
+            arrivals.push({
+                position: destPos,
+                massKg: 0,
+                velocityDir: velocityDir
+            });
+        }
+        
+        // Emit the callback with full arrival information
+        this.onTransferArrival({
+            zoneId: toZoneId,
+            resourceType: resourceType,
+            arrivals: arrivals,
+            dotCount: arrivals.length
+        });
+    }
+    
+    /**
+     * Emit arrival events for specific dots that have just completed their journey
+     * Used for staggered multi-dot batches where dots arrive at different times
+     * @param {Object} batchViz - The batch visualization object
+     * @param {Array<THREE.Mesh>} arrivedDots - Array of dots that just arrived
+     */
+    emitDotArrivals(batchViz, arrivedDots) {
+        if (!this.onTransferArrival || arrivedDots.length === 0) {
+            return;
+        }
+        
+        const toZoneId = batchViz.toZoneId;
+        const resourceType = batchViz.resourceType || 'metal';
+        
+        // Calculate velocity direction at destination
+        const velocityDir = this.calculateArrivalVelocityDirection(batchViz);
+        
+        // Collect arrivals for just the specified dots
+        const arrivals = [];
+        for (const dot of arrivedDots) {
+            const massKg = dot.userData.massKg || 0;
+            const destPos = this.calculatePositionOnTrajectory(batchViz, 1.0); // At destination
+            arrivals.push({
+                position: destPos,
+                massKg: massKg,
+                velocityDir: velocityDir
+            });
         }
         
         // Emit the callback
         this.onTransferArrival({
             zoneId: toZoneId,
             resourceType: resourceType,
-            positions: positions,
-            dotCount: positions.length
+            arrivals: arrivals,
+            dotCount: arrivals.length
         });
+    }
+    
+    /**
+     * Calculate the velocity direction at arrival (tangent to transfer orbit)
+     * This represents the forward momentum of the cargo arriving at destination
+     * @param {Object} viz - Transfer visualization object
+     * @returns {THREE.Vector3} Normalized velocity direction vector
+     */
+    calculateArrivalVelocityDirection(viz) {
+        // Calculate positions at 99% and 100% progress to get tangent direction
+        const pos99 = this.calculatePositionOnEllipse(
+            viz.params,
+            viz.fromAngle,
+            viz.toAngle,
+            viz.transferAngle,
+            viz.fromAU,
+            viz.toAU,
+            0.99,
+            viz.fromZoneId,
+            viz.toZoneId
+        );
+        const pos100 = this.calculatePositionOnEllipse(
+            viz.params,
+            viz.fromAngle,
+            viz.toAngle,
+            viz.transferAngle,
+            viz.fromAU,
+            viz.toAU,
+            1.0,
+            viz.fromZoneId,
+            viz.toZoneId
+        );
+        
+        // Velocity direction is the difference, normalized
+        const velocityDir = new THREE.Vector3().subVectors(pos100, pos99).normalize();
+        return velocityDir;
     }
     
     /**
@@ -1825,7 +2221,9 @@ class TransferVisualization {
      */
     animateTransfers(transferMap, deltaTime) {
         for (const [id, viz] of transferMap.entries()) {
-            if (!viz.dot || !viz.visible) continue;
+            if (!viz.dot) continue;
+            // Note: viz.visible might not be set yet, so default to true if undefined
+            if (viz.visible === false) continue;
             
             // Calculate how much game time has passed based on time speed
             // timeSpeed is game-days per second at 1x, so:
@@ -1855,30 +2253,29 @@ class TransferVisualization {
             
             // Update dot position(s)
             if (this.isMultiDot(viz.dot)) {
-                // Mass stream: spread dots along the trajectory based on spacing offset
-                // Each dot has a spacingOffset stored in userData (distance along arc)
+                // Mass stream: multiple dots with staggered launch times
+                // Each dot has a launchOffset stored in userData (time offset in days)
                 for (let i = 0; i < viz.dot.length; i++) {
                     const dot = viz.dot[i];
-                    const spacingOffset = dot.userData.spacingOffset || 0;
+                    const launchOffset = dot.userData.launchOffset || 0;
                     
-                    // Calculate progress offset based on spacing
-                    // Convert spacing offset (visual units) to progress offset
-                    // Progress offset = spacingOffset / arcLength
-                    const progressOffset = arcLength > 0 ? spacingOffset / arcLength : 0;
-                    const dotProgress = progress - progressOffset;
+                    // Calculate effective elapsed time for this dot
+                    // Each dot starts its journey at (departureTime + launchOffset)
+                    const effectiveElapsed = viz.animElapsed - launchOffset;
+                    
+                    // Dot hasn't launched yet
+                    if (effectiveElapsed < 0) {
+                        dot.visible = false;
+                        continue;
+                    }
+                    
+                    // Calculate progress for this dot based on its effective elapsed time
+                    const dotProgress = this.calculateVelocityIntegratedProgress(
+                        v0, vEnd, effectiveElapsed, tripTime, arcLength
+                    );
                     
                     if (dotProgress >= 0 && dotProgress <= 1) {
-                        const position = this.calculatePositionOnEllipse(
-                            viz.params,
-                            viz.fromAngle,
-                            viz.toAngle,
-                            viz.transferAngle,
-                            viz.fromAU,
-                            viz.toAU,
-                            dotProgress,
-                            viz.fromZoneId,
-                            viz.toZoneId
-                        );
+                        const position = this.calculatePositionOnTrajectory(viz, dotProgress);
                         dot.position.copy(position);
                         dot.visible = true;
                     } else {
@@ -1887,17 +2284,7 @@ class TransferVisualization {
                 }
             } else {
                 if (progress >= 0 && progress <= 1) {
-                    const position = this.calculatePositionOnEllipse(
-                        viz.params,
-                        viz.fromAngle,
-                        viz.toAngle,
-                        viz.transferAngle,
-                        viz.fromAU,
-                        viz.toAU,
-                        progress,
-                        viz.fromZoneId,
-                        viz.toZoneId
-                    );
+                    const position = this.calculatePositionOnTrajectory(viz, progress);
                     viz.dot.position.copy(position);
                     viz.dot.visible = true;
                 }
@@ -1916,6 +2303,319 @@ class TransferVisualization {
         viz.visible = true;
     }
     
+    // ========================================================================
+    // LAMBERT TRAJECTORY VISUALIZATION (Backend-computed accurate trajectories)
+    // ========================================================================
+    
+    /**
+     * Store for Lambert-computed trajectories
+     * Map of transferId -> {curve, line, points, metadata}
+     */
+    lambertTrajectories = new Map();
+    
+    /**
+     * Create a visualization for a Lambert-computed trajectory
+     * 
+     * @param {string} transferId - Unique ID for this trajectory
+     * @param {Array<Array<number>>} trajectoryPointsAU - Array of [x, y] positions in AU
+     * @param {Object} options - Visualization options
+     * @param {number} options.color - Line color (default: cyan)
+     * @param {number} options.opacity - Line opacity (default: 0.8)
+     * @param {boolean} options.dashed - Whether to use dashed line (default: false)
+     * @param {boolean} options.isGravityAssist - Whether this is a gravity assist trajectory
+     * @returns {THREE.Line} The created line object
+     */
+    createLambertTrajectory(transferId, trajectoryPointsAU, options = {}) {
+        // Remove existing trajectory with same ID
+        if (this.lambertTrajectories.has(transferId)) {
+            this.removeLambertTrajectory(transferId);
+        }
+        
+        const color = options.color || 0x00ffff;
+        const opacity = options.opacity || 0.8;
+        const dashed = options.dashed || false;
+        const isGravityAssist = options.isGravityAssist || false;
+        
+        // Convert AU coordinates to visual coordinates
+        const visualPoints = this.convertAUPointsToVisual(trajectoryPointsAU);
+        
+        if (visualPoints.length < 2) {
+            console.warn('Not enough points for trajectory:', transferId);
+            return null;
+        }
+        
+        // Create a smooth curve through the points
+        const curve = new THREE.CatmullRomCurve3(visualPoints, false, 'catmullrom', 0.5);
+        
+        // Generate points along the curve for the line geometry
+        const curvePoints = curve.getPoints(100);
+        const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+        
+        // Create material
+        let material;
+        if (dashed) {
+            material = new THREE.LineDashedMaterial({
+                color: color,
+                opacity: opacity,
+                transparent: true,
+                dashSize: 3,
+                gapSize: 1,
+                linewidth: 2
+            });
+        } else {
+            material = new THREE.LineBasicMaterial({
+                color: color,
+                opacity: opacity,
+                transparent: true,
+                linewidth: 2
+            });
+        }
+        
+        const line = new THREE.Line(geometry, material);
+        
+        // For dashed lines, compute line distances
+        if (dashed) {
+            line.computeLineDistances();
+        }
+        
+        // Add to scene
+        this.scene.add(line);
+        
+        // Store metadata
+        this.lambertTrajectories.set(transferId, {
+            line: line,
+            curve: curve,
+            pointsAU: trajectoryPointsAU,
+            visualPoints: visualPoints,
+            isGravityAssist: isGravityAssist,
+            options: options
+        });
+        
+        return line;
+    }
+    
+    /**
+     * Convert AU coordinates to visual coordinates using the solar system's scaling
+     * 
+     * @param {Array<Array<number>>} pointsAU - Array of [x, y] positions in AU
+     * @returns {Array<THREE.Vector3>} Array of visual positions
+     */
+    convertAUPointsToVisual(pointsAU) {
+        const visualPoints = [];
+        
+        for (const [x, y] of pointsAU) {
+            // Calculate radial distance in AU
+            const r_au = Math.sqrt(x * x + y * y);
+            const theta = Math.atan2(y, x);
+            
+            // Convert radial distance to visual units using the solar system's scaling
+            let visualR;
+            if (this.solarSystem && this.solarSystem.scaleAUToVisual) {
+                visualR = this.solarSystem.scaleAUToVisual(r_au);
+            } else {
+                // Fallback: simple linear scaling
+                visualR = r_au * 80;
+            }
+            
+            // Convert back to Cartesian (note: Three.js uses Y as up, so we use X-Z plane)
+            const visualX = visualR * Math.cos(theta);
+            const visualZ = visualR * Math.sin(theta);
+            
+            visualPoints.push(new THREE.Vector3(visualX, 0, visualZ));
+        }
+        
+        return visualPoints;
+    }
+    
+    /**
+     * Remove a Lambert trajectory visualization
+     * 
+     * @param {string} transferId - ID of the trajectory to remove
+     */
+    removeLambertTrajectory(transferId) {
+        const traj = this.lambertTrajectories.get(transferId);
+        if (!traj) return;
+        
+        if (traj.line) {
+            this.scene.remove(traj.line);
+            if (traj.line.geometry) traj.line.geometry.dispose();
+            if (traj.line.material) traj.line.material.dispose();
+        }
+        
+        this.lambertTrajectories.delete(transferId);
+    }
+    
+    /**
+     * Fetch and create a Lambert trajectory from the backend
+     * 
+     * @param {string} fromZone - Departure zone ID
+     * @param {string} toZone - Arrival zone ID
+     * @param {number} gameTimeDays - Current game time in days
+     * @param {Object} options - Visualization options (color, opacity, etc.)
+     * @returns {Promise<Object>} The trajectory data and visualization
+     */
+    async fetchAndCreateLambertTrajectory(fromZone, toZone, gameTimeDays = 0, options = {}) {
+        try {
+            // Call the backend API
+            const response = await api.computeTrajectory(fromZone, toZone, gameTimeDays, 50);
+            
+            if (!response.success || !response.trajectory) {
+                console.error('Failed to compute trajectory:', response.error);
+                return null;
+            }
+            
+            const trajectory = response.trajectory;
+            const transferId = `lambert_${fromZone}_${toZone}_${Date.now()}`;
+            
+            // Create the visualization
+            const line = this.createLambertTrajectory(
+                transferId,
+                trajectory.trajectory_points_au,
+                options
+            );
+            
+            return {
+                transferId: transferId,
+                line: line,
+                trajectory: trajectory
+            };
+            
+        } catch (error) {
+            console.error('Error fetching Lambert trajectory:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * Fetch and create a gravity assist trajectory from the backend
+     * 
+     * @param {string} fromZone - Departure zone ID
+     * @param {string} toZone - Final destination zone ID
+     * @param {string} viaZone - Flyby zone ID
+     * @param {number} gameTimeDays - Current game time in days
+     * @param {Object} options - Visualization options
+     * @returns {Promise<Object>} The trajectory data and visualization
+     */
+    async fetchAndCreateGravityAssistTrajectory(fromZone, toZone, viaZone, gameTimeDays = 0, options = {}) {
+        try {
+            // Call the backend API
+            const response = await api.computeGravityAssistTrajectory(
+                fromZone, toZone, viaZone, gameTimeDays, 60
+            );
+            
+            if (!response.success || !response.trajectory) {
+                console.error('Failed to compute gravity assist trajectory:', response.error);
+                return null;
+            }
+            
+            const trajectory = response.trajectory;
+            const transferId = `lambert_ga_${fromZone}_${viaZone}_${toZone}_${Date.now()}`;
+            
+            // Create the visualization with gravity assist styling
+            const defaultOptions = {
+                color: 0xff8800, // Orange for gravity assists
+                opacity: 0.9,
+                dashed: false,
+                isGravityAssist: true,
+                ...options
+            };
+            
+            const line = this.createLambertTrajectory(
+                transferId,
+                trajectory.trajectory_points_au,
+                defaultOptions
+            );
+            
+            // Add a marker at the flyby point
+            if (trajectory.leg1 && trajectory.leg1.arrival_position_au) {
+                this.addFlybyMarker(transferId, trajectory.leg1.arrival_position_au, viaZone);
+            }
+            
+            return {
+                transferId: transferId,
+                line: line,
+                trajectory: trajectory
+            };
+            
+        } catch (error) {
+            console.error('Error fetching gravity assist trajectory:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * Add a marker at a flyby point
+     * 
+     * @param {string} transferId - Parent trajectory ID
+     * @param {Array<number>} positionAU - [x, y] position in AU
+     * @param {string} bodyName - Name of the flyby body
+     */
+    addFlybyMarker(transferId, positionAU, bodyName) {
+        const [x, y] = positionAU;
+        const r_au = Math.sqrt(x * x + y * y);
+        const theta = Math.atan2(y, x);
+        
+        let visualR;
+        if (this.solarSystem && this.solarSystem.scaleAUToVisual) {
+            visualR = this.solarSystem.scaleAUToVisual(r_au);
+        } else {
+            visualR = r_au * 80;
+        }
+        
+        const visualX = visualR * Math.cos(theta);
+        const visualZ = visualR * Math.sin(theta);
+        
+        // Create a small ring to mark the flyby
+        const geometry = new THREE.RingGeometry(0.3, 0.5, 16);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.8
+        });
+        const marker = new THREE.Mesh(geometry, material);
+        marker.position.set(visualX, 0.1, visualZ);
+        marker.rotation.x = -Math.PI / 2;
+        
+        this.scene.add(marker);
+        
+        // Store the marker with the trajectory
+        const traj = this.lambertTrajectories.get(transferId);
+        if (traj) {
+            traj.flybyMarker = marker;
+        }
+    }
+    
+    /**
+     * Clear all Lambert trajectories
+     */
+    clearAllLambertTrajectories() {
+        for (const transferId of this.lambertTrajectories.keys()) {
+            this.removeLambertTrajectory(transferId);
+        }
+        this.lambertTrajectories.clear();
+    }
+    
+    /**
+     * Toggle visibility of Lambert trajectories
+     * 
+     * @param {boolean} visible - Whether trajectories should be visible
+     */
+    toggleLambertTrajectories(visible) {
+        for (const [transferId, traj] of this.lambertTrajectories.entries()) {
+            if (traj.line) {
+                traj.line.visible = visible;
+            }
+            if (traj.flybyMarker) {
+                traj.flybyMarker.visible = visible;
+            }
+        }
+    }
+    
+    // ========================================================================
+    // END LAMBERT TRAJECTORY VISUALIZATION
+    // ========================================================================
+    
     /**
      * Clean up all transfers
      */
@@ -1929,6 +2629,9 @@ class TransferVisualization {
             this.removeBatch(batchId);
         }
         this.continuousBatches.clear();
+        
+        // Clean up Lambert trajectories
+        this.clearAllLambertTrajectories();
         
         this.continuousTransferLastCreation.clear();
         this.ellipseCache.clear();

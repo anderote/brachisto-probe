@@ -21,18 +21,55 @@ class CompositeSkillsCalculator {
     
     /**
      * Resolve skill name aliases from economic_rules.json to canonical skill names
+     * Maps old skill names to new 12-skill system
      * @param {string} skillName - Skill name from economic rules
      * @returns {string} Canonical skill name
      */
     resolveSkillAlias(skillName) {
-        // Map economic_rules skill names to SKILL_DEFINITIONS skill names
+        // Map economic_rules skill names to new SKILL_DEFINITIONS skill names
         const aliasMap = {
-            'energy_storage': 'battery_density',
-            'thermal_management': 'radiator',
-            'robotics': 'manipulation',
-            'robotic': 'manipulation',
-            'energy': 'solar_pv',
-            'energy_collection': 'solar_pv',
+            // Old dexterity -> new
+            'manipulation': 'robotics',
+            'strength': 'robotics',
+            'thrust': 'propulsion',
+            'locomotion': 'propulsion',
+            'production': 'structures',
+            'recycling': 'structures',
+            'dyson_construction': 'structures',
+            
+            // Old energy -> new
+            'solar_pv': 'generation',
+            'pv_efficiency': 'generation',
+            'energy_collection': 'generation',
+            'energy': 'generation',
+            'battery_density': 'storage_density',
+            'energy_storage': 'storage_density',
+            'energy_converter': 'conversion',
+            'thermal_efficiency': 'conversion',
+            'thermal_management': 'conversion',
+            'radiator': 'conversion',
+            'heat_pump': 'conversion',
+            'energy_transport': 'transmission',
+            
+            // Old intelligence -> new
+            'cpu': 'processor',
+            'gpu': 'processor',
+            'computer_processing': 'processor',
+            'computer_gpu': 'processor',
+            'interconnect': 'sensors',
+            'computer_interconnect': 'sensors',
+            'io_bandwidth': 'memory',
+            'computer_interface': 'memory',
+            'learning': 'architecture',
+            'machine_learning': 'architecture',
+            'research_rate': 'architecture',
+            'research_rate_efficiency': 'architecture',
+            'substrate': 'architecture',
+            'sensor_systems': 'sensors',
+            
+            // Legacy aliases
+            'robotics': 'robotics',
+            'robotic': 'robotics',
             'materials_science': 'materials'
         };
         return aliasMap[skillName] || skillName;
@@ -142,9 +179,8 @@ class CompositeSkillsCalculator {
         const zoneMultiplier = this.orbitalMechanics.getZoneProductivityModifier(zoneId) || 1.0;
         
         return basePowerPerKg * 
-               skills.solar_pv * 
-               skills.thermal_efficiency * 
-               skills.energy_converter * 
+               (skills.generation || skills.solar_pv || 1.0) * 
+               (skills.conversion || skills.thermal_efficiency || skills.energy_converter || 1.0) * 
                zoneMultiplier;
     }
     
@@ -157,12 +193,16 @@ class CompositeSkillsCalculator {
         const baseFLOPSPerKg = 1e12; // 1 TFLOPS per kg base
         
         // Geometric mean of compute sub-skills
+        const processor = skills.processor || skills.cpu || skills.gpu || 1.0;
+        const sensors = skills.sensors || skills.interconnect || 1.0;
+        const memory = skills.memory || skills.io_bandwidth || 1.0;
         const computeMultiplier = Math.pow(
-            skills.cpu * skills.gpu * skills.interconnect * skills.io_bandwidth,
+            processor * processor * sensors * memory,
             0.25
         );
         
-        return baseFLOPSPerKg * computeMultiplier * skills.learning;
+        const architecture = skills.architecture || skills.substrate || skills.learning || 1.0;
+        return baseFLOPSPerKg * computeMultiplier * architecture;
     }
     
     /**
@@ -174,10 +214,9 @@ class CompositeSkillsCalculator {
     calculateFactoryEfficiency(skills, zoneId) {
         const zoneMultiplier = this.orbitalMechanics.getZoneProductivityModifier(zoneId) || 1.0;
         
-        return skills.manipulation * 
-               skills.strength * 
-               skills.production * 
-               skills.materials * 
+        return (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.structures || skills.production || 1.0) * 
+               (skills.materials || 1.0) * 
                zoneMultiplier;
     }
     
@@ -190,10 +229,10 @@ class CompositeSkillsCalculator {
     calculateMiningEfficiency(skills, zoneId) {
         const zoneMultiplier = this.orbitalMechanics.getZoneMiningMultiplier(zoneId) || 1.0;
         
-        return skills.manipulation * 
-               skills.strength * 
-               skills.production * 
-               skills.sensors * 
+        return (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.structures || skills.production || 1.0) * 
+               (skills.sensors || 1.0) * 
+               (skills.materials || 1.0) * 
                zoneMultiplier;
     }
     
@@ -227,10 +266,9 @@ class CompositeSkillsCalculator {
      * @returns {number} Replication rate multiplier
      */
     calculateReplicationEfficiency(skills) {
-        return skills.manipulation * 
-               skills.strength * 
-               skills.production * 
-               skills.materials;
+        return (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.structures || skills.production || 1.0) * 
+               (skills.materials || 1.0);
     }
     
     /**
@@ -242,9 +280,8 @@ class CompositeSkillsCalculator {
         const baseBuildRate = 100; // kg/day per probe
         
         return baseBuildRate * 
-               skills.manipulation * 
-               skills.strength * 
-               skills.production;
+               (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.structures || skills.production || 1.0);
     }
     
     /**
@@ -256,9 +293,9 @@ class CompositeSkillsCalculator {
         const baseRecycleRate = 50; // kg/day per probe
         
         return baseRecycleRate * 
-               skills.manipulation * 
-               skills.materials * 
-               skills.recycling;
+               (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.materials || 1.0) * 
+               (skills.structures || skills.recycling || 1.0);
     }
     
     /**
@@ -271,9 +308,9 @@ class CompositeSkillsCalculator {
         const baseSelfRecycleRate = 5; // 5 kg/day per probe (base rate)
         
         return baseSelfRecycleRate * 
-               skills.manipulation * 
-               skills.materials * 
-               skills.recycling;
+               (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.materials || 1.0) * 
+               (skills.structures || skills.recycling || 1.0);
     }
     
     /**
@@ -285,10 +322,9 @@ class CompositeSkillsCalculator {
     calculateStructureConstructionEfficiency(skills, zoneId) {
         const zoneMultiplier = this.orbitalMechanics.getZoneProductivityModifier(zoneId) || 1.0;
         
-        return skills.manipulation * 
-               skills.strength * 
-               skills.production * 
-               skills.materials * 
+        return (skills.robotics || skills.manipulation || 1.0) * 
+               (skills.structures || skills.production || 1.0) * 
+               (skills.materials || 1.0) * 
                zoneMultiplier;
     }
     
@@ -325,10 +361,9 @@ class CompositeSkillsCalculator {
     calculateEnergyProductionEfficiency(skills, zoneId) {
         const zoneMultiplier = this.orbitalMechanics.getZoneProductivityModifier(zoneId) || 1.0;
         
-        return skills.solar_pv * 
-               skills.thermal_efficiency * 
-               skills.energy_converter * 
-               skills.radiator * 
+        return (skills.generation || skills.solar_pv || 1.0) * 
+               (skills.conversion || skills.thermal_efficiency || skills.energy_converter || skills.radiator || 1.0) * 
+               (skills.transmission || skills.energy_transport || 1.0) * 
                zoneMultiplier;
     }
     
@@ -339,12 +374,16 @@ class CompositeSkillsCalculator {
      */
     calculateIntelligenceProductionEfficiency(skills) {
         // Geometric mean of compute sub-skills
+        const processor = skills.processor || skills.cpu || skills.gpu || 1.0;
+        const sensors = skills.sensors || skills.interconnect || 1.0;
+        const memory = skills.memory || skills.io_bandwidth || 1.0;
         const computeMultiplier = Math.pow(
-            skills.cpu * skills.gpu * skills.interconnect * skills.io_bandwidth,
+            processor * processor * sensors * memory,
             0.25
         );
         
-        return computeMultiplier * skills.learning * skills.sensors;
+        const architecture = skills.architecture || skills.substrate || skills.learning || 1.0;
+        return computeMultiplier * architecture * sensors;
     }
     
     /**

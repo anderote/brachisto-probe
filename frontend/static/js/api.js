@@ -224,6 +224,114 @@ class API {
     async getWatchState(sessionId) {
         return await this.request(`/api/watch/state/${sessionId}`);
     }
+
+    // Trajectory endpoints
+    /**
+     * Compute a transfer trajectory between two zones using Lambert's problem
+     * @param {string} fromZone - Departure zone ID
+     * @param {string} toZone - Arrival zone ID
+     * @param {number} gameTimeDays - Current game time in days
+     * @param {number} numPoints - Number of trajectory points (default 50)
+     * @param {Object} planetPositions - Optional: actual planet positions {zoneId: [x, y]}
+     * @returns {Promise<Object>} Trajectory data with points in AU
+     */
+    async computeTrajectory(fromZone, toZone, gameTimeDays = 0, numPoints = 50, planetPositions = null) {
+        const url = `${this.baseURL}/api/trajectory/compute`;
+        const body = {
+            from_zone: fromZone,
+            to_zone: toZone,
+            game_time_days: gameTimeDays,
+            num_points: numPoints
+        };
+        if (planetPositions) {
+            body.planet_positions = planetPositions;
+        }
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+        return data;
+    }
+
+    /**
+     * Compute a gravity assist transfer trajectory
+     * @param {string} fromZone - Departure zone ID
+     * @param {string} toZone - Final destination zone ID
+     * @param {string} viaZone - Flyby/gravity assist zone ID
+     * @param {number} gameTimeDays - Current game time in days
+     * @param {number} numPoints - Number of trajectory points (default 50)
+     * @returns {Promise<Object>} Multi-leg trajectory data
+     */
+    async computeGravityAssistTrajectory(fromZone, toZone, viaZone, gameTimeDays = 0, numPoints = 50) {
+        const url = `${this.baseURL}/api/trajectory/compute-gravity-assist`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                from_zone: fromZone,
+                to_zone: toZone,
+                via_zone: viaZone,
+                game_time_days: gameTimeDays,
+                num_points: numPoints
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+        return data;
+    }
+
+    /**
+     * Compute multiple transfer trajectories in a single request
+     * @param {Array<Object>} transfers - Array of {from_zone, to_zone, via_zone?}
+     * @param {number} gameTimeDays - Current game time in days
+     * @param {number} numPoints - Number of trajectory points per transfer
+     * @param {Object} planetPositions - Optional: actual planet positions {zoneId: [x, y]}
+     * @returns {Promise<Object>} Array of trajectory data with computation_time_ms
+     */
+    async computeTrajectoryBatch(transfers, gameTimeDays = 0, numPoints = 30, planetPositions = null) {
+        const url = `${this.baseURL}/api/trajectory/batch`;
+        const body = {
+            transfers: transfers,
+            game_time_days: gameTimeDays,
+            num_points: numPoints
+        };
+        if (planetPositions) {
+            body.planet_positions = planetPositions;
+        }
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+        return data;
+    }
+
+    /**
+     * Get all available orbital zones
+     * @returns {Promise<Object>} Zone data with orbital properties
+     */
+    async getOrbitalZones() {
+        const url = `${this.baseURL}/api/trajectory/zones`;
+        const response = await fetch(url, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+        return data;
+    }
 }
 
 // Export singleton instance

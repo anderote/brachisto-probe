@@ -39,12 +39,13 @@ def create_app(config_name=None):
             app.logger.warning(f"Game data validation warnings: {errors}")
     
     # Register blueprints
-    from backend.api import auth_bp, game_bp, scores_bp, scripts_bp, watch_bp
+    from backend.api import auth_bp, game_bp, scores_bp, scripts_bp, watch_bp, trajectory_bp
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(game_bp, url_prefix='/api/game')
     app.register_blueprint(scores_bp, url_prefix='/api/scores')
     app.register_blueprint(scripts_bp, url_prefix='/api/scripts')
     app.register_blueprint(watch_bp, url_prefix='/api/watch')
+    app.register_blueprint(trajectory_bp, url_prefix='/api/trajectory')
     
     # Serve game data files
     @app.route('/game_data/<path:filename>')

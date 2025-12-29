@@ -1,3192 +1,2210 @@
 {
   "research_trees": {
-    "propulsion_systems": {
-      "name": "Propulsion Systems",
+    "propulsion": {
+      "name": "Propulsion",
       "description": "Research improving propulsion efficiency reduces energy costs for orbital access, building, and resource collection.",
-      "category": "propulsion",
+      "category": "dexterity",
       "tiers": [
         {
-          "id": "hydrazine_rockets",
-          "name": "Hydrazine Rockets",
-          "description": "Description to be added",
+          "id": "raptor_3_engines",
+          "name": "SpaceX Raptor 3 Engines",
+          "description": "Full-flow staged combustion methalox engines with 350s vacuum ISP.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "hydrogen_rockets"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "hydrogen_rockets",
-          "name": "Hydrogen Rockets",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "methalox_rockets"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "methalox_rockets",
-          "name": "Methalox Rockets",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "vacuum_rated_nozzles"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "unlocks": ["vacuum_rated_nozzles"]
         },
         {
           "id": "vacuum_rated_nozzles",
-          "name": "Vacuum-Rated Nozzles",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "thermal_fission_drive"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "thermal_fission_drive",
-          "name": "Thermal Fission Drive",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "frc_fusion_drive"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "frc_fusion_drive",
-          "name": "FRC Fusion Drive",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "magnetic_mirror_fusion_drive"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "magnetic_mirror_fusion_drive",
-          "name": "Magnetic Mirror Fusion Drive",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "electrostatic_inertial_confinement_fusion_drive"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "electrostatic_inertial_confinement_fusion_drive",
-          "name": "Electrostatic Inertial Confinement Fusion Drive",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "antimatter_matter_drive"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "antimatter_matter_drive",
-          "name": "Antimatter-Matter Drive",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "magnetohydrodynamic_inertial_mass_reduction_drive"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "magnetohydrodynamic_inertial_mass_reduction_drive",
-          "name": "Magnetohydrodynamic Inertial Mass Reduction Drive",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "thrust_systems": {
-      "name": "Thrust Systems",
-      "description": "Research tree for Thrust Systems",
-      "category": "thrust",
-      "tiers": [
-        {
-          "id": "cold_gas_thrusters",
-          "name": "Cold Gas Thrusters",
-          "description": "Description to be added",
+          "name": "Vacuum Rated Nozzles",
+          "description": "Extended bell nozzles optimized for vacuum operation, improving ISP to 380s.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "chemical_rockets"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["ssto_propulsion"]
         },
         {
-          "id": "chemical_rockets",
-          "name": "Chemical Rockets",
-          "description": "Description to be added",
+          "id": "ssto_propulsion",
+          "name": "Single Stage To Orbit",
+          "description": "Lightweight propulsion systems enabling single-stage orbital insertion.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "ion_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["aerospike_engines"]
+        },
+        {
+          "id": "aerospike_engines",
+          "name": "Aerospike Engines",
+          "description": "Altitude-compensating aerospike nozzles for optimal efficiency at all altitudes.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["expander_cycle"]
+        },
+        {
+          "id": "expander_cycle",
+          "name": "Expander Cycle Engines",
+          "description": "Hydrogen-fueled expander cycle engines with exceptional efficiency.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["dual_mode_propulsion"]
+        },
+        {
+          "id": "dual_mode_propulsion",
+          "name": "Dual-Mode Propulsion",
+          "description": "Air-breathing and rocket-mode hybrid engines for atmospheric operations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["rotating_detonation_engines"]
+        },
+        {
+          "id": "rotating_detonation_engines",
+          "name": "Rotating Detonation Engines",
+          "description": "Continuous detonation wave propulsion for higher thermodynamic efficiency.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["solar_thermal_propulsion"]
+        },
+        {
+          "id": "solar_thermal_propulsion",
+          "name": "Solar Thermal Propulsion",
+          "description": "Concentrated solar energy heats propellant for 800s+ ISP.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_thermal_solid_core"]
+        },
+        {
+          "id": "nuclear_thermal_solid_core",
+          "name": "Solid Core Nuclear Thermal",
+          "description": "NERVA-type fission reactor heats hydrogen propellant to 900s ISP.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_thermal_liquid_core"]
+        },
+        {
+          "id": "nuclear_thermal_liquid_core",
+          "name": "Liquid Core Nuclear Thermal",
+          "description": "Molten uranium core enables 1300s ISP with rotating containment.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["gas_core_fission"]
+        },
+        {
+          "id": "gas_core_fission",
+          "name": "Gas Core Nuclear Thermal",
+          "description": "Gaseous fission core with transparent containment achieves 3000s+ ISP.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_pulse_propulsion"]
+        },
+        {
+          "id": "nuclear_pulse_propulsion",
+          "name": "Nuclear Pulse Propulsion",
+          "description": "Orion-type external nuclear pulse drives for massive delta-v.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["ion_thrusters"]
         },
         {
           "id": "ion_thrusters",
           "name": "Ion Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "hall_effect_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "hall_effect_thrusters",
-          "name": "Hall Effect Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "nuclear_thermal_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "nuclear_thermal_thrusters",
-          "name": "Nuclear Thermal Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "fusion_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "fusion_thrusters",
-          "name": "Fusion Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "antimatter_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "antimatter_thrusters",
-          "name": "Antimatter Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "plasma_magnet_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "plasma_magnet_thrusters",
-          "name": "Plasma Magnet Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "field_propulsion_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "field_propulsion_systems",
-          "name": "Field Propulsion Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "spacetime_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "spacetime_thrusters",
-          "name": "Spacetime Thrusters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "locomotion_systems": {
-      "name": "Locomotion Systems",
-      "description": "Research improving fine movement and positioning systems reduces energy costs for building and mining.",
-      "category": "locomotion",
-      "tiers": [
-        {
-          "id": "cold_gas_thrusters",
-          "name": "Cold Gas Thrusters",
-          "description": "Description to be added",
+          "description": "Electric propulsion using ionized xenon for 3000-5000s ISP.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "hall_effect_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["hall_effect_thrusters"]
         },
         {
           "id": "hall_effect_thrusters",
           "name": "Hall Effect Thrusters",
-          "description": "Description to be added",
+          "description": "Magnetic acceleration of ionized propellant with higher thrust.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "heavy_ion_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["vasimr_engines"]
         },
         {
-          "id": "heavy_ion_thrusters",
-          "name": "Heavy Ion Thrusters",
-          "description": "Description to be added",
+          "id": "vasimr_engines",
+          "name": "VASIMR Engines",
+          "description": "Variable Specific Impulse Magnetoplasma Rocket with adjustable thrust/ISP.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "plasma_rf_thrusters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["magnetoplasmadynamic_thrusters"]
         },
         {
-          "id": "plasma_rf_thrusters",
-          "name": "Plasma RF Thrusters",
-          "description": "Description to be added",
+          "id": "magnetoplasmadynamic_thrusters",
+          "name": "Magnetoplasmadynamic Thrusters",
+          "description": "High-power MPD arcs accelerate plasma for deep space missions.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "em_drive_momentum_conserver"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_propulsion"]
         },
         {
-          "id": "em_drive_momentum_conserver",
-          "name": "EM Drive Momentum Conserver",
-          "description": "Description to be added",
+          "id": "fusion_propulsion",
+          "name": "Fusion Propulsion",
+          "description": "Direct fusion drives with 10,000s+ ISP and substantial thrust.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "quantized_inertial_capacitor_bank"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["magnetic_confinement_fusion"]
         },
         {
-          "id": "quantized_inertial_capacitor_bank",
-          "name": "Quantized Inertial Capacitor Bank",
-          "description": "Description to be added",
+          "id": "magnetic_confinement_fusion",
+          "name": "Magnetic Confinement Fusion",
+          "description": "Tokamak-derived fusion propulsion with plasma exhaust.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "casimir_microstructure_surface_array"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["inertial_confinement_fusion"]
         },
         {
-          "id": "casimir_microstructure_surface_array",
-          "name": "Casimir Microstructure Surface Array",
-          "description": "Description to be added",
+          "id": "inertial_confinement_fusion",
+          "name": "Inertial Confinement Fusion",
+          "description": "Laser or Z-pinch ignition fusion pulses for propulsion.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "unruh_horizon_higgs_attractor"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["antimatter_catalyzed_fusion"]
         },
         {
-          "id": "unruh_horizon_higgs_attractor",
-          "name": "Unruh Horizon Higgs Attractor",
-          "description": "Description to be added",
+          "id": "antimatter_catalyzed_fusion",
+          "name": "Antimatter-Catalyzed Fusion",
+          "description": "Antimatter triggers fusion reactions for enhanced energy release.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "mach_effect_inertial_frame_torquer"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["beam_core_antimatter"]
         },
         {
-          "id": "mach_effect_inertial_frame_torquer",
-          "name": "Mach Effect Inertial Frame Torquer",
-          "description": "Description to be added",
+          "id": "beam_core_antimatter",
+          "name": "Beam-Core Antimatter",
+          "description": "Direct antimatter annihilation exhaust for maximum energy density.",
           "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "universe_frame_shifting"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["photon_drives"]
         },
         {
-          "id": "universe_frame_shifting",
-          "name": "Universe Frame Shifting",
-          "description": "Description to be added",
+          "id": "photon_drives",
+          "name": "Photon Drives",
+          "description": "Pure photon emission propulsion approaching theoretical limits.",
           "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_vacuum_thrusters"]
+        },
+        {
+          "id": "quantum_vacuum_thrusters",
+          "name": "Quantum Vacuum Thrusters",
+          "description": "Propulsion derived from quantum vacuum fluctuations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["alcubierre_drives"]
+        },
+        {
+          "id": "alcubierre_drives",
+          "name": "Alcubierre Warp Drives",
+          "description": "Spacetime metric manipulation for effective faster-than-light travel.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_propulsion"]
+        },
+        {
+          "id": "perfect_propulsion",
+          "name": "Perfect Propulsion",
+          "description": "Ultimate propulsion systems operating at physical limits.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     },
-    "robotic_systems": {
-      "name": "Robotic Systems",
+    "robotics": {
+      "name": "Robotics",
       "description": "Research improving robotic manipulation capabilities increases mining and building rates.",
-      "category": "robotics",
+      "category": "dexterity",
       "tiers": [
         {
-          "id": "manipulator_arms",
-          "name": "Manipulator Arms",
-          "description": "Description to be added",
+          "id": "basic_manipulators",
+          "name": "Basic Manipulators",
+          "description": "Simple robotic arms for basic operations.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "end_effectors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["servo_actuators"]
         },
         {
-          "id": "end_effectors",
-          "name": "End-Effectors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "modular_tool_heads"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "modular_tool_heads",
-          "name": "Modular Tool Heads",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "deformable_surface_controllers"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "deformable_surface_controllers",
-          "name": "Deformable Surface Controllers",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "metal_liquid_interface_manipulators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "metal_liquid_interface_manipulators",
-          "name": "Metal-Liquid Interface Manipulators",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "magnetic_vacuum_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "magnetic_vacuum_arrays",
-          "name": "Magnetic Vacuum Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "zero_point_field_disruptors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "zero_point_field_disruptors",
-          "name": "Zero-Point Field Disruptors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "quantum_manipulation_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "quantum_manipulation_arrays",
-          "name": "Quantum Manipulation Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "spacetime_manipulation_arms"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "spacetime_manipulation_arms",
-          "name": "Spacetime Manipulation Arms",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "grey_goo"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "grey_goo",
-          "name": "Grey Goo",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "actuator_systems": {
-      "name": "Actuator Systems",
-      "description": "Research tree for Actuator Systems",
-      "category": "robotics",
-      "tiers": [
-        {
-          "id": "basic_electric_motors",
-          "name": "Basic Electric Motors",
-          "description": "Description to be added",
+          "id": "servo_actuators",
+          "name": "Servo Actuators",
+          "description": "Precision servo motors for fine control.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "servo_motors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["hydraulic_systems"]
         },
         {
-          "id": "servo_motors",
-          "name": "Servo Motors",
-          "description": "Description to be added",
+          "id": "hydraulic_systems",
+          "name": "Hydraulic Systems",
+          "description": "High-force hydraulic actuators.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "hydraulic_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "hydraulic_actuators",
-          "name": "Hydraulic Actuators",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "pneumatic_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["pneumatic_actuators"]
         },
         {
           "id": "pneumatic_actuators",
           "name": "Pneumatic Actuators",
-          "description": "Description to be added",
+          "description": "Fast-response pneumatic systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "shape_memory_alloys"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["electric_motors"]
         },
         {
-          "id": "shape_memory_alloys",
-          "name": "Shape Memory Alloys",
-          "description": "Description to be added",
+          "id": "electric_motors",
+          "name": "Electric Motors",
+          "description": "Advanced electric motor systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "piezoelectric_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["brushless_motors"]
+        },
+        {
+          "id": "brushless_motors",
+          "name": "Brushless Motors",
+          "description": "High-efficiency brushless motor systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["piezoelectric_actuators"]
         },
         {
           "id": "piezoelectric_actuators",
           "name": "Piezoelectric Actuators",
-          "description": "Description to be added",
+          "description": "Nanometer-scale precision actuators.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "electrostatic_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["shape_memory_alloys"]
         },
         {
-          "id": "electrostatic_actuators",
-          "name": "Electrostatic Actuators",
-          "description": "Description to be added",
+          "id": "shape_memory_alloys",
+          "name": "Shape Memory Alloys",
+          "description": "Self-actuating materials.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "magnetic_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["magnetic_actuators"]
         },
         {
           "id": "magnetic_actuators",
           "name": "Magnetic Actuators",
-          "description": "Description to be added",
+          "description": "Contactless magnetic actuation systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "quantum_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["electrostatic_actuators"]
+        },
+        {
+          "id": "electrostatic_actuators",
+          "name": "Electrostatic Actuators",
+          "description": "Frictionless electrostatic systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_powered_actuators"]
+        },
+        {
+          "id": "nuclear_powered_actuators",
+          "name": "Nuclear-Powered Actuators",
+          "description": "Actuators powered by nuclear energy.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_powered_actuators"]
+        },
+        {
+          "id": "fusion_powered_actuators",
+          "name": "Fusion-Powered Actuators",
+          "description": "High-energy fusion-powered systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_actuators"]
         },
         {
           "id": "quantum_actuators",
           "name": "Quantum Actuators",
-          "description": "Description to be added",
+          "description": "Actuators operating at quantum limits.",
           "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "spacetime_actuators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["entangled_manipulators"]
         },
         {
-          "id": "spacetime_actuators",
-          "name": "Spacetime Actuators",
-          "description": "Description to be added",
+          "id": "entangled_manipulators",
+          "name": "Entangled Manipulators",
+          "description": "Quantum-entangled manipulation systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_point_actuators"]
+        },
+        {
+          "id": "zero_point_actuators",
+          "name": "Zero-Point Actuators",
+          "description": "Actuators powered by zero-point energy.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_manipulators"]
+        },
+        {
+          "id": "casimir_manipulators",
+          "name": "Casimir Manipulators",
+          "description": "Manipulation through Casimir forces.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_manipulators"]
+        },
+        {
+          "id": "spacetime_manipulators",
+          "name": "Spacetime Manipulators",
+          "description": "Direct spacetime manipulation systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["grey_goo"]
+        },
+        {
+          "id": "grey_goo",
+          "name": "Grey Goo",
+          "description": "Self-replicating nanomachines.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_manipulation"]
+        },
+        {
+          "id": "perfect_manipulation",
+          "name": "Perfect Manipulation",
+          "description": "Ultimate manipulation systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     },
-    "materials_science": {
+    "materials": {
       "name": "Materials Science",
-      "description": "Research tree for Materials Science",
-      "category": "materials",
+      "description": "Research improving material strength and durability.",
+      "category": "dexterity",
       "tiers": [
         {
           "id": "basic_alloys",
           "name": "Basic Alloys",
-          "description": "Description to be added",
+          "description": "Standard metal alloys.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "high_strength_steel"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["steel_alloys"]
         },
         {
-          "id": "high_strength_steel",
-          "name": "High-Strength Steel",
-          "description": "Description to be added",
+          "id": "steel_alloys",
+          "name": "Steel Alloys",
+          "description": "High-strength steel alloys.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "titanium_alloys"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["titanium_alloys"]
         },
         {
           "id": "titanium_alloys",
           "name": "Titanium Alloys",
-          "description": "Description to be added",
+          "description": "Lightweight titanium alloys.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "carbon_composites"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["aluminum_alloys"]
+        },
+        {
+          "id": "aluminum_alloys",
+          "name": "Aluminum Alloys",
+          "description": "Advanced aluminum alloys.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["carbon_composites"]
         },
         {
           "id": "carbon_composites",
           "name": "Carbon Composites",
-          "description": "Description to be added",
+          "description": "Carbon fiber composite materials.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "nanomaterials"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["ceramic_composites"]
+        },
+        {
+          "id": "ceramic_composites",
+          "name": "Ceramic Composites",
+          "description": "High-temperature ceramic composites.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nanomaterials"]
         },
         {
           "id": "nanomaterials",
           "name": "Nanomaterials",
-          "description": "Description to be added",
+          "description": "Nanoscale engineered materials.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "metamaterials"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["metamaterials"]
         },
         {
           "id": "metamaterials",
           "name": "Metamaterials",
-          "description": "Description to be added",
+          "description": "Engineered materials with exotic properties.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "single_crystal_structures"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["superconductors"]
+        },
+        {
+          "id": "superconductors",
+          "name": "Superconductors",
+          "description": "Room-temperature superconducting materials.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["single_crystal_structures"]
         },
         {
           "id": "single_crystal_structures",
           "name": "Single-Crystal Structures",
-          "description": "Description to be added",
+          "description": "Perfect single-crystal materials.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "quantum_materials"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_materials"]
+        },
+        {
+          "id": "nuclear_materials",
+          "name": "Nuclear Materials",
+          "description": "Materials optimized for nuclear environments.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_materials"]
+        },
+        {
+          "id": "fusion_materials",
+          "name": "Fusion Materials",
+          "description": "Materials for fusion reactor applications.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_materials"]
         },
         {
           "id": "quantum_materials",
           "name": "Quantum Materials",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "exotic_matter_composites"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "exotic_matter_composites",
-          "name": "Exotic Matter Composites",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_crystals"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "supercondutors",
-          "name": "Room Temperature Superconductors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "energy_collection": {
-      "name": "Energy Collection Efficiency",
-      "description": "Research improving solar energy collection, conversion efficiency, and energy storage systems.",
-      "category": "energy",
-      "tiers": [
-        {
-          "id": "photovoltaic_cell_optimization",
-          "name": "Photovoltaic Cell Optimization",
-          "description": "Description to be added",
+          "description": "Materials with quantum properties.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "multi_junction_solar_cells"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["exotic_matter"]
         },
         {
-          "id": "multi_junction_solar_cells",
-          "name": "Multi-Junction Solar Cells",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "concentrated_solar_optics"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "concentrated_solar_optics",
-          "name": "Concentrated Solar Optics",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "thermal_energy_storage"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "thermal_energy_storage",
-          "name": "Thermal Energy Storage",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "quantum_dot_solar_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "quantum_dot_solar_arrays",
-          "name": "Quantum Dot Solar Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "orbital_solar_swarm_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "orbital_solar_swarm_arrays",
-          "name": "Orbital Solar Swarm Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "stirling_engine_conversion_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "stirling_engine_conversion_arrays",
-          "name": "Stirling Engine Conversion Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "thermophotovoltaic_conversion"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "thermophotovoltaic_conversion",
-          "name": "Thermophotovoltaic Conversion",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "zero_point_energy_harvesters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "zero_point_energy_harvesters",
-          "name": "Zero-Point Energy Harvesters",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "dark_energy_tapping_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "dark_energy_tapping_systems",
-          "name": "Dark Energy Tapping Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "thermal_management": {
-      "name": "Thermal Management",
-      "description": "Research tree for Thermal Management",
-      "category": "energy",
-      "tiers": [
-        {
-          "id": "basic_radiators",
-          "name": "Basic Radiators",
-          "description": "Description to be added",
+          "id": "exotic_matter",
+          "name": "Exotic Matter",
+          "description": "Materials with negative mass properties.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "heat_pipes"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["zero_point_materials"]
         },
         {
-          "id": "heat_pipes",
-          "name": "Heat Pipes",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "loop_heat_pipes"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "loop_heat_pipes",
-          "name": "Loop Heat Pipes",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "vapor_chambers"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "vapor_chambers",
-          "name": "Vapor Chambers",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "microchannel_coolers"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "microchannel_coolers",
-          "name": "Microchannel Coolers",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "phase_change_materials"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "phase_change_materials",
-          "name": "Phase Change Materials",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "thermoelectric_coolers"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "thermoelectric_coolers",
-          "name": "Thermoelectric Coolers",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "quantum_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "quantum_heat_pumps",
-          "name": "Quantum Heat Pumps",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "negative_thermal_mass_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "negative_thermal_mass_systems",
-          "name": "Negative Thermal Mass Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_heat_rejection"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "perfect_heat_rejection",
-          "name": "Perfect Heat Rejection",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "heat_pump_systems": {
-      "name": "Heat Pump Systems",
-      "description": "Research tree for Heat Pump Systems",
-      "category": "energy",
-      "tiers": [
-        {
-          "id": "basic_heat_pumps",
-          "name": "Basic Heat Pumps",
-          "description": "Description to be added",
+          "id": "zero_point_materials",
+          "name": "Zero-Point Materials",
+          "description": "Materials stabilized by zero-point energy.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "vapor_compression_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["casimir_materials"]
         },
         {
-          "id": "vapor_compression_systems",
-          "name": "Vapor Compression Systems",
-          "description": "Description to be added",
+          "id": "casimir_materials",
+          "name": "Casimir Materials",
+          "description": "Materials exploiting Casimir effects.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "absorption_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_materials"]
         },
         {
-          "id": "absorption_heat_pumps",
-          "name": "Absorption Heat Pumps",
-          "description": "Description to be added",
+          "id": "spacetime_materials",
+          "name": "Spacetime Materials",
+          "description": "Materials that manipulate spacetime.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "thermoelectric_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_crystals"]
         },
         {
-          "id": "thermoelectric_heat_pumps",
-          "name": "Thermoelectric Heat Pumps",
-          "description": "Description to be added",
+          "id": "perfect_crystals",
+          "name": "Perfect Crystals",
+          "description": "Theoretically perfect crystalline structures.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "magnetic_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["absolute_materials"]
         },
         {
-          "id": "magnetic_heat_pumps",
-          "name": "Magnetic Heat Pumps",
-          "description": "Description to be added",
+          "id": "absolute_materials",
+          "name": "Absolute Materials",
+          "description": "Materials at absolute physical limits.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "quantum_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_materials"]
         },
         {
-          "id": "quantum_heat_pumps",
-          "name": "Quantum Heat Pumps",
-          "description": "Description to be added",
+          "id": "perfect_materials",
+          "name": "Perfect Materials",
+          "description": "Ultimate material science achievement.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "vacuum_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "vacuum_heat_pumps",
-          "name": "Vacuum Heat Pumps",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "spacetime_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "spacetime_heat_pumps",
-          "name": "Spacetime Heat Pumps",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "zero_point_heat_pumps"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "zero_point_heat_pumps",
-          "name": "Zero-Point Heat Pumps",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_heat_transfer"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "perfect_heat_transfer",
-          "name": "Perfect Heat Transfer",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     },
-    "energy_storage": {
-      "name": "Energy Storage & Accumulators",
+    "structures": {
+      "name": "Structures",
+      "description": "Research improving manufacturing rates, construction efficiency, and material recovery.",
+      "category": "dexterity",
+      "tiers": [
+        {
+          "id": "basic_construction",
+          "name": "Basic Construction",
+          "description": "Standard construction techniques.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["modular_design"]
+        },
+        {
+          "id": "modular_design",
+          "name": "Modular Design",
+          "description": "Modular construction systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["prefabrication"]
+        },
+        {
+          "id": "prefabrication",
+          "name": "Prefabrication",
+          "description": "Pre-assembled component systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["automated_assembly"]
+        },
+        {
+          "id": "automated_assembly",
+          "name": "Automated Assembly",
+          "description": "Robotic assembly systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["additive_manufacturing"]
+        },
+        {
+          "id": "additive_manufacturing",
+          "name": "Additive Manufacturing",
+          "description": "3D printing and additive techniques.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["laser_sintering"]
+        },
+        {
+          "id": "laser_sintering",
+          "name": "Laser Sintering",
+          "description": "Precision laser-based manufacturing.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["electron_beam_welding"]
+        },
+        {
+          "id": "electron_beam_welding",
+          "name": "Electron Beam Welding",
+          "description": "High-precision electron beam techniques.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["plasma_manufacturing"]
+        },
+        {
+          "id": "plasma_manufacturing",
+          "name": "Plasma Manufacturing",
+          "description": "Plasma-based fabrication systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_forging"]
+        },
+        {
+          "id": "nuclear_forging",
+          "name": "Nuclear Forging",
+          "description": "Nuclear-powered manufacturing processes.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_forging"]
+        },
+        {
+          "id": "fusion_forging",
+          "name": "Fusion Forging",
+          "description": "Fusion-powered construction systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["molecular_assembly"]
+        },
+        {
+          "id": "molecular_assembly",
+          "name": "Molecular Assembly",
+          "description": "Atomic-scale assembly techniques.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_assembly"]
+        },
+        {
+          "id": "quantum_assembly",
+          "name": "Quantum Assembly",
+          "description": "Quantum-coherent assembly processes.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["self_replication"]
+        },
+        {
+          "id": "self_replication",
+          "name": "Self-Replication",
+          "description": "Self-replicating construction systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_point_construction"]
+        },
+        {
+          "id": "zero_point_construction",
+          "name": "Zero-Point Construction",
+          "description": "Construction using zero-point energy.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_construction"]
+        },
+        {
+          "id": "casimir_construction",
+          "name": "Casimir Construction",
+          "description": "Casimir-effect construction systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_construction"]
+        },
+        {
+          "id": "spacetime_construction",
+          "name": "Spacetime Construction",
+          "description": "Direct spacetime manipulation construction.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["retro_causal_construction"]
+        },
+        {
+          "id": "retro_causal_construction",
+          "name": "Retro-Causal Construction",
+          "description": "Construction through time manipulation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["probability_field_construction"]
+        },
+        {
+          "id": "probability_field_construction",
+          "name": "Probability Field Construction",
+          "description": "Construction via probability manipulation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_construction"]
+        },
+        {
+          "id": "perfect_construction",
+          "name": "Perfect Construction",
+          "description": "Ultimate construction systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
+        }
+      ]
+    },
+    "generation": {
+      "name": "Energy Generation",
+      "description": "Research improving solar energy collection and generation efficiency.",
+      "category": "energy",
+      "tiers": [
+        {
+          "id": "photovoltaic_cells",
+          "name": "Photovoltaic Cells",
+          "description": "Basic solar cell technology.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["multi_junction_cells"]
+        },
+        {
+          "id": "multi_junction_cells",
+          "name": "Multi-Junction Cells",
+          "description": "Multi-spectrum solar cells.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["concentrated_solar"]
+        },
+        {
+          "id": "concentrated_solar",
+          "name": "Concentrated Solar",
+          "description": "Solar concentrator systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["solar_tracking"]
+        },
+        {
+          "id": "solar_tracking",
+          "name": "Solar Tracking",
+          "description": "Advanced solar tracking systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_dot_solar"]
+        },
+        {
+          "id": "quantum_dot_solar",
+          "name": "Quantum Dot Solar",
+          "description": "Quantum dot solar arrays.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["orbital_solar_arrays"]
+        },
+        {
+          "id": "orbital_solar_arrays",
+          "name": "Orbital Solar Arrays",
+          "description": "Massive orbital solar collection systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["stirling_engines"]
+        },
+        {
+          "id": "stirling_engines",
+          "name": "Stirling Engines",
+          "description": "High-efficiency Stirling conversion.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["thermophotovoltaic"]
+        },
+        {
+          "id": "thermophotovoltaic",
+          "name": "Thermophotovoltaic",
+          "description": "Thermal-to-electric conversion systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_thermal"]
+        },
+        {
+          "id": "nuclear_thermal",
+          "name": "Nuclear Thermal",
+          "description": "Nuclear thermal power systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_power"]
+        },
+        {
+          "id": "fusion_power",
+          "name": "Fusion Power",
+          "description": "Fusion-based power generation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["antimatter_power"]
+        },
+        {
+          "id": "antimatter_power",
+          "name": "Antimatter Power",
+          "description": "Antimatter annihilation power systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_generators"]
+        },
+        {
+          "id": "quantum_generators",
+          "name": "Quantum Generators",
+          "description": "Quantum field power generation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_point_harvesters"]
+        },
+        {
+          "id": "zero_point_harvesters",
+          "name": "Zero-Point Harvesters",
+          "description": "Zero-point energy extraction systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_generators"]
+        },
+        {
+          "id": "casimir_generators",
+          "name": "Casimir Generators",
+          "description": "Casimir effect power generation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["dark_energy_tapping"]
+        },
+        {
+          "id": "dark_energy_tapping",
+          "name": "Dark Energy Tapping",
+          "description": "Direct dark energy extraction.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_power"]
+        },
+        {
+          "id": "spacetime_power",
+          "name": "Spacetime Power",
+          "description": "Power from spacetime curvature.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["vacuum_fluctuation_harvesters"]
+        },
+        {
+          "id": "vacuum_fluctuation_harvesters",
+          "name": "Vacuum Fluctuation Harvesters",
+          "description": "Harvesting quantum vacuum fluctuations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["infinite_energy_sources"]
+        },
+        {
+          "id": "infinite_energy_sources",
+          "name": "Infinite Energy Sources",
+          "description": "Unlimited energy generation systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_generation"]
+        },
+        {
+          "id": "perfect_generation",
+          "name": "Perfect Generation",
+          "description": "Ultimate energy generation systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
+        }
+      ]
+    },
+    "storage_density": {
+      "name": "Storage Density",
       "description": "Research improving energy storage capacity and efficiency.",
       "category": "energy",
       "tiers": [
         {
           "id": "battery_banks",
           "name": "Battery Banks",
-          "description": "Description to be added",
+          "description": "Basic chemical battery systems.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "supercapacitor_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["lithium_ion"]
         },
         {
-          "id": "supercapacitor_arrays",
-          "name": "Supercapacitor Arrays",
-          "description": "Description to be added",
+          "id": "lithium_ion",
+          "name": "Lithium-Ion",
+          "description": "Advanced lithium-ion batteries.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "molten_salt_thermal_storage"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["supercapacitors"]
         },
         {
-          "id": "molten_salt_thermal_storage",
-          "name": "Molten Salt Thermal Storage",
-          "description": "Description to be added",
+          "id": "supercapacitors",
+          "name": "Supercapacitors",
+          "description": "High-capacity capacitor arrays.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "compressed_air_energy_storage"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["thermal_storage"]
         },
         {
-          "id": "compressed_air_energy_storage",
-          "name": "Compressed Air Energy Storage",
-          "description": "Description to be added",
+          "id": "thermal_storage",
+          "name": "Thermal Storage",
+          "description": "Molten salt thermal storage systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "flywheel_energy_storage"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["compressed_air"]
         },
         {
-          "id": "flywheel_energy_storage",
-          "name": "Flywheel Energy Storage",
-          "description": "Description to be added",
+          "id": "compressed_air",
+          "name": "Compressed Air Storage",
+          "description": "Compressed air energy storage.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "superconducting_magnetic_storage"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["flywheels"]
         },
         {
-          "id": "superconducting_magnetic_storage",
+          "id": "flywheels",
+          "name": "Flywheels",
+          "description": "High-speed flywheel storage.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["superconducting_magnetic"]
+        },
+        {
+          "id": "superconducting_magnetic",
           "name": "Superconducting Magnetic Storage",
-          "description": "Description to be added",
+          "description": "Superconducting magnetic energy storage.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "quantum_battery_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["hydrogen_storage"]
         },
         {
-          "id": "quantum_battery_arrays",
-          "name": "Quantum Battery Arrays",
-          "description": "Description to be added",
+          "id": "hydrogen_storage",
+          "name": "Hydrogen Storage",
+          "description": "Advanced hydrogen storage systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "vacuum_energy_accumulators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_batteries"]
         },
         {
-          "id": "vacuum_energy_accumulators",
-          "name": "Vacuum Energy Accumulators",
-          "description": "Description to be added",
+          "id": "nuclear_batteries",
+          "name": "Nuclear Batteries",
+          "description": "Radioisotope thermoelectric generators.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "negative_temperature_cold_pump"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_batteries"]
         },
         {
-          "id": "negative_temperature_cold_pump",
-          "name": "Negative Temperature Cold Pump",
-          "description": "Description to be added",
+          "id": "fusion_batteries",
+          "name": "Fusion Batteries",
+          "description": "Compact fusion power cells.",
           "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "pocket_dimension_batteries"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_batteries"]
         },
         {
-          "id": "pocket_dimension_batteries",
+          "id": "quantum_batteries",
+          "name": "Quantum Batteries",
+          "description": "Quantum superposition energy storage.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_point_storage"]
+        },
+        {
+          "id": "zero_point_storage",
+          "name": "Zero-Point Storage",
+          "description": "Zero-point energy storage systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["vacuum_accumulators"]
+        },
+        {
+          "id": "vacuum_accumulators",
+          "name": "Vacuum Accumulators",
+          "description": "Vacuum energy storage systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["negative_temperature"]
+        },
+        {
+          "id": "negative_temperature",
+          "name": "Negative Temperature Storage",
+          "description": "Inverted thermodynamic state storage.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["pocket_dimensions"]
+        },
+        {
+          "id": "pocket_dimensions",
           "name": "Pocket Dimension Batteries",
-          "description": "Description to be added",
+          "description": "Extra-dimensional storage systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_storage"]
+        },
+        {
+          "id": "casimir_storage",
+          "name": "Casimir Storage",
+          "description": "Casimir effect energy storage.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_storage"]
+        },
+        {
+          "id": "spacetime_storage",
+          "name": "Spacetime Storage",
+          "description": "Energy stored in spacetime curvature.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["infinite_capacity"]
+        },
+        {
+          "id": "infinite_capacity",
+          "name": "Infinite Capacity Storage",
+          "description": "Unlimited energy storage systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_storage"]
+        },
+        {
+          "id": "perfect_storage",
+          "name": "Perfect Storage",
+          "description": "Ultimate energy storage systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     },
-    "energy_conversion": {
+    "conversion": {
       "name": "Energy Conversion",
-      "description": "Research tree for Energy Conversion",
+      "description": "Research improving energy conversion efficiency and thermal management.",
       "category": "energy",
       "tiers": [
         {
           "id": "basic_generators",
           "name": "Basic Generators",
-          "description": "Description to be added",
+          "description": "Simple mechanical generators.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "turbine_generators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["turbine_generators"]
         },
         {
           "id": "turbine_generators",
           "name": "Turbine Generators",
-          "description": "Description to be added",
+          "description": "High-speed turbine systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "thermoelectric_generators"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["thermoelectric"]
         },
         {
-          "id": "thermoelectric_generators",
-          "name": "Thermoelectric Generators",
-          "description": "Description to be added",
+          "id": "thermoelectric",
+          "name": "Thermoelectric",
+          "description": "Thermoelectric conversion systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "thermophotovoltaic_cells"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["heat_pipes"]
+        },
+        {
+          "id": "heat_pipes",
+          "name": "Heat Pipes",
+          "description": "Efficient thermal transport systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["radiators"]
+        },
+        {
+          "id": "radiators",
+          "name": "Radiators",
+          "description": "Advanced heat rejection systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["vapor_chambers"]
+        },
+        {
+          "id": "vapor_chambers",
+          "name": "Vapor Chambers",
+          "description": "Phase-change cooling systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["microchannel_coolers"]
+        },
+        {
+          "id": "microchannel_coolers",
+          "name": "Microchannel Coolers",
+          "description": "Microscale cooling systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["thermophotovoltaic_cells"]
         },
         {
           "id": "thermophotovoltaic_cells",
           "name": "Thermophotovoltaic Cells",
-          "description": "Description to be added",
+          "description": "Thermal-to-electric direct conversion.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "direct_conversion_cells"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_conversion"]
         },
         {
-          "id": "direct_conversion_cells",
-          "name": "Direct Conversion Cells",
-          "description": "Description to be added",
+          "id": "nuclear_conversion",
+          "name": "Nuclear Conversion",
+          "description": "Nuclear thermal conversion systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "quantum_converters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_conversion"]
+        },
+        {
+          "id": "fusion_conversion",
+          "name": "Fusion Conversion",
+          "description": "Fusion-powered conversion systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["direct_conversion"]
+        },
+        {
+          "id": "direct_conversion",
+          "name": "Direct Conversion",
+          "description": "Direct energy conversion systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_converters"]
         },
         {
           "id": "quantum_converters",
           "name": "Quantum Converters",
-          "description": "Description to be added",
+          "description": "Quantum field conversion systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "zero_point_converters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_point_converters"]
         },
         {
           "id": "zero_point_converters",
           "name": "Zero-Point Converters",
-          "description": "Description to be added",
+          "description": "Zero-point energy conversion.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "vacuum_energy_converters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["vacuum_converters"]
         },
         {
-          "id": "vacuum_energy_converters",
-          "name": "Vacuum Energy Converters",
-          "description": "Description to be added",
+          "id": "vacuum_converters",
+          "name": "Vacuum Converters",
+          "description": "Vacuum energy conversion systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "spacetime_converters"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_converters"]
         },
         {
           "id": "spacetime_converters",
           "name": "Spacetime Converters",
-          "description": "Description to be added",
+          "description": "Spacetime curvature conversion.",
           "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_conversion_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_converters"]
         },
         {
-          "id": "perfect_conversion_systems",
-          "name": "Perfect Conversion Systems",
-          "description": "Description to be added",
+          "id": "casimir_converters",
+          "name": "Casimir Converters",
+          "description": "Casimir effect conversion systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_heat_rejection"]
+        },
+        {
+          "id": "perfect_heat_rejection",
+          "name": "Perfect Heat Rejection",
+          "description": "Perfect thermal management systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["negative_thermal_mass"]
+        },
+        {
+          "id": "negative_thermal_mass",
+          "name": "Negative Thermal Mass",
+          "description": "Inverted thermal properties.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_conversion"]
+        },
+        {
+          "id": "perfect_conversion",
+          "name": "Perfect Conversion",
+          "description": "Ultimate energy conversion systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     },
-    "energy_transport": {
-      "name": "Energy Transport Beams",
+    "transmission": {
+      "name": "Energy Transmission",
       "description": "Research enabling wireless energy transmission across vast distances.",
       "category": "energy",
       "tiers": [
         {
-          "id": "microwave_power_beams",
-          "name": "Microwave Power Beams",
-          "description": "Description to be added",
+          "id": "microwave_beams",
+          "name": "Microwave Beams",
+          "description": "Microwave power transmission.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "laser_power_beams"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["laser_beams"]
         },
         {
-          "id": "laser_power_beams",
-          "name": "Laser Power Beams",
-          "description": "Description to be added",
+          "id": "laser_beams",
+          "name": "Laser Beams",
+          "description": "Focused laser power transmission.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "optical_resonance_beams"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["optical_resonance"]
         },
         {
-          "id": "optical_resonance_beams",
-          "name": "Optical Resonance Beams",
-          "description": "Description to be added",
+          "id": "optical_resonance",
+          "name": "Optical Resonance",
+          "description": "Resonant optical transmission systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "plasma_conduit_beams"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["plasma_conduits"]
         },
         {
-          "id": "plasma_conduit_beams",
-          "name": "Plasma Conduit Beams",
-          "description": "Description to be added",
+          "id": "plasma_conduits",
+          "name": "Plasma Conduits",
+          "description": "Plasma-based power transmission.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "quantum_entangled_power_transmission"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["superconducting_lines"]
         },
         {
-          "id": "quantum_entangled_power_transmission",
-          "name": "Quantum Entangled Power Transmission",
-          "description": "Description to be added",
+          "id": "superconducting_lines",
+          "name": "Superconducting Lines",
+          "description": "Lossless superconducting transmission.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "coherent_x_ray_laser_transfer"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_entanglement"]
         },
         {
-          "id": "coherent_x_ray_laser_transfer",
-          "name": "Coherent X-Ray Laser Transfer",
-          "description": "Description to be added",
+          "id": "quantum_entanglement",
+          "name": "Quantum Entanglement",
+          "description": "Quantum-entangled power transmission.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "scalar_field_translocator"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["coherent_x_ray"]
         },
         {
-          "id": "scalar_field_translocator",
-          "name": "Scalar Field Translocator",
-          "description": "Description to be added",
+          "id": "coherent_x_ray",
+          "name": "Coherent X-Ray Transfer",
+          "description": "Coherent X-ray power transmission.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "tachyon_ray"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["scalar_fields"]
         },
         {
-          "id": "tachyon_ray",
-          "name": "Tachyon Ray",
-          "description": "Description to be added",
+          "id": "scalar_fields",
+          "name": "Scalar Field Transmission",
+          "description": "Scalar field power transmission.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "zero_mode_vacuum_pump"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_transmission"]
         },
         {
-          "id": "zero_mode_vacuum_pump",
-          "name": "Zero-Mode Vacuum Pump",
-          "description": "Description to be added",
+          "id": "nuclear_transmission",
+          "name": "Nuclear Transmission",
+          "description": "Nuclear-powered transmission systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "anti_entropic_time_field"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_transmission"]
         },
         {
-          "id": "anti_entropic_time_field",
-          "name": "Anti-Entropic Time Field",
-          "description": "Description to be added",
+          "id": "fusion_transmission",
+          "name": "Fusion Transmission",
+          "description": "Fusion-powered transmission systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["tachyon_beams"]
+        },
+        {
+          "id": "tachyon_beams",
+          "name": "Tachyon Beams",
+          "description": "Faster-than-light power transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_mode_vacuum"]
+        },
+        {
+          "id": "zero_mode_vacuum",
+          "name": "Zero-Mode Vacuum",
+          "description": "Zero-mode vacuum power transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["anti_entropic_fields"]
+        },
+        {
+          "id": "anti_entropic_fields",
+          "name": "Anti-Entropic Fields",
+          "description": "Time-reversed power transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_transmission"]
+        },
+        {
+          "id": "casimir_transmission",
+          "name": "Casimir Transmission",
+          "description": "Casimir effect power transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_transmission"]
+        },
+        {
+          "id": "spacetime_transmission",
+          "name": "Spacetime Transmission",
+          "description": "Spacetime curvature power transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["higher_dimensions"]
+        },
+        {
+          "id": "higher_dimensions",
+          "name": "Higher Dimensional Transmission",
+          "description": "Power transmission through extra dimensions.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["instantaneous_transfer"]
+        },
+        {
+          "id": "instantaneous_transfer",
+          "name": "Instantaneous Transfer",
+          "description": "Zero-latency power transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_synchronization"]
+        },
+        {
+          "id": "perfect_synchronization",
+          "name": "Perfect Synchronization",
+          "description": "Perfectly synchronized power networks.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_transmission"]
+        },
+        {
+          "id": "perfect_transmission",
+          "name": "Perfect Transmission",
+          "description": "Ultimate power transmission systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     },
-    "sensor_systems": {
-      "name": "Sensor Systems",
-      "description": "Research tree for Sensor Systems",
+    "architecture": {
+      "name": "Architecture",
+      "description": "Research improving computational architecture, system design, and information processing paradigms.",
+      "category": "intelligence",
+      "tiers": [
+        {
+          "id": "von_neumann_architecture",
+          "name": "Von Neumann Architecture",
+          "description": "Classic stored-program computer architecture with unified memory.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["harvard_architecture"]
+        },
+        {
+          "id": "harvard_architecture",
+          "name": "Harvard Architecture",
+          "description": "Separate instruction and data memory buses for parallel access.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["systolic_arrays"]
+        },
+        {
+          "id": "systolic_arrays",
+          "name": "Systolic Arrays",
+          "description": "Rhythmic data flow through processing element grids.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["dataflow_architecture"]
+        },
+        {
+          "id": "dataflow_architecture",
+          "name": "Dataflow Architecture",
+          "description": "Data-driven execution without central program counter.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["neuromorphic_mesh"]
+        },
+        {
+          "id": "neuromorphic_mesh",
+          "name": "Neuromorphic Mesh",
+          "description": "Brain-inspired spiking neural network hardware topology.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["cellular_automata_fabric"]
+        },
+        {
+          "id": "cellular_automata_fabric",
+          "name": "Cellular Automata Fabric",
+          "description": "Massively parallel local interaction computing substrate.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["hypercube_interconnect"]
+        },
+        {
+          "id": "hypercube_interconnect",
+          "name": "Hypercube Interconnect",
+          "description": "N-dimensional hypercube topology for logarithmic routing.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["optical_crossbar"]
+        },
+        {
+          "id": "optical_crossbar",
+          "name": "Optical Crossbar Switch",
+          "description": "All-optical non-blocking interconnect matrices.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["reservoir_computing"]
+        },
+        {
+          "id": "reservoir_computing",
+          "name": "Reservoir Computing",
+          "description": "Recurrent neural networks with fixed random dynamics.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_annealing_fabric"]
+        },
+        {
+          "id": "quantum_annealing_fabric",
+          "name": "Quantum Annealing Fabric",
+          "description": "Adiabatic quantum optimization architectures.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["topological_qubit_mesh"]
+        },
+        {
+          "id": "topological_qubit_mesh",
+          "name": "Topological Qubit Mesh",
+          "description": "Error-protected quantum computing via non-Abelian anyons.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["entangled_photon_ring"]
+        },
+        {
+          "id": "entangled_photon_ring",
+          "name": "Entangled Photon Storage Ring",
+          "description": "Circulating entangled photon pairs for quantum memory and computation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["majorana_qubit_condensate"]
+        },
+        {
+          "id": "majorana_qubit_condensate",
+          "name": "Majorana Condensed Qubit Memory",
+          "description": "Topologically protected Majorana zero-mode quantum registers.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["adiabatic_reversible_logic"]
+        },
+        {
+          "id": "adiabatic_reversible_logic",
+          "name": "Adiabatic Reversible Logic",
+          "description": "Thermodynamically reversible computation approaching Landauer limit.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["strange_matter_processor"]
+        },
+        {
+          "id": "strange_matter_processor",
+          "name": "Strange Matter Processor",
+          "description": "Computation using stable strange quark matter configurations.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["planck_scale_logic"]
+        },
+        {
+          "id": "planck_scale_logic",
+          "name": "Planck-Scale Logic Gates",
+          "description": "Computation at fundamental spacetime granularity.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["holographic_compute_boundary"]
+        },
+        {
+          "id": "holographic_compute_boundary",
+          "name": "Holographic Compute Boundary",
+          "description": "Information processing on AdS/CFT holographic surfaces.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["closed_timelike_compute"]
+        },
+        {
+          "id": "closed_timelike_compute",
+          "name": "Closed Timelike Curve Compute",
+          "description": "Computational acceleration via controlled causal loops.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["omega_point_architecture"]
+        },
+        {
+          "id": "omega_point_architecture",
+          "name": "Omega Point Architecture",
+          "description": "Asymptotically infinite computation as universe evolves.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["bekenstein_pocket_universe"]
+        },
+        {
+          "id": "bekenstein_pocket_universe",
+          "name": "Bekenstein-Bounded Pocket Universe",
+          "description": "Maximum information density computation in baby universe bubbles.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
+        }
+      ]
+    },
+    "processor": {
+      "name": "Processor",
+      "description": "Central processing unit improvements increase computational power and efficiency.",
+      "category": "intelligence",
+      "tiers": [
+        {
+          "id": "edge_compute",
+          "name": "Edge Compute",
+          "description": "Basic edge computing nodes.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fpga_arrays"]
+        },
+        {
+          "id": "fpga_arrays",
+          "name": "FPGA Arrays",
+          "description": "Field-programmable gate array systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["asic_interconnect"]
+        },
+        {
+          "id": "asic_interconnect",
+          "name": "ASIC Interconnect",
+          "description": "Application-specific integrated circuits.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["parallel_processors"]
+        },
+        {
+          "id": "parallel_processors",
+          "name": "Parallel Processors",
+          "description": "Multi-core parallel processing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["vector_processors"]
+        },
+        {
+          "id": "vector_processors",
+          "name": "Vector Processors",
+          "description": "SIMD vector processing units.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["neural_processors"]
+        },
+        {
+          "id": "neural_processors",
+          "name": "Neural Processors",
+          "description": "Neural network processing units.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["tensor_cores"]
+        },
+        {
+          "id": "tensor_cores",
+          "name": "Tensor Cores",
+          "description": "Specialized tensor processing units.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["silicon_photonic"]
+        },
+        {
+          "id": "silicon_photonic",
+          "name": "Silicon Photonic",
+          "description": "Photonic integrated circuits.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_processors"]
+        },
+        {
+          "id": "nuclear_processors",
+          "name": "Nuclear Processors",
+          "description": "Nuclear-powered processing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_processors"]
+        },
+        {
+          "id": "fusion_processors",
+          "name": "Fusion Processors",
+          "description": "Fusion-powered processing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_processors"]
+        },
+        {
+          "id": "quantum_processors",
+          "name": "Quantum Processors",
+          "description": "Quantum computing processors.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["optical_processors"]
+        },
+        {
+          "id": "optical_processors",
+          "name": "Optical Processors",
+          "description": "Light-based processing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["photonic_processors"]
+        },
+        {
+          "id": "photonic_processors",
+          "name": "Photonic Processors",
+          "description": "Advanced photonic computing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["adiabatic_reversible"]
+        },
+        {
+          "id": "adiabatic_reversible",
+          "name": "Adiabatic Reversible Processors",
+          "description": "Thermodynamically reversible processors approaching zero energy dissipation.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["trapped_ion_arrays"]
+        },
+        {
+          "id": "trapped_ion_arrays",
+          "name": "Trapped Ion Arrays",
+          "description": "Ion trap quantum processors.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["neuromorphic_analog"]
+        },
+        {
+          "id": "neuromorphic_analog",
+          "name": "Neuromorphic Analog CPU",
+          "description": "Brain-inspired analog processors.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_processors"]
+        },
+        {
+          "id": "spacetime_processors",
+          "name": "Spacetime Processors",
+          "description": "Spacetime-manipulating processors.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["consciousness_processors"]
+        },
+        {
+          "id": "consciousness_processors",
+          "name": "Consciousness Processors",
+          "description": "Consciousness-based processing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_parallelism"]
+        },
+        {
+          "id": "perfect_parallelism",
+          "name": "Perfect Parallelism",
+          "description": "Ultimate parallel processing systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
+        }
+      ]
+    },
+    "memory": {
+      "name": "Memory",
+      "description": "Memory and data storage improvements enable better information retention and access.",
+      "category": "intelligence",
+      "tiers": [
+        {
+          "id": "serial_data_bus",
+          "name": "Serial Data Bus",
+          "description": "Basic serial data transmission.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["parallel_interconnect"]
+        },
+        {
+          "id": "parallel_interconnect",
+          "name": "Parallel Interconnect",
+          "description": "Parallel data bus systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["dram_memory"]
+        },
+        {
+          "id": "dram_memory",
+          "name": "DRAM Memory",
+          "description": "Dynamic random access memory.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["sram_memory"]
+        },
+        {
+          "id": "sram_memory",
+          "name": "SRAM Memory",
+          "description": "Static random access memory.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["flash_memory"]
+        },
+        {
+          "id": "flash_memory",
+          "name": "Flash Memory",
+          "description": "Non-volatile flash storage.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["optical_neural_interface"]
+        },
+        {
+          "id": "optical_neural_interface",
+          "name": "Optical Neural Interface",
+          "description": "Optical neural network interfaces.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_interface"]
+        },
+        {
+          "id": "quantum_interface",
+          "name": "Quantum Interface Protocol",
+          "description": "Quantum information interfaces.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["holographic_memory"]
+        },
+        {
+          "id": "holographic_memory",
+          "name": "Holographic Memory",
+          "description": "Holographic data storage systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_memory"]
+        },
+        {
+          "id": "nuclear_memory",
+          "name": "Nuclear Memory",
+          "description": "Nuclear spin-based memory systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_memory"]
+        },
+        {
+          "id": "fusion_memory",
+          "name": "Fusion Memory",
+          "description": "Fusion-stabilized memory systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_memory"]
+        },
+        {
+          "id": "quantum_memory",
+          "name": "Quantum Memory",
+          "description": "Quantum superposition memory systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["entangled_memory"]
+        },
+        {
+          "id": "entangled_memory",
+          "name": "Entangled Memory",
+          "description": "Quantum-entangled memory systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_point_memory"]
+        },
+        {
+          "id": "zero_point_memory",
+          "name": "Zero-Point Memory",
+          "description": "Zero-point energy stabilized memory.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_memory"]
+        },
+        {
+          "id": "casimir_memory",
+          "name": "Casimir Memory",
+          "description": "Casimir effect memory systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_memory"]
+        },
+        {
+          "id": "spacetime_memory",
+          "name": "Spacetime Memory",
+          "description": "Memory stored in spacetime curvature.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["higher_dimensional_memory"]
+        },
+        {
+          "id": "higher_dimensional_memory",
+          "name": "Higher Dimensional Memory",
+          "description": "Extra-dimensional storage systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_information_transfer"]
+        },
+        {
+          "id": "perfect_information_transfer",
+          "name": "Perfect Information Transfer",
+          "description": "Perfect data transmission systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["omniscient_interface"]
+        },
+        {
+          "id": "omniscient_interface",
+          "name": "Omniscient Interface Network",
+          "description": "Universal information access systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["akashic_record_interface"]
+        },
+        {
+          "id": "akashic_record_interface",
+          "name": "Akashic Record Interface",
+          "description": "Access to universal information field.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
+        }
+      ]
+    },
+    "sensors": {
+      "name": "Sensors",
+      "description": "Research improving sensor systems and data transmission bandwidth.",
       "category": "intelligence",
       "tiers": [
         {
           "id": "basic_sensors",
           "name": "Basic Sensors",
-          "description": "Description to be added",
+          "description": "Simple sensor systems.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "enhanced_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["enhanced_sensors"]
         },
         {
           "id": "enhanced_sensors",
           "name": "Enhanced Sensors",
-          "description": "Description to be added",
+          "description": "Improved sensor sensitivity.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "multi_spectral_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["multi_spectral"]
         },
         {
-          "id": "multi_spectral_sensors",
+          "id": "multi_spectral",
           "name": "Multi-Spectral Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "quantum_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "quantum_sensors",
-          "name": "Quantum Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "entangled_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "entangled_sensors",
-          "name": "Entangled Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "spacetime_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "spacetime_sensors",
-          "name": "Spacetime Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "perfect_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "perfect_sensors",
-          "name": "Perfect Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "omniscient_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "omniscient_sensors",
-          "name": "Omniscient Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "temporal_sensors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "temporal_sensors",
-          "name": "Temporal Sensors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "ultimate_sensing_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "ultimate_sensing_systems",
-          "name": "Ultimate Sensing Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "machine_learning": {
-      "name": "Machine Learning",
-      "description": "Research tree for Machine Learning",
-      "category": "intelligence",
-      "tiers": [
-        {
-          "id": "basic_neural_networks",
-          "name": "Basic Neural Networks",
-          "description": "Description to be added",
+          "description": "Multi-wavelength sensor systems.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "deep_learning_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["radio_frequency_link"]
         },
-        {
-          "id": "deep_learning_systems",
-          "name": "Deep Learning Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "reinforcement_learning"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "reinforcement_learning",
-          "name": "Reinforcement Learning",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "transfer_learning"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "transfer_learning",
-          "name": "Transfer Learning",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "meta_learning_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "meta_learning_systems",
-          "name": "Meta-Learning Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "quantum_neural_networks"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "quantum_neural_networks",
-          "name": "Quantum Neural Networks",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "consciousness_networks"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "consciousness_networks",
-          "name": "Consciousness Networks",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "self_improving_ai"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "self_improving_ai",
-          "name": "Self-Improving AI",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "oracle_ai_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "oracle_ai_systems",
-          "name": "Oracle AI Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_intelligence"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "akashic_record_interface",
-          "name": "Akashic Record Interface",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "production_efficiency": {
-      "name": "Production Efficiency",
-      "description": "Research improving manufacturing rates, material efficiency, and production quality.",
-      "category": "manufacturing",
-      "tiers": [
-        {
-          "id": "standard_design_patterns",
-          "name": "Standard Design Patterns",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.02,
-          "total_bonus": 0.2,
-          "unlocks": [
-            "adaptive_learning_controllers"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "adaptive_learning_controllers",
-          "name": "Adaptive Learning Controllers",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "in_situ_resource_hybridization"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "in_situ_resource_hybridization",
-          "name": "In-Situ Resource Hybridization",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "stamp_forging"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "stamp_forging",
-          "name": "Stamp Forging",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "additive_laser_manufacturing"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "additive_laser_manufacturing",
-          "name": "Additive Laser Manufacturing",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "single_crystal_blown_nickel_forgings"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "single_crystal_blown_nickel_forgings",
-          "name": "Single-Crystal Blown Nickel Forgings",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "carbon_alloy_composite"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "carbon_alloy_composite",
-          "name": "Carbon Alloy Composite",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "isoline_grid_aesthetics"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "isoline_grid_aesthetics",
-          "name": "Isoline Grid Aesthetics",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "molecular_assembly_manufacturing"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "molecular_assembly_manufacturing",
-          "name": "Molecular Assembly Manufacturing",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "quantum_coherent_material_synthesis"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "quantum_coherent_material_synthesis",
-          "name": "Quantum Coherent Material Synthesis",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "recycling_efficiency": {
-      "name": "Resource Recovery & Salvage Operations",
-      "description": "Research improving recycling efficiency and material recovery from dismantled structures.",
-      "category": "resource_management",
-      "tiers": [
-        {
-          "id": "basic_salvage_protocols",
-          "name": "Basic Salvage Protocols",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.02,
-          "total_bonus": 0.2,
-          "unlocks": [
-            "precision_disassembly_techniques"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "precision_disassembly_techniques",
-          "name": "Precision Disassembly Techniques",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "molecular_recovery_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "molecular_recovery_systems",
-          "name": "Molecular Recovery Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "nano_scale_material_separation"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "nano_scale_material_separation",
-          "name": "Nano-scale Material Separation",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "quantum_state_preservation"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "quantum_state_preservation",
-          "name": "Quantum State Preservation",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "entropy_reversed_material_reconstruction"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "entropy_reversed_material_reconstruction",
-          "name": "Entropy-Reversed Material Reconstruction",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "perfect_state_recovery_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "perfect_state_recovery_arrays",
-          "name": "Perfect State Recovery Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "temporal_reversion_salvage"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "temporal_reversion_salvage",
-          "name": "Temporal Reversion Salvage",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "heisenberg_energy_mass_compensator"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "heisenberg_energy_mass_compensator",
-          "name": "Heisenberg Energy Mass Compensator",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "anti_entropic_reversibility"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "anti_entropic_reversibility",
-          "name": "Anti-Entropic Reversibility",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "dyson_swarm_construction": {
-      "name": "Dyson Swarm Construction",
-      "description": "Research focused on optimizing Dyson sphere/swarm construction rates and efficiency.",
-      "category": "construction_efficiency",
-      "tiers": [
-        {
-          "id": "multi_body_agent_coordination_schemas",
-          "name": "Multi-Body Agent Coordination Schemas",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.02,
-          "total_bonus": 0.2,
-          "unlocks": [
-            "large_scale_deployment_patterns"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "large_scale_deployment_patterns",
-          "name": "Large-Scale Deployment Patterns",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "modular_articulated_structures"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "modular_articulated_structures",
-          "name": "Modular Articulated Structures",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "kessler_enhanced_chaotic_dynamic_control"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "kessler_enhanced_chaotic_dynamic_control",
-          "name": "Kessler-Enhanced Chaotic Dynamic Control",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "perturbative_swarm_solutions"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "perturbative_swarm_solutions",
-          "name": "Perturbative Swarm Solutions",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "de_localized_intelligence_cloud"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "de_localized_intelligence_cloud",
-          "name": "De-Localized Intelligence Cloud",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "thin_plasma_communications_relays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "thin_plasma_communications_relays",
-          "name": "Thin-Plasma Communications Relays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "quantum_entangled_swarm_coordination"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "quantum_entangled_swarm_coordination",
-          "name": "Quantum Entangled Swarm Coordination",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "autonomous_self_replication_protocols"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "autonomous_self_replication_protocols",
-          "name": "Autonomous Self-Replication Protocols",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "retro_causal_probability_field"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "retro_causal_probability_field",
-          "name": "Retro-Causal Probability Field",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "research_rate_efficiency": {
-      "name": "Research Rate Efficiency",
-      "description": "Research improving intelligence generation, data processing, and research speed.",
-      "category": "research",
-      "tiers": [
-        {
-          "id": "data_processing_optimization",
-          "name": "Data Processing Optimization",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.02,
-          "total_bonus": 0.2,
-          "unlocks": [
-            "parallel_computation_frameworks"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "parallel_computation_frameworks",
-          "name": "Parallel Computation Frameworks",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "machine_learning_acceleration"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "machine_learning_acceleration",
-          "name": "Machine Learning Acceleration",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "quantum_simulation_cores"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "quantum_simulation_cores",
-          "name": "Quantum Simulation Cores",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "distributed_intelligence_networks"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "distributed_intelligence_networks",
-          "name": "Distributed Intelligence Networks",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "meta_research_algorithms"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "meta_research_algorithms",
-          "name": "Meta-Research Algorithms",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "temporal_analysis_methods"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "temporal_analysis_methods",
-          "name": "Temporal Analysis Methods",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "causal_inference_engines"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "causal_inference_engines",
-          "name": "Causal Inference Engines",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "consciousness_simulation_networks"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "consciousness_simulation_networks",
-          "name": "Consciousness Simulation Networks",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "oracle_prediction_systems"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "oracle_prediction_systems",
-          "name": "Oracle Prediction Systems",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "computer_processing": {
-      "name": "Processing",
-      "description": "Central processing unit improvements increase computational power and efficiency.",
-      "category": "computing",
-      "tiers": [
-        {
-          "id": "edge_compute_node",
-          "name": "Edge Compute Node",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.02,
-          "total_bonus": 0.2,
-          "unlocks": [
-            "fpga_array"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "fpga_array",
-          "name": "FPGA Array",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "asic_interconnect"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "asic_interconnect",
-          "name": "ASIC Interconnect",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "silicon_photonic_interconnect"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "silicon_photonic_interconnect",
-          "name": "Silicon Photonic Interconnect",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "optimized_tensor_core"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "optimized_tensor_core",
-          "name": "Optimized Tensor Core",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "photonic_tensor_array"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "photonic_tensor_array",
-          "name": "Photonic Tensor Array",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "thermodynamic_sampling_unit"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "thermodynamic_sampling_unit",
-          "name": "Thermodynamic Sampling Unit",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "adiabatic_reversible_compilers"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "adiabatic_reversible_compilers",
-          "name": "Adiabatic Reversible Compilers",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "trapped_rubidium_phased_gate_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "trapped_rubidium_phased_gate_arrays",
-          "name": "Trapped Rubidium Phased Gate Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "neuromorphic_analog_cpu"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "neuromorphic_analog_cpu",
-          "name": "Neuromorphic Analog CPU",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "computer_gpu": {
-      "name": "GPU",
-      "description": "Graphics processing unit improvements for parallel computation.",
-      "category": "computing",
-      "tiers": [
-        {
-          "id": "basic_gpus",
-          "name": "Basic GPUs",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.02,
-          "total_bonus": 0.2,
-          "unlocks": [
-            "parallel_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
-        },
-        {
-          "id": "parallel_processors",
-          "name": "Parallel Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "vector_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
-        },
-        {
-          "id": "vector_processors",
-          "name": "Vector Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "neural_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "neural_processors",
-          "name": "Neural Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "quantum_gpus"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "quantum_gpus",
-          "name": "Quantum GPUs",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "optical_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "optical_processors",
-          "name": "Optical Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "photonic_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "photonic_processors",
-          "name": "Photonic Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "spacetime_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "spacetime_processors",
-          "name": "Spacetime Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "consciousness_processors"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "consciousness_processors",
-          "name": "Consciousness Processors",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_parallelism"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "perfect_parallelism",
-          "name": "Perfect Parallelism",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "computer_interconnect": {
-      "name": "Interconnect",
-      "description": "Data transmission improvements enable faster communication.",
-      "category": "computing",
-      "tiers": [
         {
           "id": "radio_frequency_link",
           "name": "Radio Frequency Link",
-          "description": "Description to be added",
+          "description": "RF communication systems.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "laser_communication"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["laser_communication"]
         },
         {
           "id": "laser_communication",
           "name": "Laser Communication",
-          "description": "Description to be added",
+          "description": "Laser-based communication links.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "quantum_entanglement_network"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_sensors"]
+        },
+        {
+          "id": "quantum_sensors",
+          "name": "Quantum Sensors",
+          "description": "Quantum-enhanced sensor systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["entangled_sensors"]
+        },
+        {
+          "id": "entangled_sensors",
+          "name": "Entangled Sensors",
+          "description": "Quantum-entangled sensor networks.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["quantum_entanglement_network"]
         },
         {
           "id": "quantum_entanglement_network",
           "name": "Quantum Entanglement Network",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "quantum_repeater"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
-        },
-        {
-          "id": "quantum_repeater",
-          "name": "Quantum Repeater",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "entanglement_network"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
-        },
-        {
-          "id": "entanglement_network",
-          "name": "Entanglement Network",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "quantum_repeater_network"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
-        },
-        {
-          "id": "quantum_repeater_network",
-          "name": "Quantum Repeater Network",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "entangled_communication_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
-        },
-        {
-          "id": "entangled_communication_arrays",
-          "name": "Entangled Communication Arrays",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "spacetime_signal_propagation"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
-        },
-        {
-          "id": "spacetime_signal_propagation",
-          "name": "Spacetime Signal Propagation",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "zero_latency_quantum_links"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
-        },
-        {
-          "id": "zero_latency_quantum_links",
-          "name": "Zero-Latency Quantum Links",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "perfect_synchronization_network"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
-        },
-        {
-          "id": "perfect_synchronization_network",
-          "name": "Perfect Synchronization Network",
-          "description": "Description to be added",
-          "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
-        }
-      ]
-    },
-    "computer_interface": {
-      "name": "Interface",
-      "description": "Interface improvements enable better communication between components.",
-      "category": "computing",
-      "tiers": [
-        {
-          "id": "serial_data_bus",
-          "name": "Serial Data Bus",
-          "description": "Description to be added",
+          "description": "Quantum-entangled communication networks.",
           "tranches": 10,
           "bonus_per_tranche": 0.02,
           "total_bonus": 0.2,
-          "unlocks": [
-            "parallel_interconnect"
-          ],
-          "effects": {
-            "skill_multiplier": 0.2
-          }
+          "unlocks": ["quantum_repeaters"]
         },
         {
-          "id": "parallel_interconnect",
-          "name": "Parallel Interconnect",
-          "description": "Description to be added",
+          "id": "quantum_repeaters",
+          "name": "Quantum Repeaters",
+          "description": "Quantum signal amplification systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.025,
-          "total_bonus": 0.25,
-          "unlocks": [
-            "optical_neural_interface"
-          ],
-          "effects": {
-            "skill_multiplier": 0.25
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["nuclear_sensors"]
         },
         {
-          "id": "optical_neural_interface",
-          "name": "Optical Neural Interface",
-          "description": "Description to be added",
+          "id": "nuclear_sensors",
+          "name": "Nuclear Sensors",
+          "description": "Nuclear-based sensor systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.03,
-          "total_bonus": 0.30000000000000004,
-          "unlocks": [
-            "quantum_interface_protocol"
-          ],
-          "effects": {
-            "skill_multiplier": 0.30000000000000004
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["fusion_sensors"]
         },
         {
-          "id": "quantum_interface_protocol",
-          "name": "Quantum Interface Protocol",
-          "description": "Description to be added",
+          "id": "fusion_sensors",
+          "name": "Fusion Sensors",
+          "description": "Fusion-powered sensor systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.035,
-          "total_bonus": 0.35000000000000003,
-          "unlocks": [
-            "telepathic_interface_network"
-          ],
-          "effects": {
-            "skill_multiplier": 0.35000000000000003
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_sensors"]
         },
         {
-          "id": "telepathic_interface_network",
-          "name": "Telepathic Interface Network",
-          "description": "Description to be added",
+          "id": "spacetime_sensors",
+          "name": "Spacetime Sensors",
+          "description": "Spacetime curvature detection systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.04,
-          "total_bonus": 0.4,
-          "unlocks": [
-            "neural_interface_arrays"
-          ],
-          "effects": {
-            "skill_multiplier": 0.4
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["perfect_sensors"]
         },
         {
-          "id": "neural_interface_arrays",
-          "name": "Neural Interface Arrays",
-          "description": "Description to be added",
+          "id": "perfect_sensors",
+          "name": "Perfect Sensors",
+          "description": "Perfect detection systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.045,
-          "total_bonus": 0.45,
-          "unlocks": [
-            "quantum_consciousness_bridge"
-          ],
-          "effects": {
-            "skill_multiplier": 0.45
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["omniscient_sensors"]
         },
         {
-          "id": "quantum_consciousness_bridge",
-          "name": "Quantum Consciousness Bridge",
-          "description": "Description to be added",
+          "id": "omniscient_sensors",
+          "name": "Omniscient Sensors",
+          "description": "Universal awareness sensor systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05,
-          "total_bonus": 0.5,
-          "unlocks": [
-            "perfect_information_transfer"
-          ],
-          "effects": {
-            "skill_multiplier": 0.5
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["temporal_sensors"]
         },
         {
-          "id": "perfect_information_transfer",
-          "name": "Perfect Information Transfer",
-          "description": "Description to be added",
+          "id": "temporal_sensors",
+          "name": "Temporal Sensors",
+          "description": "Time-aware sensor systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.05500000000000001,
-          "total_bonus": 0.55,
-          "unlocks": [
-            "omniscient_interface_network"
-          ],
-          "effects": {
-            "skill_multiplier": 0.55
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["zero_latency_links"]
         },
         {
-          "id": "omniscient_interface_network",
-          "name": "Omniscient Interface Network",
-          "description": "Description to be added",
+          "id": "zero_latency_links",
+          "name": "Zero-Latency Quantum Links",
+          "description": "Instantaneous communication links.",
           "tranches": 10,
-          "bonus_per_tranche": 0.06,
-          "total_bonus": 0.6000000000000001,
-          "unlocks": [
-            "akashic_record_interface"
-          ],
-          "effects": {
-            "skill_multiplier": 0.6000000000000001
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["casimir_sensors"]
         },
         {
-          "id": "akashic_record_interface",
-          "name": "Akashic Record Interface",
-          "description": "Description to be added",
+          "id": "casimir_sensors",
+          "name": "Casimir Sensors",
+          "description": "Casimir effect sensor systems.",
           "tranches": 10,
-          "bonus_per_tranche": 0.065,
-          "total_bonus": 0.65,
-          "unlocks": [],
-          "effects": {
-            "skill_multiplier": 0.65
-          }
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["spacetime_communication"]
+        },
+        {
+          "id": "spacetime_communication",
+          "name": "Spacetime Signal Propagation",
+          "description": "Spacetime-based communication systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": ["ultimate_sensing"]
+        },
+        {
+          "id": "ultimate_sensing",
+          "name": "Ultimate Sensing Systems",
+          "description": "Ultimate sensor and communication systems.",
+          "tranches": 10,
+          "bonus_per_tranche": 0.02,
+          "total_bonus": 0.2,
+          "unlocks": []
         }
       ]
     }

@@ -111,7 +111,7 @@ class ResearchPanel {
             category === 'locomotion' || category === 'materials' ||
             category === 'control' || category === 'robotics' ||
             category === 'construction_efficiency' || category === 'manufacturing' ||
-            category === 'resource_management') {
+            category === 'resource_management' || category === 'dexterity') {
             return 'dexterity';
         }
         
@@ -187,8 +187,8 @@ class ResearchPanel {
         }
         
         this._researchCardHandler = (e) => {
-            // Find the closest research card element
-            const researchCard = e.target.closest('.research-card');
+            // Find the closest research card element (works with both old and new styles)
+            const researchCard = e.target.closest('.research-card, .structure-card-enhanced.research-card');
             if (!researchCard) {
                 return;
             }
@@ -457,73 +457,111 @@ class ResearchPanel {
 
         const enabledClass = nextTierEnabled ? 'research-enabled' : '';
         const expandedClass = isExpanded || nextTierEnabled ? 'research-expanded' : '';
-        const clickableClass = nextTier ? 'building-card-clickable' : '';
         
         // Get tier description from metadata
         const tierDescription = nextTier ? this.getTierDescription(treeId, nextTier.id) : null;
         
-        let html = `<div class="probe-summary-item building-card research-card ${clickableClass} ${enabledClass} ${expandedClass}" 
-                     id="research-${treeId}" 
-                     data-tree-id="${treeId}"
-                     data-tier-id="${nextTier ? nextTier.id : ''}"
-                     style="cursor: ${nextTier ? 'pointer' : 'default'};">
-            <div class="probe-summary-label research-card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>${treeData.name}</span>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    ${nextTier && nextTierEnabled ? `<span class="research-toggle-hint" style="font-size: 8px; color: rgba(255, 255, 255, 0.3);">click to disable</span>` : ''}
-                    <span style="font-size: 9px; color: ${nextTierEnabled ? 'rgba(100, 200, 100, 0.9)' : 'rgba(255, 255, 255, 0.4)'};">
-                        ${isComplete ? '✓ Complete' : (nextTierEnabled ? '● Active' : `${progressPercent.toFixed(0)}%`)}
-                    </span>
+        // Build status badge content
+        let statusBadgeContent = '';
+        if (isComplete) {
+            statusBadgeContent = '✓ COMPLETE';
+        } else if (nextTierEnabled) {
+            statusBadgeContent = '<span class="pulse-dot"></span> ACTIVE';
+        } else {
+            statusBadgeContent = `${progressPercent.toFixed(0)}%`;
+        }
+        
+        // Build stats for the research
+        let statsHtml = '';
+        if (nextTier && nextTierEnabled && allocatedFLOPS > 0) {
+            statsHtml = `
+                <div class="structure-stats-grid" style="grid-template-columns: 1fr;">
+                    <div class="structure-stat-block output">
+                        <div class="structure-stat-label">Compute Allocation</div>
+                        <div class="structure-stat-value positive">${this.formatFLOPS(allocatedFLOPS)}<span class="structure-stat-unit">/s</span></div>
+                    </div>
+                </div>`;
+        }
+        
+        let html = `
+            <div class="structure-card-enhanced research-card ${enabledClass} ${expandedClass}" 
+                 id="research-${treeId}" 
+                 data-tree-id="${treeId}"
+                 data-tier-id="${nextTier ? nextTier.id : ''}"
+                 style="cursor: ${nextTier ? 'pointer' : 'default'};">
+                <div class="structure-card-header header-research">
+                    <span>${treeData.name}</span>
+                    <div class="status-badge ${nextTierEnabled ? 'active' : ''}">
+                        ${statusBadgeContent}
+                    </div>
                 </div>
-            </div>`;
+                <div class="structure-card-body">`;
         
         // Show expanded content when researching or manually expanded
         if (isExpanded || nextTierEnabled) {
             // Current tier info
             if (nextTier) {
-                html += `<div style="font-size: 10px; color: rgba(255, 255, 255, 0.7); margin-top: 6px; margin-bottom: 4px;">
-                    <strong>Researching:</strong> ${nextTier.name}
+                html += `<div style="font-size: 10px; color: rgba(255, 255, 255, 0.8); margin-bottom: 6px; font-weight: 600;">
+                    Tier ${nextTierIndex + 1}: ${nextTier.name}
                 </div>`;
                 
                 // Show tier description from metadata
                 if (tierDescription) {
-                    html += `<div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); margin-bottom: 6px; line-height: 1.3;">${tierDescription}</div>`;
+                    html += `<div class="structure-card-description">${tierDescription}</div>`;
                 }
             } else {
-                html += `<div style="font-size: 9px; color: rgba(74, 158, 255, 0.8); margin-top: 4px;">All research complete</div>`;
+                html += `<div style="font-size: 10px; color: rgba(100, 220, 100, 0.9); margin-bottom: 6px;">All tiers complete!</div>`;
             }
             
-            // Progress breakdown
-            html += `<div class="probe-summary-breakdown" style="margin-top: 5px;">
-                <div class="probe-summary-breakdown-item">
-                    <span class="probe-summary-breakdown-label">Progress:</span>
-                    <span class="probe-summary-breakdown-count" id="tranches-${treeId}">${completedTranches} / ${totalTranches} tranches</span>
-                </div>`;
+            // Add stats HTML
+            html += statsHtml;
             
-            if (nextTier && nextTierEnabled && allocatedFLOPS > 0) {
-                html += `<div class="probe-summary-breakdown-item">
-                    <span class="probe-summary-breakdown-label">FLOPS:</span>
-                    <span class="probe-summary-breakdown-count">${this.formatFLOPS(allocatedFLOPS)}/s</span>
+            // Progress info row
+            html += `
+                <div class="structure-cost-row">
+                    <div class="structure-cost-item">
+                        <div class="structure-cost-icon" style="background: linear-gradient(135deg, #90ee90, #60c060);">T</div>
+                        <div>
+                            <div class="structure-cost-label">Tranches</div>
+                            <div class="structure-cost-value" id="tranches-${treeId}">${completedTranches} / ${totalTranches}</div>
+                        </div>
+                    </div>
+                    <div class="structure-count-badge" style="background: rgba(100, 220, 100, 0.2); border-color: rgba(100, 220, 100, 0.4); color: rgba(100, 220, 100, 0.95);">
+                        ${nextTierEnabled ? 'Active' : (isComplete ? 'Done' : 'Inactive')}
+                    </div>
                 </div>`;
-            }
-            
-            html += `</div>`;
             
             // Progress bar for current tier
-            if (nextTier && nextTierEnabled) {
-                html += `<div class="building-progress-container" id="progress-${treeId}" style="margin-top: 8px; padding: 6px; background: rgba(0, 0, 0, 0.2); border-radius: 3px;">
-                    <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
-                        <div id="progress-bar-${treeId}" style="height: 100%; width: ${Math.min(100, Math.max(0, currentTierProgressPercent))}%; background: linear-gradient(90deg, rgba(74, 158, 255, 0.8), rgba(74, 158, 255, 1)); transition: width 0.3s ease;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span class="probe-summary-breakdown-count" id="progress-percent-${treeId}" style="font-size: 10px;">${currentTierProgressPercent.toFixed(1)}%</span>
-                        <span class="probe-summary-breakdown-count" id="progress-time-${treeId}" style="font-size: 9px; color: rgba(255, 255, 255, 0.5);">${timeToComplete === Infinity ? '—' : FormatUtils.formatTime(timeToComplete)}</span>
-                    </div>
-                </div>`;
+            if (nextTier) {
+                html += `
+                    <div class="structure-progress-section" id="progress-${treeId}">
+                        <div class="structure-progress-header">
+                            <span class="structure-progress-title">Tier Progress</span>
+                            <span class="structure-progress-time" id="progress-time-${treeId}">${timeToComplete === Infinity ? '—' : FormatUtils.formatTime(timeToComplete)}</span>
+                        </div>
+                        <div class="structure-progress-bar-container">
+                            <div class="structure-progress-bar" id="progress-bar-${treeId}" style="width: ${Math.min(100, Math.max(0, currentTierProgressPercent))}%; ${nextTierEnabled ? 'background: linear-gradient(90deg, rgba(100, 220, 100, 0.8), rgba(100, 220, 100, 1));' : ''}"></div>
+                        </div>
+                        <div class="structure-progress-percent" id="progress-percent-${treeId}">${currentTierProgressPercent.toFixed(1)}%</div>
+                    </div>`;
             }
+            
+            // Action hint
+            if (nextTier) {
+                html += `<div class="structure-action-hint" style="${nextTierEnabled ? 'color: rgba(255, 130, 130, 0.7);' : ''}">${nextTierEnabled ? 'Click to pause research' : 'Click to start research'}</div>`;
+            }
+        } else {
+            // Collapsed state - show minimal info
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+                    <span style="font-size: 10px; color: rgba(255, 255, 255, 0.6);">${completedTranches}/${totalTranches} tranches</span>
+                    <span style="font-size: 9px; color: rgba(74, 158, 255, 0.7);">Click to expand</span>
+                </div>`;
         }
 
-        html += '</div>';
+        html += `
+                </div>
+            </div>`;
         return html;
     }
 
@@ -1040,7 +1078,7 @@ class ResearchPanel {
         if (!this.researchData) return;
 
         // If container is empty or doesn't have research cards rendered, render first
-        if (!this.container.querySelector('.research-card')) {
+        if (!this.container.querySelector('.research-card, .structure-card-enhanced.research-card')) {
             this.render();
             return;
         }
@@ -1056,8 +1094,8 @@ class ResearchPanel {
         // Check both tech_tree.research_state (new format) and research (legacy format)
         const researchState = gameState.tech_tree?.research_state || gameState.research || {};
         
-        // Cache research cards to avoid repeated queries
-        const researchCards = Array.from(this.container.querySelectorAll('.research-card'));
+        // Cache research cards to avoid repeated queries (works with both old and new styles)
+        const researchCards = Array.from(this.container.querySelectorAll('.research-card, .structure-card-enhanced.research-card'));
         researchCards.forEach(card => {
             const treeId = card.getAttribute('data-tree-id');
             const tierId = card.getAttribute('data-tier-id');

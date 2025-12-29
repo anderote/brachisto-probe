@@ -36,7 +36,7 @@ class ProbeVisualization {
         this.pointsGeometry.setDrawRange(0, 0); // Don't draw anything initially
         
         this.pointsMaterial = new THREE.PointsMaterial({
-            size: 0.02,
+            size: 0.008,
             sizeAttenuation: true,
             vertexColors: true,
             transparent: true,

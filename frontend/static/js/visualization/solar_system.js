@@ -25,8 +25,8 @@ class SolarSystem {
         // When resources are consumed, particles are removed
         this.resourceParticles = {}; // {zoneId: THREE.Points}
         this.resourceParticleData = {}; // {zoneId: {metal: [...], slag: [...], methalox: [...]}}
-        this.previousResources = {}; // {zoneId: {metal: 0, slag: 0, methalox: 0}} - track changes
-        this.pendingMass = {}; // {zoneId: {metal: 0, slag: 0, methalox: 0}} - accumulated mass waiting to become particles
+        this.previousResources = {}; // {zoneId: {metal: 0, slag: 0, methalox: 0, probe: 0}} - track changes
+        this.pendingMass = {}; // {zoneId: {metal: 0, slag: 0, methalox: 0, probe: 0}} - accumulated mass waiting to become particles
         this.lastUpdateTime = {}; // {zoneId: timestamp} - track last update time per zone
         this.lastSpawnTime = {}; // {zoneId_resourceType: timestamp} - track last spawn time for rate limiting
         this.maxResourceParticles = 50000; // Max particles per planet (metal + slag combined)
@@ -72,11 +72,12 @@ class SolarSystem {
         this.resourceLinearMaxDots = 100; // First 100 dots are linear (100,000 kg)
         this.resourceLogMaxMass = 1e24; // Reference mass for max dots - full planet mass scale
         
-        // Resource colors (metal = silver, slag = brown-grey, methalox = pale blue)
+        // Resource colors (metal = silver, slag = brown-grey, methalox = pale blue, probe = cyan)
         this.resourceColors = {
             metal: new THREE.Color(0xC0C0C0),    // Silver
             slag: new THREE.Color(0x5C4033),     // Brown-grey
-            methalox: new THREE.Color(0x7EC8E3) // Pale blue
+            methalox: new THREE.Color(0x7EC8E3), // Pale blue
+            probe: new THREE.Color(0x00FFFF)    // Cyan
         };
         
         // Particle drift settings (in game days)
@@ -91,6 +92,7 @@ class SolarSystem {
         this.particleDistribution = null;
         this.probeParticleConfig = null;
         this.particleDriftConfig = null;
+        this.probeSwarmConfig = null;
         
         // Apply default config (will be updated from JSON when loaded)
         this.applyDefaultParticleConfig();
@@ -101,22 +103,23 @@ class SolarSystem {
         this.pendingProbeMass = {};      // {zoneId: mass} - accumulated mass waiting to become particles
         this.individualProbes = {};      // {zoneId: [...individual probe positions]}
 
-        // Real-world planet data (radii in km, orbital distances in km)
+        // Real-world planet data (radii in km, orbital distances in km, mass in kg)
         // 1 AU = 149,600,000 km
         this.AU_KM = 149600000;
         this.planetData = {
-            sun: { radius_km: 696000 },
-            mercury: { radius_km: 2440, orbit_km: 0.39 * 149600000 },         // 0.39 AU
-            venus: { radius_km: 6052, orbit_km: 0.72 * 149600000 },          // 0.72 AU
-            earth: { radius_km: 6371, orbit_km: 1.0 * 149600000 },           // 1.0 AU
-            mars: { radius_km: 3390, orbit_km: 1.52 * 149600000 },            // 1.52 AU
-            jupiter: { radius_km: 69911, orbit_km: 5.2 * 149600000 },        // 5.2 AU
-            saturn: { radius_km: 58232, orbit_km: 9.5 * 149600000 },         // 9.5 AU
-            uranus: { radius_km: 25362, orbit_km: 19.2 * 149600000 },        // 19.2 AU
-            neptune: { radius_km: 24622, orbit_km: 30.1 * 149600000 },        // 30.1 AU
-            // Pluto - dwarf planet and main body of the Kuiper Belt zone
-            // Real orbit: ~40 AU average (Kuiper belt center)
-            kuiper: { radius_km: 1188, orbit_km: 40.0 * 149600000 },         // 40 AU
+            sun: { radius_km: 696000, mass_kg: 1.989e30 },
+            mercury: { radius_km: 2440, orbit_km: 0.39 * 149600000, mass_kg: 3.30e23 },     // 0.055 Earth masses
+            venus: { radius_km: 6052, orbit_km: 0.72 * 149600000, mass_kg: 4.87e24 },      // 0.815 Earth masses
+            earth: { radius_km: 6371, orbit_km: 1.0 * 149600000, mass_kg: 5.97e24 },       // 1.0 Earth masses
+            mars: { radius_km: 3390, orbit_km: 1.52 * 149600000, mass_kg: 6.42e23 },       // 0.107 Earth masses
+            jupiter: { radius_km: 69911, orbit_km: 5.2 * 149600000, mass_kg: 1.90e27 },    // 318 Earth masses
+            saturn: { radius_km: 58232, orbit_km: 9.5 * 149600000, mass_kg: 5.68e26 },     // 95 Earth masses
+            uranus: { radius_km: 25362, orbit_km: 19.2 * 149600000, mass_kg: 8.68e25 },    // 14.5 Earth masses
+            neptune: { radius_km: 24622, orbit_km: 30.1 * 149600000, mass_kg: 1.02e26 },   // 17.1 Earth masses
+            // Ceres - dwarf planet and main body of the Asteroid Belt zone
+            ceres: { radius_km: 473, orbit_km: 2.77 * 149600000, mass_kg: 9.39e20 },       // 0.00016 Earth masses
+            // Pluto - dwarf planet and main body of the Kuiper Belt zone  
+            kuiper: { radius_km: 1188, orbit_km: 40.0 * 149600000, mass_kg: 1.31e22 },     // 0.0022 Earth masses
             oort: { orbit_km: 140.0 * 149600000 },                            // 140 AU (inner Oort cloud)
             oort_outer: { orbit_km: 140.0 * 149600000 }                      // 140 AU (outer boundary)
         };
@@ -177,8 +180,8 @@ class SolarSystem {
             probeMassKg: 100,
             maxIndividualProbes: 300,
             color: new THREE.Color(0x88FFFF),
-            individualProbeSize: 0.4,
-            transferSize: 0.4
+            individualProbeSize: 0.16,
+            transferSize: 0.16
         };
         
         // Default drift animation config
@@ -194,7 +197,8 @@ class SolarSystem {
         this.resourceColors = {
             metal: new THREE.Color(0xC0C0C0),    // Silver
             slag: new THREE.Color(0x5C4033),     // Brown-grey
-            methalox: new THREE.Color(0x7EC8E3)  // Pale blue
+            methalox: new THREE.Color(0x7EC8E3), // Pale blue
+            probe: new THREE.Color(0x00FFFF)     // Cyan
         };
     }
     
@@ -273,7 +277,10 @@ class SolarSystem {
             if (c.metal) this.resourceColors.metal = new THREE.Color(c.metal);
             if (c.slag) this.resourceColors.slag = new THREE.Color(c.slag);
             if (c.methalox) this.resourceColors.methalox = new THREE.Color(c.methalox);
-            if (c.probe) this.probeParticleConfig.color = new THREE.Color(c.probe);
+            if (c.probe) {
+                this.resourceColors.probe = new THREE.Color(c.probe);
+                this.probeParticleConfig.color = new THREE.Color(c.probe);
+            }
         }
         
         // Probe individual settings
@@ -293,12 +300,71 @@ class SolarSystem {
             this.particleDriftConfig.probeMassDurationDays = da.probe_mass_duration_days || this.particleDriftConfig.probeMassDurationDays;
             this.particleDriftConfig.massDriverDurationDays = da.mass_driver_duration_days || this.particleDriftConfig.massDriverDurationDays;
         }
+        
+        // Probe swarm configuration
+        if (config.probe_swarm) {
+            this.probeSwarmConfig = {
+                ringCount: config.probe_swarm.ring_count || 6,
+                maxDotsPerRing: config.probe_swarm.max_dots_per_ring || 20,
+                maxTotalDots: config.probe_swarm.max_total_dots || 120,
+                overflowThreshold: config.probe_swarm.overflow_threshold || 100000000,
+                ringRadiusMultipliers: config.probe_swarm.ring_radius_multipliers || [1.2, 1.35, 1.5, 1.65, 1.8, 1.95]
+            };
+        } else {
+            // Default probe swarm config
+            this.probeSwarmConfig = {
+                ringCount: 6,
+                maxDotsPerRing: 20,
+                maxTotalDots: 120,
+                overflowThreshold: 100000000,
+                ringRadiusMultipliers: [1.2, 1.35, 1.5, 1.65, 1.8, 1.95]
+            };
+        }
     }
 
     logScaleRadius(radiusKm) {
         const logRadius = Math.log10(radiusKm);
         const normalized = (logRadius - this.logMinRadius) / (this.logMaxRadius - this.logMinRadius);
         return normalized * this.radiusScale;
+    }
+
+    /**
+     * Scale visual radius based on mass relative to Earth
+     * Bodies with Earth-like mass appear Earth-like in size
+     * Uses square root scaling for dramatic gas giant sizing (~20x Earth for Jupiter)
+     * @param {number} massKg - Mass in kilograms
+     * @param {boolean} isMoon - If true, apply moon size boost for visibility
+     * @returns {number} Visual radius in 3D units
+     */
+    massScaleRadius(massKg, isMoon = false) {
+        const EARTH_MASS = 5.97e24; // kg
+        const EARTH_VISUAL_SIZE = 0.15; // Visual size for Earth-mass body
+        
+        // Use square root of mass ratio for more dramatic scaling
+        // This makes Jupiter (~318 Earth masses) appear ~18x Earth's size
+        // Saturn (~95 Earth masses) appears ~10x Earth's size
+        const massRatio = massKg / EARTH_MASS;
+        const sizeMultiplier = Math.pow(massRatio, 0.5); // Square root for ~20x Jupiter
+        
+        // Apply scaling with reasonable min/max bounds
+        let rawSize = EARTH_VISUAL_SIZE * sizeMultiplier;
+        
+        // Boost moon sizes significantly for better visibility
+        // Use a higher exponent (0.35 power) to make large moons more Earth-comparable
+        // Ganymede (0.025 Earth masses) should appear roughly 40% of Earth's size
+        if (isMoon) {
+            // Recalculate with gentler exponent for moons (0.35 instead of 0.5)
+            // This gives: Ganymede ≈ 0.29 × Earth, boosted to ~0.10 visual
+            const moonSizeMultiplier = Math.pow(massRatio, 0.35);
+            rawSize = EARTH_VISUAL_SIZE * moonSizeMultiplier * 4.0; // 4x boost
+            // Moons get a higher minimum size to remain visible
+            return Math.max(0.08, Math.min(0.5, rawSize));
+        }
+        
+        // Clamp to reasonable visual bounds:
+        // - Minimum 0.02 so small bodies remain visible
+        // - Maximum 3.0 for impressive gas giants (Jupiter will be ~2.7)
+        return Math.max(0.02, Math.min(3.0, rawSize));
     }
 
     /**
@@ -620,6 +686,9 @@ class SolarSystem {
         zones.forEach(zone => {
             if (zone.id === 'asteroid_belt') {
                 this.createAsteroidBelt(zone);
+                // Create Ceres as the main planet of the Asteroid Belt zone
+                this.createCeresPlanet(zone);
+                this.createCeresOrbit(zone);
             } else if (zone.id === 'kuiper' || zone.id === 'kuiper_belt') {
                 this.createKuiperBelt(zone);
                 // Create Pluto as the main planet of the Kuiper belt zone
@@ -885,6 +954,40 @@ class SolarSystem {
         return new THREE.Vector3(xRot, yRot, zRot);
     }
 
+    /**
+     * Create solid color material for planets (no textures)
+     * Each planet type gets an appropriate solid color
+     * @param {string} planetId - The planet identifier
+     * @param {string} baseColor - The base color from orbital_mechanics.json
+     * @returns {THREE.Material} The planet material
+     */
+    createPlanetMaterial(planetId, baseColor) {
+        // Planet color mappings - using appropriate solid colors
+        const planetColors = {
+            'jupiter': 0xD4A574,      // Tan/orange
+            'saturn': 0xF5E8D0,       // Pale yellow/cream
+            'uranus': 0x72D0D8,       // Cyan
+            'neptune': 0x4466EE,      // Deep blue
+            'earth': 0x1E5799,        // Blue (ocean)
+            'mars': 0xC1440E,         // Rusty red
+            'venus': 0xE8C87A,        // Yellow-orange
+            'mercury': 0x8C8C8C       // Grey
+        };
+        
+        // Use planet-specific color if available, otherwise use baseColor
+        const colorHex = planetColors[planetId] || baseColor;
+        const color = typeof colorHex === 'number' ? colorHex : new THREE.Color(colorHex).getHex();
+        
+        // Create simple MeshStandardMaterial with solid color
+        return new THREE.MeshStandardMaterial({
+            color: color,
+            metalness: 0.1,
+            roughness: 0.9,
+            emissive: 0x000000,
+            transparent: false
+        });
+    }
+
     createPlanet(zone) {
         // Use the color from orbital_mechanics.json
         const color = zone.color || '#888888';
@@ -895,12 +998,18 @@ class SolarSystem {
         let orbitRadius;
         
         if (planetInfo) {
-            // Use log-scaled real radius
-            planetRadius = this.logScaleRadius(planetInfo.radius_km);
-            
             // Use unified scaling (converts km to AU first)
             const orbitAU = planetInfo.orbit_km / this.AU_KM;
             orbitRadius = this.scaleAUToVisual(orbitAU);
+            
+            // Use mass-based scaling for gas giants to make them proportionally larger
+            // This makes their moons appear more appropriately sized relative to Earth
+            if (this.gasGiants && this.gasGiants.includes(zone.id) && planetInfo.mass_kg) {
+                planetRadius = this.massScaleRadius(planetInfo.mass_kg);
+            } else {
+                // Use log-scaled real radius for rocky planets
+                planetRadius = this.logScaleRadius(planetInfo.radius_km);
+            }
         } else {
             // Fallback for zones without planet data (use AU-based scaling)
             planetRadius = this.logScaleRadius(6371); // Default to Earth size
@@ -912,24 +1021,17 @@ class SolarSystem {
         if (this.rockyPlanets && this.rockyPlanets.includes(zone.id)) {
             // Rocky planets get a larger minimum size (0.12) to appear as proper planets
             planetRadius = Math.max(0.12, planetRadius * 1.5);
-        } else {
+        } else if (!this.gasGiants || !this.gasGiants.includes(zone.id)) {
+            // Non-gas-giants get minimum size (gas giants already handled by mass scaling)
             planetRadius = Math.max(0.08, planetRadius);
         }
         
-        // Create 3D planet sphere with proper lighting
-        const planetGeometry = new THREE.SphereGeometry(planetRadius, 32, 32);
+        // Create 3D planet sphere with higher detail for gas giants
+        const segments = this.gasGiants && this.gasGiants.includes(zone.id) ? 64 : 32;
+        const planetGeometry = new THREE.SphereGeometry(planetRadius, segments, segments);
         
-        // Use MeshStandardMaterial for realistic lighting with proper color
-        // Reduced metalness and increased roughness for better shadow visibility
-        // Colors darkened to prevent bloom from washing out details
-        const planetMaterial = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(color).multiplyScalar(0.6),
-            metalness: 0.1,
-            roughness: 0.9,
-            emissive: 0x000000,
-            transparent: true,
-            opacity: 1.0
-        });
+        // Create procedural textured material for specific planets, or standard material for others
+        const planetMaterial = this.createPlanetMaterial(zone.id, color);
         
         const planet = new THREE.Mesh(planetGeometry, planetMaterial);
         
@@ -1381,71 +1483,61 @@ class SolarSystem {
         // - radius_km: actual moon radius in km
         // - period_days: orbital period in days (for speed calculation)
         // - inclination: orbital inclination in degrees (relative to planet's equator)
+        // Moon data with mass in kg for mass-proportional sizing
+        // Mass values from NASA planetary fact sheets
         const moonData = {
             earth: [
-                // Earth's Moon - the only natural satellite
-                // Earth radius = 6,371 km, Moon orbits at ~60 Earth radii
-                // The Moon has a subtle brownish-grey color from iron and titanium oxides
-                { name: 'Moon', orbit_km: 384400, radius_km: 1737, color: '#A8A8A0', period_days: 27.32, inclination: 5.14 }
+                // Earth's Moon - 0.0123 Earth masses
+                { name: 'Moon', orbit_km: 384400, radius_km: 1737, mass_kg: 7.35e22, color: '#A8A8A0', period_days: 27.32, inclination: 5.14 }
             ],
             mars: [
-                // Mars's two small, captured asteroid moons
-                // Mars radius = 3,390 km
-                // Both moons are very dark (albedo ~0.07), irregular shaped, and heavily cratered
-                // Phobos: Larger, closer, orbits faster than Mars rotates (will crash in ~50 million years)
-                { name: 'Phobos', orbit_km: 9376, radius_km: 11.3, color: '#4A4A48', period_days: 0.319, inclination: 1.08 },
-                // Deimos: Smaller, farther, smoother surface covered in regolith
-                { name: 'Deimos', orbit_km: 23460, radius_km: 6.2, color: '#525250', period_days: 1.263, inclination: 1.79 }
+                // Mars's tiny captured asteroid moons
+                { name: 'Phobos', orbit_km: 9376, radius_km: 11.3, mass_kg: 1.07e16, color: '#4A4A48', period_days: 0.319, inclination: 1.08 },
+                { name: 'Deimos', orbit_km: 23460, radius_km: 6.2, mass_kg: 1.48e15, color: '#525250', period_days: 1.263, inclination: 1.79 }
             ],
             jupiter: [
                 // Jupiter's moons - ordered by orbital distance
-                // Jupiter radius = 69,911 km
-                // Inner moons (ring shepherds)
-                { name: 'Metis', orbit_km: 128000, radius_km: 22, color: '#8B8B83', period_days: 0.29, inclination: 0.02 },
-                { name: 'Adrastea', orbit_km: 129000, radius_km: 8, color: '#8B8378', period_days: 0.30, inclination: 0.03 },
-                { name: 'Amalthea', orbit_km: 181366, radius_km: 84, color: '#CD5C5C', period_days: 0.50, inclination: 0.37 },
-                { name: 'Thebe', orbit_km: 221889, radius_km: 50, color: '#B0B0B0', period_days: 0.67, inclination: 1.08 },
-                // Galilean moons (the big four, in order from Jupiter)
-                { name: 'Io', orbit_km: 421700, radius_km: 1822, color: '#FFCC00', period_days: 1.77, inclination: 0.04 },
-                { name: 'Europa', orbit_km: 671034, radius_km: 1561, color: '#B8D4E8', period_days: 3.55, inclination: 0.47 },
-                { name: 'Ganymede', orbit_km: 1070412, radius_km: 2634, color: '#8B8878', period_days: 7.15, inclination: 0.18 },
-                { name: 'Callisto', orbit_km: 1882709, radius_km: 2410, color: '#5D5D5D', period_days: 16.69, inclination: 0.19 }
+                // Inner moons (tiny ring shepherds)
+                { name: 'Metis', orbit_km: 128000, radius_km: 22, mass_kg: 3.6e16, color: '#8B8B83', period_days: 0.29, inclination: 0.02 },
+                { name: 'Adrastea', orbit_km: 129000, radius_km: 8, mass_kg: 2.0e15, color: '#8B8378', period_days: 0.30, inclination: 0.03 },
+                { name: 'Amalthea', orbit_km: 181366, radius_km: 84, mass_kg: 2.1e18, color: '#CD5C5C', period_days: 0.50, inclination: 0.37 },
+                { name: 'Thebe', orbit_km: 221889, radius_km: 50, mass_kg: 4.3e17, color: '#B0B0B0', period_days: 0.67, inclination: 1.08 },
+                // Galilean moons (the big four) - Io and Europa are roughly Moon-mass, Ganymede is larger
+                { name: 'Io', orbit_km: 421700, radius_km: 1822, mass_kg: 8.93e22, color: '#FFCC00', period_days: 1.77, inclination: 0.04 },           // 0.015 Earth masses
+                { name: 'Europa', orbit_km: 671034, radius_km: 1561, mass_kg: 4.80e22, color: '#B8D4E8', period_days: 3.55, inclination: 0.47 },       // 0.008 Earth masses
+                { name: 'Ganymede', orbit_km: 1070412, radius_km: 2634, mass_kg: 1.48e23, color: '#8B8878', period_days: 7.15, inclination: 0.18 },    // 0.025 Earth masses - largest moon!
+                { name: 'Callisto', orbit_km: 1882709, radius_km: 2410, mass_kg: 1.08e23, color: '#5D5D5D', period_days: 16.69, inclination: 0.19 }    // 0.018 Earth masses
             ],
             saturn: [
-                // Saturn's major moons - ordered by orbital distance
-                // Real orbital distances from Saturn (Saturn radius = 58,232 km)
-                // All major moons orbit in Saturn's equatorial plane (same as rings)
-                { name: 'Mimas', orbit_km: 185520, radius_km: 198, color: '#C0C0C0', period_days: 0.94, inclination: 1.5 },
-                { name: 'Enceladus', orbit_km: 237948, radius_km: 252, color: '#F0F8FF', period_days: 1.37, inclination: 0.02 },
-                { name: 'Tethys', orbit_km: 294619, radius_km: 531, color: '#F5F5F5', period_days: 1.89, inclination: 1.1 },
-                { name: 'Dione', orbit_km: 377396, radius_km: 561, color: '#E8E8E8', period_days: 2.74, inclination: 0.02 },
-                { name: 'Rhea', orbit_km: 527108, radius_km: 764, color: '#D3D3D3', period_days: 4.52, inclination: 0.35 },
-                { name: 'Titan', orbit_km: 1221870, radius_km: 2575, color: '#FFA500', period_days: 15.95, inclination: 0.33 },
-                { name: 'Hyperion', orbit_km: 1481010, radius_km: 135, color: '#A89078', period_days: 21.28, inclination: 0.43 },
-                { name: 'Iapetus', orbit_km: 3560820, radius_km: 735, color: '#8B4513', period_days: 79.32, inclination: 15.47 }
+                // Saturn's major moons
+                { name: 'Mimas', orbit_km: 185520, radius_km: 198, mass_kg: 3.75e19, color: '#C0C0C0', period_days: 0.94, inclination: 1.5 },
+                { name: 'Enceladus', orbit_km: 237948, radius_km: 252, mass_kg: 1.08e20, color: '#F0F8FF', period_days: 1.37, inclination: 0.02 },
+                { name: 'Tethys', orbit_km: 294619, radius_km: 531, mass_kg: 6.17e20, color: '#F5F5F5', period_days: 1.89, inclination: 1.1 },
+                { name: 'Dione', orbit_km: 377396, radius_km: 561, mass_kg: 1.10e21, color: '#E8E8E8', period_days: 2.74, inclination: 0.02 },
+                { name: 'Rhea', orbit_km: 527108, radius_km: 764, mass_kg: 2.31e21, color: '#D3D3D3', period_days: 4.52, inclination: 0.35 },
+                { name: 'Titan', orbit_km: 1221870, radius_km: 2575, mass_kg: 1.35e23, color: '#FFA500', period_days: 15.95, inclination: 0.33 },      // 0.023 Earth masses - 2nd largest moon
+                { name: 'Hyperion', orbit_km: 1481010, radius_km: 135, mass_kg: 5.6e18, color: '#A89078', period_days: 21.28, inclination: 0.43 },
+                { name: 'Iapetus', orbit_km: 3560820, radius_km: 735, mass_kg: 1.81e21, color: '#8B4513', period_days: 79.32, inclination: 15.47 }
             ],
             uranus: [
                 // Uranus moons - orbit in Uranus's equatorial plane (tilted ~98°)
-                { name: 'Miranda', orbit_km: 129390, radius_km: 236, color: '#A9A9A9', period_days: 1.41, inclination: 4.2 },
-                { name: 'Ariel', orbit_km: 190900, radius_km: 579, color: '#D3D3D3', period_days: 2.52, inclination: 0.04 },
-                { name: 'Umbriel', orbit_km: 266000, radius_km: 585, color: '#696969', period_days: 4.14, inclination: 0.13 },
-                { name: 'Titania', orbit_km: 435910, radius_km: 789, color: '#B0C4DE', period_days: 8.71, inclination: 0.08 },
-                { name: 'Oberon', orbit_km: 583520, radius_km: 761, color: '#778899', period_days: 13.46, inclination: 0.07 }
+                { name: 'Miranda', orbit_km: 129390, radius_km: 236, mass_kg: 6.59e19, color: '#A9A9A9', period_days: 1.41, inclination: 4.2 },
+                { name: 'Ariel', orbit_km: 190900, radius_km: 579, mass_kg: 1.35e21, color: '#D3D3D3', period_days: 2.52, inclination: 0.04 },
+                { name: 'Umbriel', orbit_km: 266000, radius_km: 585, mass_kg: 1.17e21, color: '#696969', period_days: 4.14, inclination: 0.13 },
+                { name: 'Titania', orbit_km: 435910, radius_km: 789, mass_kg: 3.53e21, color: '#B0C4DE', period_days: 8.71, inclination: 0.08 },
+                { name: 'Oberon', orbit_km: 583520, radius_km: 761, mass_kg: 3.01e21, color: '#778899', period_days: 13.46, inclination: 0.07 }
             ],
             neptune: [
-                { name: 'Triton', orbit_km: 354760, radius_km: 1353, color: '#E0E0E0', period_days: 5.88, inclination: 156.9 }, // Retrograde!
-                { name: 'Proteus', orbit_km: 117647, radius_km: 210, color: '#808080', period_days: 1.12, inclination: 0.08 }
+                { name: 'Triton', orbit_km: 354760, radius_km: 1353, mass_kg: 2.14e22, color: '#E0E0E0', period_days: 5.88, inclination: 156.9 },      // 0.0036 Earth masses
+                { name: 'Proteus', orbit_km: 117647, radius_km: 210, mass_kg: 4.4e19, color: '#808080', period_days: 1.12, inclination: 0.08 }
             ],
             kuiper: [
-                // Pluto's moons - the Pluto-Charon system is unique (barycenter outside Pluto)
-                // Pluto radius = 1,188 km
-                // Charon is so large relative to Pluto that they're sometimes called a binary dwarf planet
-                { name: 'Charon', orbit_km: 19591, radius_km: 606, color: '#A0A0A0', period_days: 6.387, inclination: 0.08 },
-                // Small irregular moons discovered by Hubble
-                { name: 'Nix', orbit_km: 48694, radius_km: 25, color: '#C8C8C8', period_days: 24.85, inclination: 0.13 },
-                { name: 'Hydra', orbit_km: 64738, radius_km: 33, color: '#D0D0D0', period_days: 38.2, inclination: 0.24 },
-                { name: 'Kerberos', orbit_km: 57783, radius_km: 12, color: '#B8B8B8', period_days: 32.17, inclination: 0.39 },
-                { name: 'Styx', orbit_km: 42656, radius_km: 8, color: '#C0C0C0', period_days: 20.16, inclination: 0.81 }
+                // Pluto's moons
+                { name: 'Charon', orbit_km: 19591, radius_km: 606, mass_kg: 1.59e21, color: '#A0A0A0', period_days: 6.387, inclination: 0.08 },
+                { name: 'Nix', orbit_km: 48694, radius_km: 25, mass_kg: 4.5e16, color: '#C8C8C8', period_days: 24.85, inclination: 0.13 },
+                { name: 'Hydra', orbit_km: 64738, radius_km: 33, mass_kg: 4.8e16, color: '#D0D0D0', period_days: 38.2, inclination: 0.24 },
+                { name: 'Kerberos', orbit_km: 57783, radius_km: 12, mass_kg: 1.65e16, color: '#B8B8B8', period_days: 32.17, inclination: 0.39 },
+                { name: 'Styx', orbit_km: 42656, radius_km: 8, mass_kg: 7.5e15, color: '#C0C0C0', period_days: 20.16, inclination: 0.81 }
             ]
         };
         
@@ -1466,7 +1558,13 @@ class SolarSystem {
         const planetInfo = this.planetData[zone.id];
         if (!planetInfo) return;
 
-        const planetRadius = this.logScaleRadius(planetInfo.radius_km);
+        // Use mass-based scaling for gas giants for consistent sizing with planets
+        let planetRadius;
+        if (this.gasGiants && this.gasGiants.includes(zone.id) && planetInfo.mass_kg) {
+            planetRadius = this.massScaleRadius(planetInfo.mass_kg);
+        } else {
+            planetRadius = this.logScaleRadius(planetInfo.radius_km);
+        }
         const planetRadiusKm = planetInfo.radius_km;
         
         // Get planet's axial tilt
@@ -1484,8 +1582,21 @@ class SolarSystem {
             
             // Use a compressed log scale for moon orbits to keep them visible
             // but maintain relative ordering and spacing
-            const minOrbitMultiplier = 1.8;  // Minimum visual distance from planet
-            const maxOrbitMultiplier = 8.0;  // Maximum visual distance
+            // Earth and Mars get larger orbit multipliers since their moons need more separation
+            let minOrbitMultiplier, maxOrbitMultiplier;
+            if (zone.id === 'earth') {
+                // Earth's Moon needs to be clearly separated from Earth
+                minOrbitMultiplier = 12.0; // 3x increase: 4.0 * 3
+                maxOrbitMultiplier = 18.0; // 3x increase: 6.0 * 3
+            } else if (zone.id === 'mars') {
+                // Mars's tiny moons need to be visible away from the planet
+                minOrbitMultiplier = 10.5; // 3x increase: 3.5 * 3
+                maxOrbitMultiplier = 24.0; // 3x increase: 8.0 * 3
+            } else {
+                // Default for gas giants and other planets
+                minOrbitMultiplier = 1.8;
+                maxOrbitMultiplier = 8.0;
+            }
             
             // Find min/max orbit ratios for this planet's moons
             const orbitRatios = moons.map(m => m.orbit_km / planetRadiusKm);
@@ -1504,8 +1615,16 @@ class SolarSystem {
             const orbitMultiplier = minOrbitMultiplier + normalized * (maxOrbitMultiplier - minOrbitMultiplier);
             const moonOrbitDistance = planetRadius * orbitMultiplier;
             
-            // Log-proportional moon radius based on actual moon size
-            const moonRadius = Math.max(0.015, this.logScaleRadius(moon.radius_km) * 0.8);
+            // Mass-proportional moon radius - moons with Earth-like mass appear Earth-like in size
+            // This makes the Galilean moons of Jupiter appear appropriately substantial
+            // Pass isMoon=true for boosted visibility
+            let moonRadius;
+            if (moon.mass_kg) {
+                moonRadius = this.massScaleRadius(moon.mass_kg, true);
+            } else {
+                // Fallback to log-scaled radius if no mass data (with boost)
+                moonRadius = Math.max(0.06, this.logScaleRadius(moon.radius_km) * 2.0);
+            }
             
             const moonGeometry = new THREE.SphereGeometry(moonRadius, 16, 16);
             const moonMaterial = new THREE.MeshStandardMaterial({
@@ -1555,7 +1674,16 @@ class SolarSystem {
                 orbitalSpeed: orbitalSpeed,
                 planetTilt: planetTilt,
                 moonInclination: moonInclination,
-                orbitInEquatorialPlane: ['mars', 'jupiter', 'saturn', 'uranus', 'kuiper'].includes(zone.id)
+                orbitInEquatorialPlane: ['mars', 'jupiter', 'saturn', 'uranus', 'kuiper'].includes(zone.id),
+                // Store moon data for info display
+                moonData: {
+                    name: moon.name,
+                    orbit_km: moon.orbit_km,
+                    radius_km: moon.radius_km,
+                    mass_kg: moon.mass_kg,
+                    period_days: moon.period_days,
+                    color: moon.color
+                }
             };
             
             this.moons[zone.id].push(moonMesh);
@@ -1597,7 +1725,7 @@ class SolarSystem {
         
         // Create orbit ring manually (circle)
         const points = [];
-        const segments = 128;
+        const segments = 512;
         for (let i = 0; i <= segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
             points.push(new THREE.Vector3(
@@ -1634,7 +1762,7 @@ class SolarSystem {
         
         // Create orbit ring manually (circle) - use dashed line for distinctive look
         const points = [];
-        const segments = 128;
+        const segments = 512;
         for (let i = 0; i <= segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
             points.push(new THREE.Vector3(
@@ -1716,8 +1844,12 @@ class SolarSystem {
             colors[i * 3 + 1] = Math.max(0, Math.min(1, colorObj.g + (Math.random() - 0.5) * colorVariation));
             colors[i * 3 + 2] = Math.max(0, Math.min(1, colorObj.b + (Math.random() - 0.5) * colorVariation));
             
-            // Vary sizes
-            sizes[i] = 0.015 + Math.random() * 0.025;
+            // Use Pareto mass sampling for asteroid sizes (many small, few large)
+            const sampledMass = this.sampleParticleMassExponential(0);
+            // Scale visual size for asteroid belt (smaller scale factor for dots)
+            const visualSize = this.massToVisualSize(sampledMass);
+            // Apply belt-specific scaling to keep dots appropriately sized
+            sizes[i] = 0.01 + visualSize * 0.015;
         }
         
         particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -1749,8 +1881,7 @@ class SolarSystem {
         // Semi-major axis in AU, diameter in km
         // Asteroid belt spans roughly 2.0 AU to 3.3 AU (scaled 3x: 6.0 to 9.9 AU)
         const majorAsteroids = [
-            // Dwarf planet Ceres - largest object in asteroid belt
-            { name: 'Ceres', semiMajorAxisAU: 2.77, diameter_km: 939, color: '#8B8B7A', period_days: 1682, inclination: 10.6 },
+            // Ceres is now created as a proper planet in createCeresPlanet() with orbital ring
             // Large asteroids (the "big four" after Ceres)
             { name: 'Vesta', semiMajorAxisAU: 2.36, diameter_km: 525, color: '#C0C0B0', period_days: 1325, inclination: 7.1 },
             { name: 'Pallas', semiMajorAxisAU: 2.77, diameter_km: 512, color: '#606058', period_days: 1686, inclination: 34.8 },
@@ -1845,8 +1976,113 @@ class SolarSystem {
             this.scene.add(asteroidMesh);
         });
         
-        // Store reference to Ceres specifically for zone focusing
-        this.ceres = this.majorAsteroids['ceres'];
+        // Note: Ceres reference is now set in createCeresPlanet() as planets['asteroid_belt']
+    }
+
+    /**
+     * Create Ceres as the main "planet" for the asteroid belt zone
+     * This places Ceres directly in the orbital plane (y=0) like other planets
+     * and registers it as planets['asteroid_belt'] so structures can be built there
+     */
+    createCeresPlanet(zone) {
+        // Ceres data from planetData
+        const ceresInfo = this.planetData.ceres;
+        if (!ceresInfo) {
+            console.warn('No Ceres data in planetData');
+            return;
+        }
+        
+        // Use log-scaled real radius
+        let planetRadius = this.logScaleRadius(ceresInfo.radius_km);
+        
+        // Ensure minimum visible size - Ceres is a rocky dwarf planet
+        planetRadius = Math.max(0.12, planetRadius * 1.5);
+        
+        // Calculate orbital radius
+        const orbitAU = ceresInfo.orbit_km / this.AU_KM;
+        const orbitRadius = this.scaleAUToVisual(orbitAU);
+        
+        // Use the zone color for Ceres
+        const color = zone.color || '#8B8B7A';
+        
+        // Create 3D planet sphere with proper lighting
+        const planetGeometry = new THREE.SphereGeometry(planetRadius, 32, 32);
+        const planetMaterial = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(color).multiplyScalar(0.6),
+            metalness: 0.1,
+            roughness: 0.9,
+            emissive: 0x000000,
+            transparent: true,
+            opacity: 1.0
+        });
+        
+        const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+        
+        // Enable shadows
+        planet.castShadow = true;
+        planet.receiveShadow = true;
+        
+        // Position on positive X axis (will orbit) - directly in orbital plane (y=0)
+        planet.position.set(orbitRadius, 0, 0);
+        
+        // Orbital speed based on Ceres orbital period (~4.6 years / 1682 days)
+        const orbitalPeriodDays = 1682;
+        const orbitalSpeed = 0.01 / Math.sqrt(orbitalPeriodDays / 365.25);
+        
+        planet.userData = {
+            zoneId: 'asteroid_belt',
+            radius: orbitRadius,
+            orbitalAngle: 0,
+            orbitalSpeed: orbitalSpeed,
+            originalColor: color,
+            originalRadius: planetRadius,
+            isCeres: true
+        };
+        
+        // Register as the main planet for asteroid_belt zone (for structures)
+        this.planets['asteroid_belt'] = planet;
+        // Also set this.ceres reference for backward compatibility with zone focusing
+        this.ceres = planet;
+        this.scene.add(planet);
+    }
+    
+    /**
+     * Create orbital ring for Ceres (asteroid belt)
+     * This displays the orbital path like other planets
+     */
+    createCeresOrbit(zone) {
+        const color = zone.color || '#8B8B7A';
+        
+        // Get orbit radius from Ceres data
+        const ceresInfo = this.planetData.ceres;
+        if (!ceresInfo) return;
+        
+        const orbitAU = ceresInfo.orbit_km / this.AU_KM;
+        const orbitRadius = this.scaleAUToVisual(orbitAU);
+        
+        // Create orbit ring manually (circle)
+        const points = [];
+        const segments = 512;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            points.push(new THREE.Vector3(
+                Math.cos(angle) * orbitRadius,
+                0,
+                Math.sin(angle) * orbitRadius
+            ));
+        }
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        
+        const material = new THREE.LineBasicMaterial({
+            color: new THREE.Color(color).multiplyScalar(0.3),
+            opacity: 0.25,
+            transparent: true
+        });
+        
+        const orbit = new THREE.Line(geometry, material);
+        this.orbits['asteroid_belt'] = orbit;
+        this.scene.add(orbit);
     }
 
     createKuiperBelt(zone) {
@@ -1897,8 +2133,12 @@ class SolarSystem {
             colors[i * 3 + 1] = brightness;
             colors[i * 3 + 2] = brightness;
             
-            // Vary sizes - larger objects than asteroid belt
-            sizes[i] = 0.02 + Math.random() * 0.03;
+            // Use Pareto mass sampling for Kuiper belt sizes (many small, few large)
+            const sampledMass = this.sampleParticleMassExponential(0);
+            // Scale visual size for Kuiper belt (slightly larger scale factor than asteroid belt)
+            const visualSize = this.massToVisualSize(sampledMass);
+            // Apply belt-specific scaling to keep dots appropriately sized
+            sizes[i] = 0.012 + visualSize * 0.018;
         }
         
         particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -2051,14 +2291,16 @@ class SolarSystem {
             this.resourceParticleData[zoneId] = {
                 metal: [],     // Active metal particles
                 slag: [],      // Active slag particles
-                methalox: []   // Active methalox particles
+                methalox: [],  // Active methalox particles
+                probe: []      // Active probe particles (overflow >100M)
             };
             
             // Initialize previous resource tracking
             this.previousResources[zoneId] = {
                 metal: 0,
                 slag: 0,
-                methalox: 0
+                methalox: 0,
+                probe: 0
             };
             
             // Add to scene
@@ -2810,7 +3052,7 @@ class SolarSystem {
      * Spawn a resource particle with explicit mass and visual size (exponential distribution mode)
      * This is the new preferred method using continuous size distribution
      * @param {string} zoneId - Planet zone ID
-     * @param {string} type - 'metal', 'slag', or 'methalox'
+     * @param {string} type - 'metal', 'slag', 'methalox', or 'probe'
      * @param {number} mass - Particle mass in kg
      * @param {number} visualSize - Visual size for rendering
      * @returns {Object} New particle data with mass and size
@@ -2890,6 +3132,104 @@ class SolarSystem {
             spawnTime: this.gameTime,
             drifting: true,
             driftDuration: driftDuration
+        };
+    }
+    
+    /**
+     * Spawn a resource particle at a specific world position with incoming velocity direction.
+     * Used for transfer arrivals - the particle drifts from its arrival position into the
+     * destination zone's orbital cloud, carrying forward some of its transfer momentum.
+     * @param {string} zoneId - Destination zone ID
+     * @param {string} type - 'metal', 'slag', or 'methalox'
+     * @param {number} mass - Particle mass in kg
+     * @param {number} visualSize - Visual size for rendering
+     * @param {THREE.Vector3} position - Arrival position in world coordinates
+     * @param {THREE.Vector3} velocityDir - Normalized velocity direction (optional, for momentum)
+     * @returns {Object} New particle data with position and drift animation
+     */
+    spawnResourceParticleAtPosition(zoneId, type, mass, visualSize, position, velocityDir = null) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) return null;
+        
+        const userData = particleSystem.userData;
+        const planet = this.planets[zoneId];
+        const planetRadius = userData.planetRadius || 0.1;
+        
+        // Convert world position to polar coordinates (angle, distance from origin)
+        const spawnDistance = Math.sqrt(position.x * position.x + position.z * position.z);
+        const spawnAngle = Math.atan2(position.z, position.x);
+        
+        // Get zone's orbital properties for calculating target position
+        const orbitRadius = userData.orbitRadius;
+        const ringInner = userData.ringInner || (orbitRadius * 0.8);
+        const ringOuter = userData.ringOuter || (orbitRadius * 1.2);
+        
+        // Calculate target position - spread particles into the orbital ring
+        // If we have a velocity direction, bias the target angle in that direction
+        // to simulate forward momentum carrying the particle into orbit
+        let targetAngle;
+        if (velocityDir) {
+            // Calculate the angle of the velocity direction
+            const velAngle = Math.atan2(velocityDir.z, velocityDir.x);
+            // Bias target angle in the velocity direction (forward momentum)
+            // The particle will drift "ahead" in the direction it was traveling
+            const momentumBias = 0.2 + Math.random() * 0.3; // 0.2 to 0.5 radians ahead
+            targetAngle = spawnAngle + momentumBias * Math.sign(Math.sin(velAngle - spawnAngle));
+            // Add some random spread
+            targetAngle += (Math.random() - 0.5) * 0.3;
+        } else {
+            // Random spread around spawn position
+            const angularSpread = (5 * planetRadius) / orbitRadius;
+            targetAngle = spawnAngle + (Math.random() - 0.5) * 2 * angularSpread;
+        }
+        
+        // Target distance within the orbital ring
+        const targetDistance = ringInner + Math.random() * (ringOuter - ringInner);
+        
+        // Small vertical offset for disc thickness
+        const yOffset = position.y + (Math.random() - 0.5) * 0.05;
+        
+        // Orbital speed based on Kepler's law at target distance
+        const earthAU = this.planetData.earth.orbit_km / this.AU_KM;
+        const earthOrbitRadius = this.scaleAUToVisual(earthAU);
+        const keplerSpeed = 0.008 * Math.sqrt(earthOrbitRadius / targetDistance);
+        const orbitalSpeed = keplerSpeed * 0.80 * (0.97 + Math.random() * 0.06);
+        
+        // Initial speed: blend of orbital and incoming velocity direction
+        // Faster initial drift to simulate deceleration from transfer orbit
+        const planet_speed = planet?.userData?.orbitalSpeed || orbitalSpeed;
+        
+        // Longer drift duration for transfer arrivals (particles slow down gradually)
+        // Distance ratio affects drift time - further drift takes longer
+        const distanceRatio = Math.abs(targetDistance - spawnDistance) / earthOrbitRadius;
+        const baseDrift = (this.particleDriftConfig?.resourceBaseDurationDays || 5) * 2; // Slower for arrivals
+        const scalingDrift = this.particleDriftConfig?.resourceDistanceScalingDays || 20;
+        const driftDuration = baseDrift + distanceRatio * scalingDrift;
+        
+        // Add small visual size variance for natural look (±15%)
+        const sizeVariance = 0.85 + Math.random() * 0.30;
+        
+        return {
+            type: type,
+            mass: mass,
+            visualSize: visualSize * sizeVariance,
+            sizeClass: 'continuous',
+            sizeVariance: 1.0,
+            // Spawn position (where transfer arrived)
+            spawnAngle: spawnAngle,
+            spawnDistance: spawnDistance,
+            // Target position (in orbital cloud)
+            targetAngle: targetAngle,
+            targetDistance: targetDistance,
+            yOffset: yOffset,
+            orbitalSpeed: orbitalSpeed,
+            planetOrbitalSpeed: planet_speed,
+            // Animation state (times in game days)
+            spawnTime: this.gameTime,
+            drifting: true,
+            driftDuration: driftDuration,
+            // Mark as transfer arrival for potential special handling
+            fromTransfer: true
         };
     }
     
@@ -2996,11 +3336,21 @@ class SolarSystem {
             const currentSlag = zone.slag_mass || 0;
             const currentMethalox = zone.methalox || 0;
             
+            // Get probe count and calculate overflow mass (>100M threshold)
+            const probesByZone = gameState.probes_by_zone || {};
+            const zoneProbes = probesByZone[zoneId] || {};
+            const probeCount = zoneProbes['probe'] || 0;
+            const probeMassKg = this.probeParticleConfig.probeMassKg || 100;
+            const totalProbeMass = probeCount * probeMassKg;
+            const overflowThreshold = this.probeSwarmConfig?.overflowThreshold || 100000000;
+            const overflowProbeMass = Math.max(0, (probeCount - overflowThreshold) * probeMassKg);
+            
             // Get previous resource amounts
-            const prev = this.previousResources[zoneId] || { metal: 0, slag: 0, methalox: 0 };
+            const prev = this.previousResources[zoneId] || { metal: 0, slag: 0, methalox: 0, probe: 0 };
             const prevMetal = prev.metal || 0;
             const prevSlag = prev.slag || 0;
             const prevMethalox = prev.methalox || 0;
+            const prevProbeMass = prev.probe || 0;
             
             // Get production rates for this zone (kg/day)
             const metalMiningRate = zoneData.metal_mined_rate || 0;
@@ -3009,7 +3359,7 @@ class SolarSystem {
             
             // Initialize pending mass tracking
             if (!this.pendingMass[zoneId]) {
-                this.pendingMass[zoneId] = { metal: 0, slag: 0, methalox: 0 };
+                this.pendingMass[zoneId] = { metal: 0, slag: 0, methalox: 0, probe: 0 };
             }
             if (!this.lastUpdateTime[zoneId]) {
                 this.lastUpdateTime[zoneId] = currentTime;
@@ -3023,6 +3373,7 @@ class SolarSystem {
             const metalIncrease = currentMetal - prevMetal;
             const slagIncrease = currentSlag - prevSlag;
             const methaloxIncrease = currentMethalox - prevMethalox;
+            const probeMassIncrease = overflowProbeMass - prevProbeMass;
             
             // Add new mass to pending (mass that needs to become particles)
             // Only add if resources actually increased
@@ -3035,11 +3386,17 @@ class SolarSystem {
             if (methaloxIncrease > 0) {
                 pending.methalox += methaloxIncrease;
             }
+            // Only add overflow probe mass (>100M threshold)
+            if (probeMassIncrease > 0) {
+                pending.probe += probeMassIncrease;
+            }
             
             // Get max particles for this resource type
             const maxMetalParticles = this.maxParticlesByType.metal;
             const maxSlagParticles = this.maxParticlesByType.slag;
             const maxMethaloxParticles = this.maxParticlesByType.methalox;
+            // Probe particles use same max as metal (they're similar in nature)
+            const maxProbeParticles = this.maxParticlesByType.metal;
             
             // Helper function to gradually spawn particles using exponential distribution
             // Produces natural "many small, few large" particle sizes
@@ -3169,6 +3526,17 @@ class SolarSystem {
                 maxMethaloxParticles
             );
             
+            // Gradually spawn probe particles from pending overflow mass (>100M threshold)
+            // Use probe production rate for spawn rate calculation
+            const probeProductionRate = probeMassIncrease > 0 ? probeMassIncrease / Math.max(0.01, deltaTime) : 0;
+            pending.probe = spawnParticlesGradually(
+                particleData.probe, 
+                pending.probe, 
+                probeProductionRate, 
+                'probe', 
+                maxProbeParticles
+            );
+            
             // Handle resource decreases (consumption)
             if (metalIncrease < 0) {
                 removeParticlesForDecrease(particleData.metal, metalIncrease);
@@ -3209,11 +3577,25 @@ class SolarSystem {
                 }
             }
             
+            // Handle probe mass decreases (consumption/transfer)
+            if (probeMassIncrease < 0) {
+                removeParticlesForDecrease(particleData.probe, probeMassIncrease);
+                // Also reduce pending if we consumed more than we had in particles
+                const totalParticleMass = particleData.probe.reduce((sum, p) => {
+                    return sum + (p.mass || this.particleDistribution.minMass);
+                }, 0);
+                if (totalParticleMass < overflowProbeMass) {
+                    // We consumed more than particles represent, reduce pending
+                    pending.probe = Math.max(0, pending.probe + probeMassIncrease);
+                }
+            }
+            
             // Update previous tracking
             this.previousResources[zoneId] = {
                 metal: currentMetal,
                 slag: currentSlag,
-                methalox: currentMethalox
+                methalox: currentMethalox,
+                probe: overflowProbeMass
             };
             this.lastUpdateTime[zoneId] = currentTime;
             
@@ -3241,6 +3623,7 @@ class SolarSystem {
             ...particleData.metal, 
             ...particleData.slag, 
             ...particleData.methalox,
+            ...particleData.probe,  // Overflow probe particles (>100M)
             ...individualProbes,
             ...probeParticles
         ];
@@ -3307,6 +3690,8 @@ class SolarSystem {
                 color = this.resourceColors.metal;
             } else if (p.type === 'methalox') {
                 color = this.resourceColors.methalox;
+            } else if (p.type === 'probe') {
+                color = this.resourceColors.probe;
             } else if (p.type === 'individual_probe' || p.type === 'probe_particle') {
                 color = this.probeParticleConfig.color;
             } else {
@@ -3369,6 +3754,8 @@ class SolarSystem {
                 planet.position.x = Math.cos(planet.userData.orbitalAngle) * radius;
                 planet.position.z = Math.sin(planet.userData.orbitalAngle) * radius;
             }
+            
+            // Planet materials are now simple solid colors, no uniform updates needed
             
             // Update atmosphere shaders with sun position
             if (planet.userData && planet.userData.atmosphere) {
@@ -3565,9 +3952,15 @@ class SolarSystem {
             return new THREE.Vector3(0, 0, 0);
         }
         
-        // Asteroid belt focuses on Ceres as the de facto center
+        // Asteroid belt focuses on Ceres as the de facto center (home planet)
         if (zoneId === 'asteroid_belt' && this.ceres) {
             return this.ceres.position.clone();
+        }
+        
+        // Kuiper belt uses Pluto as its home planet (stored as 'kuiper' in planets)
+        // This handles both 'kuiper' and 'kuiper_belt' zone IDs
+        if ((zoneId === 'kuiper' || zoneId === 'kuiper_belt') && this.planets['kuiper']) {
+            return this.planets['kuiper'].position.clone();
         }
         
         const planet = this.planets[zoneId];
@@ -3635,12 +4028,18 @@ class SolarSystem {
                 // No mass data, use simple depleted flag
                 if (isDepleted) {
                     if (planet.material) {
-                        planet.material.color.setHex(0x333333);
-                        planet.material.emissive.setHex(0x000000);
+                        if (planet.material.color) {
+                            planet.material.color.setHex(0x333333);
+                        }
+                        if (planet.material.emissive) {
+                            planet.material.emissive.setHex(0x000000);
+                        }
                     }
                     if (orbit && orbit.material) {
                         orbit.material.opacity = 0.1;
-                        orbit.material.color.setHex(0x333333);
+                        if (orbit.material.color) {
+                            orbit.material.color.setHex(0x333333);
+                        }
                     }
                 }
                 return;
@@ -3718,7 +4117,7 @@ class SolarSystem {
                 }
                 
                 // Desaturate color toward grey
-                if (planet.material && this.orbitalData) {
+                if (planet.material && planet.material.color && this.orbitalData) {
                     const zone = this.orbitalData.orbital_zones.find(z => z.id === zoneId);
                     if (zone) {
                         const originalColor = new THREE.Color(zone.color || '#888888');
@@ -3744,7 +4143,9 @@ class SolarSystem {
                 planet.visible = fadeProgress > 0.05; // Hide when very small
                 if (planet.material) {
                     planet.material.opacity = fadeProgress;
-                    planet.material.color.setHex(0x333333); // Grey when fading
+                    if (planet.material.color) {
+                        planet.material.color.setHex(0x333333); // Grey when fading
+                    }
                 }
                 
                 // Scale down further
@@ -3770,9 +4171,13 @@ class SolarSystem {
                 if (planet.material && this.orbitalData) {
                     const zone = this.orbitalData.orbital_zones.find(z => z.id === zoneId);
                     if (zone && planet.userData) {
-                        planet.material.color.setStyle(zone.color || '#888888');
+                        if (planet.material.color) {
+                            planet.material.color.setStyle(zone.color || '#888888');
+                        }
                         planet.material.opacity = 1.0;
-                        planet.material.emissive.setHex(0x000000);
+                        if (planet.material.emissive) {
+                            planet.material.emissive.setHex(0x000000);
+                        }
                     }
                 }
                 planet.visible = true;

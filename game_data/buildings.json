@@ -44,7 +44,7 @@
       "energy_cost_multiplier": 200,
       "power_draw_mw": 100,
       "energy_efficiency": 0.4,
-      "base_muzzle_velocity_km_s": 4.5,
+      "base_muzzle_velocity_km_s": 8.5,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt", "jupiter", "saturn", "uranus", "neptune", "kuiper"],
       "orbital_efficiency": {
         "mercury": 1.0,

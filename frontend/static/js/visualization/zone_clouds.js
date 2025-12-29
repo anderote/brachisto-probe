@@ -10,7 +10,7 @@ class ZoneClouds {
         
         // Maximum dot counts for each cloud type
         this.maxDots = {
-            probes: 4000,  // Doubled from 2000
+            probes: 120,   // Polar rings: 6 rings × 20 dots = 120 max
             metal: 1200,
             slag: 1200
         };
@@ -92,29 +92,44 @@ class ZoneClouds {
     }
     
     /**
-     * Calculate visible probe count:
+     * Calculate visible probe count for planetary swarm:
      * - Linear 1:1 for 1-10 probes (accurate representation)
-     * - Logarithmic scaling from 10 probes to 1e21 probes (10 dots to 4000 dots)
+     * - Logarithmic scaling from 10 probes to 100M probes (10 dots to 120 dots max)
+     * - Capped at 120 dots (overflow goes to orbital cloud)
      * @param {number} probeCount - Number of probes
-     * @returns {number} Visible particle count
+     * @returns {number} Visible particle count (max 120)
      */
     calculateProbeVisibleCount(probeCount) {
         if (probeCount <= 0) {
             return 0;
         }
         
+        // Get probe swarm config from solar system
+        const swarmConfig = this.solarSystem?.probeSwarmConfig || {
+            maxTotalDots: 120,
+            overflowThreshold: 100000000
+        };
+        const maxDots = swarmConfig.maxTotalDots || 120;
+        const overflowThreshold = swarmConfig.overflowThreshold || 100000000;
+        
+        // Cap at overflow threshold for swarm visualization
+        const swarmProbeCount = Math.min(probeCount, overflowThreshold);
+        
         // Linear 1:1 for low counts (1-10 probes)
-        if (probeCount <= 10) {
-            return probeCount;
+        if (swarmProbeCount <= 10) {
+            return swarmProbeCount;
         }
         
-        // Logarithmic scaling from 10 probes to 1e21 probes
-        // Formula derived from: 10 dots at 10 probes, 4000 dots at 1e21 probes
-        // dots = -189.5 + 199.5 * log10(probes)
-        // At probes=10: -189.5 + 199.5*1 = 10
-        // At probes=1e21: -189.5 + 199.5*21 = 4000
-        const particles = -189.5 + 199.5 * Math.log10(probeCount);
-        return Math.min(this.maxDots.probes, Math.max(10, Math.floor(particles)));
+        // Logarithmic scaling from 10 probes to overflow threshold (10 dots to maxDots)
+        // Formula: dots = 10 + (maxDots - 10) * (log10(probes) - 1) / (log10(overflowThreshold) - 1)
+        const log10 = Math.log10;
+        const logMin = log10(10);
+        const logMax = log10(overflowThreshold);
+        const logProbe = log10(swarmProbeCount);
+        const t = (logProbe - logMin) / (logMax - logMin);
+        const particles = 10 + (maxDots - 10) * t;
+        
+        return Math.min(maxDots, Math.max(10, Math.floor(particles)));
     }
     
     /**
@@ -199,7 +214,7 @@ class ZoneClouds {
         // Create material - probes get glow effect with additive blending
         const isProbe = cloudType === 'probes';
         const material = new THREE.PointsMaterial({
-            size: isProbe ? 0.04 : (cloudType === 'slag' ? 0.025 : 0.02),
+            size: isProbe ? 0.016 : (cloudType === 'slag' ? 0.025 : 0.02),
             sizeAttenuation: true,
             vertexColors: true,
             transparent: true,
@@ -217,39 +232,85 @@ class ZoneClouds {
         points.renderOrder = 100; // Render after planets
         points.frustumCulled = false; // Don't cull when camera is close
         
-        // Store cloud particle data - now with individual orbital parameters for each probe
-        // Creates a chaotic ball of intersecting orbits around the planet
+        // Store cloud particle data
         const cloudData = [];
-        for (let i = 0; i < this.maxParticlesPerCloud; i++) {
-            // Orbital radius with exponential decay from minimum radius outward
-            // Most probes orbit close to surface, fewer further out
-            const orbitalRadius = minRadius + this.exponentialRandom(decayScale);
+        
+        if (cloudType === 'probes') {
+            // PROBE SWARM: Create polar orbital rings (organized, not chaotic)
+            const swarmConfig = this.solarSystem?.probeSwarmConfig || {
+                ringCount: 6,
+                maxDotsPerRing: 20,
+                maxTotalDots: 120,
+                ringRadiusMultipliers: [1.2, 1.35, 1.5, 1.65, 1.8, 1.95]
+            };
             
-            // Random orbital inclination (0 to 180 degrees for full coverage)
-            // Use weighted distribution to favor varied inclinations for chaotic look
-            const inclination = Math.acos(2 * Math.random() - 1); // Uniform on sphere
+            const ringCount = swarmConfig.ringCount || 6;
+            const maxDotsPerRing = swarmConfig.maxDotsPerRing || 20;
+            const ringRadiusMultipliers = swarmConfig.ringRadiusMultipliers || [1.2, 1.35, 1.5, 1.65, 1.8, 1.95];
             
-            // Random longitude of ascending node (0 to 360 degrees)
-            // This rotates the orbital plane around the planet's polar axis
-            const ascendingNode = Math.random() * Math.PI * 2;
-            
-            // Random starting phase in orbit (0 to 360 degrees)
-            const orbitalPhase = Math.random() * Math.PI * 2;
-            
-            // Orbital speed - faster for closer orbits (Kepler's law: v ∝ 1/√r)
-            // Base speed adjusted for visual effect (kept slow for realistic appearance)
-            const baseOrbitalSpeed = cloudType === 'probes' ? 0.15 : 0.08;
-            const orbitalSpeed = baseOrbitalSpeed / Math.sqrt(orbitalRadius / minRadius);
-            // Add some random variation for more chaos
-            const speedVariation = 0.8 + Math.random() * 0.4; // 80% to 120%
-            
-            cloudData.push({
-                orbitalRadius: orbitalRadius,
-                inclination: inclination,
-                ascendingNode: ascendingNode,
-                orbitalPhase: orbitalPhase,
-                orbitalSpeed: orbitalSpeed * speedVariation
-            });
+            // Create 6 polar orbital rings with evenly distributed inclinations
+            // Inclinations: 0, 30, 60, 90, 120, 150 degrees (polar orbits)
+            for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
+                const inclinationDeg = (ringIndex / ringCount) * 180; // 0, 30, 60, 90, 120, 150
+                const inclination = (inclinationDeg * Math.PI) / 180;
+                
+                // Ring radius multiplier (layered outward)
+                const radiusMultiplier = ringRadiusMultipliers[ringIndex] || (1.2 + ringIndex * 0.15);
+                const orbitalRadius = minRadius * radiusMultiplier;
+                
+                // Evenly distribute dots around each ring
+                for (let dotIndex = 0; dotIndex < maxDotsPerRing; dotIndex++) {
+                    // Evenly spaced around the ring
+                    const orbitalPhase = (dotIndex / maxDotsPerRing) * Math.PI * 2;
+                    
+                    // Ascending node rotates the orbital plane (for variety)
+                    const ascendingNode = (ringIndex * Math.PI) / 3; // Rotate each ring by 60 degrees
+                    
+                    // Orbital speed - faster for closer orbits (Kepler's law: v ∝ 1/√r)
+                    const baseOrbitalSpeed = 0.15;
+                    const orbitalSpeed = baseOrbitalSpeed / Math.sqrt(orbitalRadius / minRadius);
+                    // Small variation for natural look (±5%)
+                    const speedVariation = 0.95 + Math.random() * 0.1;
+                    
+                    cloudData.push({
+                        orbitalRadius: orbitalRadius,
+                        inclination: inclination,
+                        ascendingNode: ascendingNode,
+                        orbitalPhase: orbitalPhase,
+                        orbitalSpeed: orbitalSpeed * speedVariation,
+                        ringIndex: ringIndex,
+                        dotIndex: dotIndex
+                    });
+                }
+            }
+        } else {
+            // METAL/SLAG: Create chaotic ball of intersecting orbits (original behavior)
+            for (let i = 0; i < this.maxParticlesPerCloud; i++) {
+                // Orbital radius with exponential decay from minimum radius outward
+                const orbitalRadius = minRadius + this.exponentialRandom(decayScale);
+                
+                // Random orbital inclination (0 to 180 degrees for full coverage)
+                const inclination = Math.acos(2 * Math.random() - 1); // Uniform on sphere
+                
+                // Random longitude of ascending node (0 to 360 degrees)
+                const ascendingNode = Math.random() * Math.PI * 2;
+                
+                // Random starting phase in orbit (0 to 360 degrees)
+                const orbitalPhase = Math.random() * Math.PI * 2;
+                
+                // Orbital speed - faster for closer orbits (Kepler's law: v ∝ 1/√r)
+                const baseOrbitalSpeed = 0.08;
+                const orbitalSpeed = baseOrbitalSpeed / Math.sqrt(orbitalRadius / minRadius);
+                const speedVariation = 0.8 + Math.random() * 0.4; // 80% to 120%
+                
+                cloudData.push({
+                    orbitalRadius: orbitalRadius,
+                    inclination: inclination,
+                    ascendingNode: ascendingNode,
+                    orbitalPhase: orbitalPhase,
+                    orbitalSpeed: orbitalSpeed * speedVariation
+                });
+            }
         }
         
         points.userData = {
@@ -290,7 +351,7 @@ class ZoneClouds {
         // Create material - probes get glow effect, slightly larger for belt visibility
         const isProbe = cloudType === 'probes';
         const material = new THREE.PointsMaterial({
-            size: isProbe ? 0.06 : (cloudType === 'slag' ? 0.035 : 0.03),
+            size: isProbe ? 0.024 : (cloudType === 'slag' ? 0.035 : 0.03),
             sizeAttenuation: true,
             vertexColors: true,
             transparent: true,
@@ -657,8 +718,26 @@ class ZoneClouds {
             const probeCounts = probesByZone[zoneId] || {};
             const totalProbes = Object.values(probeCounts).reduce((sum, count) => sum + (count || 0), 0);
             
-            // Calculate visible counts using type-specific scaling
-            const probeCount = this.calculateProbeVisibleCount(totalProbes);
+            // Check if planet is depleted
+            const zone = zones[zoneId];
+            const isDepleted = zone?.depleted || false;
+            
+            // Get probe swarm config
+            const swarmConfig = this.solarSystem?.probeSwarmConfig || {
+                overflowThreshold: 100000000,
+                maxTotalDots: 120
+            };
+            const overflowThreshold = swarmConfig.overflowThreshold || 100000000;
+            
+            // If planet is depleted, transfer all swarm probes to orbital cloud (swarm = 0)
+            // Otherwise, only show swarm up to overflow threshold
+            let swarmProbeCount = 0;
+            if (!isDepleted) {
+                swarmProbeCount = Math.min(totalProbes, overflowThreshold);
+            }
+            
+            // Calculate visible counts for swarm (capped at overflow threshold)
+            const probeCount = this.calculateProbeVisibleCount(swarmProbeCount);
             
             // Update only probe clouds - metal/slag handled by solar_system.js resource particles
             this.updateCloudParticles(zoneClouds.probes, 'probes', probeCount, zoneId);
@@ -1092,12 +1171,22 @@ class ZoneClouds {
         const isBeltZone = this.beltZoneIds.includes(zoneId) || zoneId === 'dyson_sphere';
         const zoneClouds = isBeltZone ? this.beltClouds[zoneId] : this.clouds[zoneId];
         
+        console.log('[ZoneClouds] addArrivingParticle:', {
+            zoneId,
+            cloudType,
+            isBeltZone,
+            hasZoneClouds: !!zoneClouds,
+            availableZones: isBeltZone ? Object.keys(this.beltClouds || {}) : Object.keys(this.clouds || {})
+        });
+        
         if (!zoneClouds) {
+            console.warn('[ZoneClouds] No zone clouds found for:', zoneId);
             return false;
         }
         
         const cloud = zoneClouds[cloudType];
         if (!cloud || !cloud.userData) {
+            console.warn('[ZoneClouds] No cloud or userData for:', zoneId, cloudType);
             return false;
         }
         
@@ -1209,25 +1298,65 @@ class ZoneClouds {
     /**
      * Handle transfer arrival event - adds multiple particles at their arrival positions
      * Called by TransferVisualization when a transfer completes
-     * @param {Object} arrivalInfo - {zoneId, resourceType, positions: [THREE.Vector3], dotCount}
+     * Creates multiple particles proportional to mass (since zone clouds use fixed-size points)
+     * @param {Object} arrivalInfo - {zoneId, resourceType, arrivals: [{position, massKg, velocityDir}], dotCount}
      */
     handleTransferArrival(arrivalInfo) {
-        const { zoneId, resourceType, positions, dotCount } = arrivalInfo;
+        const { zoneId, resourceType, arrivals, dotCount } = arrivalInfo;
         
-        if (!positions || positions.length === 0) {
+        console.log('[ZoneClouds] handleTransferArrival:', { zoneId, resourceType, arrivalCount: arrivals?.length });
+        
+        if (!arrivals || arrivals.length === 0) {
+            console.warn('[ZoneClouds] No arrivals provided');
             return;
         }
         
-        // Add each arriving particle to the zone cloud
+        // Reference mass for a single particle (adjust based on typical mass values)
+        // Metal: 1 megatonne (1e6 kg) per particle
+        // Probes: 100 kg per particle (probe mass)
+        const massPerParticle = resourceType === 'metal' ? 1e6 : 100;
+        const maxParticlesPerArrival = 50; // Cap to avoid creating too many
+        
+        // Add particles for each arriving cargo, scaling count by mass
         let addedCount = 0;
-        for (const position of positions) {
-            if (this.addArrivingParticle(zoneId, resourceType, position)) {
-                addedCount++;
+        let totalParticlesCreated = 0;
+        
+        for (const arrival of arrivals) {
+            const position = arrival.position;
+            const massKg = arrival.massKg || 0;
+            if (!position) continue;
+            
+            // Calculate how many particles to create based on mass
+            // At minimum, create 1 particle; scale up for larger masses
+            let particleCount = 1;
+            if (massKg > 0 && massKg >= massPerParticle) {
+                particleCount = Math.min(
+                    Math.ceil(massKg / massPerParticle),
+                    maxParticlesPerArrival
+                );
             }
+            
+            // Create particles with slight position offsets for visual spread
+            for (let i = 0; i < particleCount; i++) {
+                // Add small random offset for visual variety (except first particle)
+                let particlePos = position;
+                if (i > 0) {
+                    const offset = 0.02; // Small offset in visual units
+                    particlePos = position.clone().add(new THREE.Vector3(
+                        (Math.random() - 0.5) * offset,
+                        (Math.random() - 0.5) * offset,
+                        (Math.random() - 0.5) * offset
+                    ));
+                }
+                
+                const result = this.addArrivingParticle(zoneId, resourceType, particlePos);
+                if (result) {
+                    totalParticlesCreated++;
+                }
+            }
+            addedCount++;
         }
         
-        if (addedCount > 0) {
-            console.log(`ZoneClouds: Added ${addedCount}/${positions.length} ${resourceType} particles to ${zoneId}`);
-        }
+        console.log(`[ZoneClouds] Added ${totalParticlesCreated} particles for ${addedCount} ${resourceType} arrivals to ${zoneId}`);
     }
 }
