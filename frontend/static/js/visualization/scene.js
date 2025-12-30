@@ -37,7 +37,9 @@ class SceneManager {
         this.scene.background = new THREE.Color(0x000000);
 
         // Camera - wide FOV for solar system view
-        const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
+        // Get dimensions from parent container for proper sizing
+        const container = this.canvas.parentElement;
+        const aspect = container.clientWidth / container.clientHeight;
         // Parameters: FOV (degrees), aspect ratio, near clipping plane, far clipping plane
         // Increased far clipping plane from 10000 to 50000 to match increased maxZoom
         this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 50000);
@@ -49,7 +51,7 @@ class SceneManager {
                 canvas: this.canvas,
                 antialias: true
             });
-            this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
+            this.renderer.setSize(container.clientWidth, container.clientHeight);
             this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             
             // Enable HDR tone mapping for better bloom
@@ -68,7 +70,7 @@ class SceneManager {
                     canvas: this.canvas,
                     antialias: false
                 });
-                this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
                 this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 
                 // Enable HDR tone mapping for better bloom
@@ -373,19 +375,20 @@ class SceneManager {
     initPostProcessing() {
         // Create EffectComposer
         this.composer = new THREE.EffectComposer(this.renderer);
-        
+
         // Render pass (renders the scene normally first)
         const renderPass = new THREE.RenderPass(this.scene, this.camera);
         this.composer.addPass(renderPass);
-        
+
         // Bloom pass for glowing sun and stars
+        const container = this.canvas.parentElement;
         const bloomParams = {
             strength: 0.2,      // Intensity of bloom
             radius: 0.1,        // Blur radius
             threshold: 0.3      // Brightness threshold for bloom
         };
         this.bloomPass = new THREE.UnrealBloomPass(
-            new THREE.Vector2(this.canvas.clientWidth, this.canvas.clientHeight),
+            new THREE.Vector2(container.clientWidth, container.clientHeight),
             bloomParams.strength,
             bloomParams.radius,
             bloomParams.threshold
@@ -458,14 +461,16 @@ class SceneManager {
     }
 
     onWindowResize() {
-        const width = this.canvas.clientWidth;
-        const height = this.canvas.clientHeight;
+        // Get dimensions from parent container since canvas may have fixed width/height attributes
+        const container = this.canvas.parentElement;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
 
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(width, height);
-        
+
         // Update composer size
         if (this.composer) {
             this.composer.setSize(width, height);
