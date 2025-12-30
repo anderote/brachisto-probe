@@ -1,8 +1,7 @@
 /** Right Panel with tabs for Structures, Research, and Transfers */
 class Sidebar {
     constructor() {
-        this.panel = document.getElementById('right-panel');
-        this.panelContainer = document.getElementById('right-panel-container');
+        this.panelContainer = document.getElementById('right-panel');
         this.toggleBtn = document.getElementById('right-panel-toggle');
         this.toggleIcon = document.getElementById('right-panel-toggle-icon');
         this.tabButtons = document.querySelectorAll('.right-tab-btn');
