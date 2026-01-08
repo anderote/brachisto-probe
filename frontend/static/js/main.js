@@ -12,7 +12,11 @@ class App {
         this.leaderboard = null;
         this.isAuthenticated = false;
         this.currentUser = null;
-        
+
+        // Loading screen state
+        this.loadingScreenStartTime = Date.now();
+        this.minLoadingScreenDuration = 3000; // 3 seconds maximum
+
         // Skill allocation state
         this.selectedDifficulty = 'medium';
         this.selectedPlanet = 'earth';
@@ -26,8 +30,51 @@ class App {
             dexterity: 0
         };
         this.totalSkillPoints = 10;
-        
+
         this.init();
+    }
+
+    /**
+     * Fade out the loading screen with minimum display time
+     * @param {boolean} immediate - Skip minimum time requirement
+     */
+    async fadeOutLoadingScreen(immediate = false) {
+        const loadingScreen = document.getElementById('loading-screen');
+        if (!loadingScreen) return;
+
+        // Wait for minimum display time unless immediate
+        if (!immediate) {
+            const elapsed = Date.now() - this.loadingScreenStartTime;
+            const remaining = this.minLoadingScreenDuration - elapsed;
+            if (remaining > 0) {
+                await new Promise(resolve => setTimeout(resolve, remaining));
+            }
+        }
+
+        // Add fade-out class
+        loadingScreen.classList.add('fade-out');
+
+        // Destroy galaxy animation
+        if (window.loadingGalaxy) {
+            window.loadingGalaxy.destroy();
+            window.loadingGalaxy = null;
+        }
+
+        // Wait for fade animation to complete, then hide
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        loadingScreen.style.display = 'none';
+    }
+
+    /**
+     * Show loading screen (reset for new loading)
+     */
+    showLoadingScreen() {
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) {
+            loadingScreen.classList.remove('fade-out');
+            loadingScreen.style.display = 'flex';
+            this.loadingScreenStartTime = Date.now();
+        }
     }
 
     async init() {
@@ -86,76 +133,135 @@ class App {
                     this.sceneManager.init();
 
                     // Initialize starfield
-                    if (typeof Starfield !== 'undefined') {
-                        this.starfield = new Starfield(this.sceneManager.getScene());
+                    const scene = this.sceneManager.getScene();
+                    if (!scene) {
+                        console.error('[App] SceneManager.getScene() returned null/undefined');
                     }
 
-                    if (typeof SolarSystem !== 'undefined') {
-                        this.solarSystem = new SolarSystem(this.sceneManager.getScene());
-                        // Set solar system reference in scene manager for comet tracking
-                        this.sceneManager.setSolarSystem(this.solarSystem);
+                    if (typeof Starfield !== 'undefined' && scene) {
+                        try {
+                            this.starfield = new Starfield(scene);
+                        } catch (e) {
+                            console.error('[App] Failed to create Starfield:', e);
+                        }
                     }
-                    if (typeof StructuresVisualization !== 'undefined') {
-                        this.structuresViz = new StructuresVisualization(this.sceneManager.getScene(), this.solarSystem);
+
+                    if (typeof SolarSystem !== 'undefined' && scene) {
+                        try {
+                            this.solarSystem = new SolarSystem(scene);
+                            // Set solar system reference in scene manager for comet tracking
+                            this.sceneManager.setSolarSystem(this.solarSystem);
+                        } catch (e) {
+                            console.error('[App] Failed to create SolarSystem:', e);
+                        }
+                    }
+                    if (typeof StructuresVisualization !== 'undefined' && scene) {
+                        try {
+                            this.structuresViz = new StructuresVisualization(scene, this.solarSystem);
+                        } catch (e) {
+                            console.error('[App] Failed to create StructuresVisualization:', e);
+                        }
                     }
                     // Note: probeViz and dysonViz need solarSystem for scaling, but it may not be ready yet
                     // They will handle the null case with fallback scaling
                     // Probe visualization removed - focusing on mechanics first
                     // if (typeof ProbeVisualization !== 'undefined') {
                     //     // Pass solarSystem reference for orbit scaling (may be null initially)
-                    //     this.probeViz = new ProbeVisualization(this.sceneManager.getScene(), this.solarSystem);
+                    //     this.probeViz = new ProbeVisualization(scene, this.solarSystem);
                     // }
-                    if (typeof DysonSphereVisualization !== 'undefined') {
-                        // Pass solarSystem reference for orbit scaling (may be null initially)
-                        this.dysonViz = new DysonSphereVisualization(this.sceneManager.getScene(), this.solarSystem);
+                    if (typeof DysonSphereVisualization !== 'undefined' && scene) {
+                        try {
+                            // Pass solarSystem reference for orbit scaling (may be null initially)
+                            this.dysonViz = new DysonSphereVisualization(scene, this.solarSystem);
+                        } catch (e) {
+                            console.error('[App] Failed to create DysonSphereVisualization:', e);
+                        }
                     }
-                    if (typeof TransferVisualization !== 'undefined') {
-                        // Pass solarSystem and structuresViz references
-                        this.transferViz = new TransferVisualization(this.sceneManager.getScene(), this.solarSystem, this.structuresViz);
-                        // Set transfer viz reference in scene manager for line toggling
-                        this.sceneManager.setTransferViz(this.transferViz);
+                    if (typeof TransferVisualization !== 'undefined' && scene) {
+                        try {
+                            // Pass solarSystem and structuresViz references
+                            this.transferViz = new TransferVisualization(scene, this.solarSystem, this.structuresViz);
+                            // Set transfer viz reference in scene manager for line toggling
+                            this.sceneManager.setTransferViz(this.transferViz);
                         
                         // Wire up transfer arrival callback to spawn resource particles
                         // Uses the same particle system as mining for consistent mass-proportional sizing
                         const solarSystemRef = this.solarSystem;
                         this.transferViz.setArrivalCallback((arrivalInfo) => {
                             if (!solarSystemRef) return;
-                            
+
                             const { zoneId, resourceType, arrivals } = arrivalInfo;
-                            
+
                             // Only handle resource types (metal, slag, methalox)
                             // Probes use different handling
                             if (resourceType === 'probe') return;
-                            
+
+                            // Determine target zone for particles - for moon zones, use parent planet
+                            let targetZoneId = zoneId;
+                            if (!solarSystemRef.resourceParticles[zoneId]) {
+                                // Check if this is a moon zone and use parent
+                                const zoneData = window.gameDataLoader?.getZoneById?.(zoneId);
+                                if (zoneData?.is_moon && zoneData.parent_zone) {
+                                    targetZoneId = zoneData.parent_zone;
+                                }
+                            }
+
+                            // Ensure particle data arrays exist for this zone
+                            if (!solarSystemRef.resourceParticleData[targetZoneId]) {
+                                solarSystemRef.resourceParticleData[targetZoneId] = {
+                                    metal: [],
+                                    slag: [],
+                                    methalox: [],
+                                    probe: []
+                                };
+                            }
+
+                            // Track total mass arriving to prevent double-counting with mining spawn
+                            let totalArrivalMass = 0;
+
                             // Spawn a particle for each arrival
                             for (const arrival of arrivals || []) {
                                 const { position, massKg, velocityDir } = arrival;
-                                
+
                                 // Skip if no mass (shouldn't happen, but safety check)
                                 if (!massKg || massKg <= 0) continue;
-                                
+
+                                totalArrivalMass += massKg;
+
                                 // Calculate visual size from mass (same as mining particles)
                                 const visualSize = solarSystemRef.massToVisualSize(massKg);
-                                
+
                                 // Spawn particle at arrival position with velocity direction
                                 const particle = solarSystemRef.spawnResourceParticleAtPosition(
-                                    zoneId,
+                                    targetZoneId,
                                     resourceType,
                                     massKg,
                                     visualSize,
                                     position,
                                     velocityDir
                                 );
-                                
+
                                 // Add to particle data array for tracking
-                                if (particle && solarSystemRef.resourceParticleData[zoneId]) {
-                                    const particleData = solarSystemRef.resourceParticleData[zoneId];
-                                    if (particleData[resourceType]) {
+                                if (particle) {
+                                    const particleData = solarSystemRef.resourceParticleData[targetZoneId];
+                                    if (particleData && particleData[resourceType]) {
                                         particleData[resourceType].push(particle);
                                     }
                                 }
                             }
+
+                            // Subtract arrival mass from pending to prevent double-spawning
+                            // The mining system would otherwise spawn particles for this mass increase
+                            if (totalArrivalMass > 0 && solarSystemRef.pendingMass[targetZoneId]) {
+                                const pending = solarSystemRef.pendingMass[targetZoneId];
+                                if (pending[resourceType] !== undefined) {
+                                    pending[resourceType] = Math.max(0, pending[resourceType] - totalArrivalMass);
+                                }
+                            }
                         });
+                        } catch (e) {
+                            console.error('[App] Failed to create TransferVisualization:', e);
+                        }
                     }
                 }
             } catch (e) {
@@ -327,12 +433,75 @@ class App {
             }
 
             try {
-                this.timeControls = typeof TimeControls !== 'undefined' ? 
+                this.timeControls = typeof TimeControls !== 'undefined' ?
                     new TimeControls('time-controls') : null;
             } catch (e) {
                 console.error('Failed to initialize TimeControls:', e);
             }
-            
+
+            // Initialize interstellar navigation (Galaxy Mode)
+            try {
+                this.interstellarNav = typeof InterstellarNav !== 'undefined' ?
+                    new InterstellarNav('interstellar-nav-panel') : null;
+                if (this.interstellarNav) {
+                    window.interstellarNav = this.interstellarNav;
+
+                    // Set up callbacks for interstellar transfers
+                    this.interstellarNav.onTransferInitiated = (targetSystemId, probeCount) => {
+                        console.log(`[InterstellarNav] Transfer initiated to ${targetSystemId} with ${probeCount} probes`);
+                        // TODO: Wire to engine for actual transfer
+                        if (window.toast) {
+                            window.toast.success(`Colony ship dispatched to ${targetSystemId}!`);
+                        }
+                    };
+
+                    this.interstellarNav.onSystemSelected = (systemId) => {
+                        console.log(`[InterstellarNav] System selected: ${systemId}`);
+                        // TODO: Wire to engine for system switching
+                    };
+                }
+            } catch (e) {
+                console.error('Failed to initialize InterstellarNav:', e);
+            }
+
+            // Initialize 3D Star Map Visualization (full-screen Milky Way view)
+            try {
+                console.log('[App] StarMapVisualization class available:', typeof StarMapVisualization !== 'undefined');
+                this.starMapVisualization = typeof StarMapVisualization !== 'undefined' ?
+                    new StarMapVisualization() : null;
+                if (this.starMapVisualization) {
+                    window.starMapVisualization = this.starMapVisualization;
+                    // Initialize asynchronously after loading star data (don't await - let it load in background)
+                    this.initializeStarMap().catch(e => {
+                        console.error('[App] Star map initialization failed:', e);
+                    });
+                } else {
+                    console.warn('[App] StarMapVisualization not created');
+                }
+            } catch (e) {
+                console.error('[App] Failed to initialize StarMapVisualization:', e);
+            }
+
+            // Initialize Universe Map Visualization (Phase 3 - cosmic web)
+            try {
+                console.log('[App] UniverseMapVisualization class available:', typeof UniverseMapVisualization !== 'undefined');
+                this.universeMapVisualization = typeof UniverseMapVisualization !== 'undefined' ?
+                    new UniverseMapVisualization() : null;
+                this.universeSystem = typeof UniverseSystem !== 'undefined' ?
+                    new UniverseSystem() : null;
+                this.universeUnlocked = false; // Unlock at 99% galaxy completion
+
+                if (this.universeMapVisualization) {
+                    window.universeMapVisualization = this.universeMapVisualization;
+                    // Initialize asynchronously
+                    this.initializeUniverseMap().catch(e => {
+                        console.error('[App] Universe map initialization failed:', e);
+                    });
+                }
+            } catch (e) {
+                console.error('[App] Failed to initialize UniverseMapVisualization:', e);
+            }
+
             // Energy display removed - now shown in top resource bar
 
             // Set up event listeners
@@ -406,37 +575,399 @@ class App {
         document.addEventListener('keydown', (e) => {
             const activeElement = document.activeElement;
             const isInputFocused = activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA';
-            
+
             // Spacebar is now used for transfer workflow (handled in orbital_zone_selector.js)
             // Pause/Resume functionality removed from spacebar
-            
+
             // Leaderboard: 'L' key
             if (e.key.toLowerCase() === 'l' && !e.ctrlKey && !e.metaKey && !isInputFocused) {
                 this.leaderboard.show();
             }
+
+            // View switching: Ctrl/Cmd/Alt + 1/2 for Solar System / Galaxy
+            // Alt works better since browsers capture Ctrl+number for tab switching
+            const modifierKey = e.ctrlKey || e.metaKey || e.altKey;
+            if (modifierKey && /^[1-2]$/.test(e.key) && !isInputFocused) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (e.key === '1') {
+                    // Solar System view
+                    console.log('[App] View switch: Solar System');
+                    if (this.starMapVisualization?.isActive) {
+                        this.starMapVisualization.hide();
+                    }
+                } else if (e.key === '2') {
+                    // Galaxy view
+                    console.log('[App] View switch: Galaxy, starMap exists:', !!this.starMapVisualization, 'isActive:', this.starMapVisualization?.isActive);
+                    if (this.starMapVisualization) {
+                        if (!this.starMapVisualization.isActive) {
+                            this.starMapVisualization.show();
+                        }
+                    } else {
+                        console.warn('[App] starMapVisualization not initialized!');
+                    }
+                }
+                return;
+            }
+
+            // Star system focus keys (when in star map view, without modifiers)
+            // 1 = Sol, 2-9 = major systems, 0 = Galactic Center
+            if (/^[0-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && !isInputFocused) {
+                if (this.starMapVisualization && this.starMapVisualization.isActive) {
+                    if (e.key === '1') {
+                        this.starMapVisualization.focusOnSol();
+                    } else {
+                        // Focus on major star system by key
+                        this.starMapVisualization.focusOnSystem(e.key);
+                    }
+                }
+            }
+
+            // Strategy panel shortcuts (when in star map view)
+            // S = Strategy (main panel), D = Drive Research, C = Stellar Census, F = Fleet View
+            if (this.starMapVisualization && this.starMapVisualization.isActive && !isInputFocused) {
+                if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
+                    this.starMapVisualization.toggleStrategyPanel();
+                }
+                if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey) {
+                    this.starMapVisualization.togglePanel('drive');
+                }
+                if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) {
+                    this.starMapVisualization.togglePanel('census');
+                }
+                // F = Fleet View - follow a probe fleet
+                if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey) {
+                    this.starMapVisualization.toggleFleetView();
+                }
+                // Arrow keys - navigate between fleets when in fleet view
+                if (this.starMapVisualization.fleetViewMode) {
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        this.starMapVisualization.nextFleet();
+                    }
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.starMapVisualization.prevFleet();
+                    }
+                }
+            }
         });
+
+        // Game menu button
+        this.setupGameMenuButton();
+    }
+
+    /**
+     * Setup the game menu button (wrench icon at bottom left)
+     */
+    setupGameMenuButton() {
+        const menuTrigger = document.getElementById('game-menu-trigger');
+        const menuDropdown = document.getElementById('game-menu-dropdown');
+        const saveGameOption = document.getElementById('menu-save-game');
+        const newGameOption = document.getElementById('menu-new-game');
+
+        if (menuTrigger && menuDropdown) {
+            // Toggle dropdown on button click
+            menuTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isVisible = menuDropdown.style.display !== 'none';
+                menuDropdown.style.display = isVisible ? 'none' : 'block';
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!menuDropdown.contains(e.target) && e.target !== menuTrigger) {
+                    menuDropdown.style.display = 'none';
+                }
+            });
+        }
+
+        // Save Game option
+        if (saveGameOption) {
+            saveGameOption.addEventListener('click', async () => {
+                menuDropdown.style.display = 'none';
+                await this.saveCurrentGame();
+            });
+        }
+
+        // New Game option
+        if (newGameOption) {
+            newGameOption.addEventListener('click', () => {
+                menuDropdown.style.display = 'none';
+                this.showGameMenu();
+            });
+        }
+    }
+
+    /**
+     * Save the current game
+     */
+    async saveCurrentGame() {
+        try {
+            if (window.toast) {
+                window.toast.info('Saving game...');
+            }
+
+            const result = await window.gameEngine.saveGame();
+
+            if (result && result.success) {
+                if (window.toast) {
+                    window.toast.success('Game saved successfully!');
+                }
+            } else {
+                throw new Error(result?.error || 'Unknown error');
+            }
+        } catch (error) {
+            console.error('Failed to save game:', error);
+            if (window.toast) {
+                window.toast.error('Failed to save game: ' + error.message);
+            }
+        }
+    }
+
+    /**
+     * Initialize the 3D star map visualization
+     * Loads nearby stars data and creates the GalaxySystem
+     */
+    async initializeStarMap() {
+        if (!this.starMapVisualization) {
+            console.log('[App] No starMapVisualization instance');
+            return;
+        }
+
+        try {
+            console.log('[App] Loading nearby stars data...');
+            // Load nearby stars data
+            const response = await fetch('/game_data/nearby_stars.json');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const starData = await response.json();
+            console.log('[App] Loaded', starData?.stars?.length || 0, 'stars');
+
+            // Create or reuse GalaxySystem
+            let galaxySystem = null;
+            if (typeof GalaxySystem !== 'undefined') {
+                galaxySystem = new GalaxySystem();
+                galaxySystem.loadNearbyStars(starData);
+                console.log('[App] GalaxySystem initialized with', starData?.stars?.length || 0, 'stars');
+            } else {
+                console.log('[App] GalaxySystem not available');
+            }
+
+            // Initialize the star map with data
+            this.starMapVisualization.init(starData, galaxySystem);
+            console.log('[App] Star map visualization initialized successfully');
+
+            // Load starship drives data for relativistic travel calculations
+            try {
+                const drivesResponse = await fetch('/game_data/starship_drives.json');
+                if (drivesResponse.ok) {
+                    const drivesData = await drivesResponse.json();
+                    this.starMapVisualization.setStarshipDrives(drivesData);
+                    console.log('[App] Starship drives loaded for relativistic travel');
+                }
+            } catch (driveErr) {
+                console.warn('[App] Could not load starship drives:', driveErr);
+            }
+
+            // Store reference to galaxySystem for universe unlock check
+            this.galaxySystem = galaxySystem;
+
+        } catch (error) {
+            console.error('[App] Failed to initialize star map:', error);
+        }
+    }
+
+    /**
+     * Initialize the 3D universe map visualization (Phase 3)
+     * Loads universe data and creates the UniverseSystem
+     */
+    async initializeUniverseMap() {
+        if (!this.universeMapVisualization) {
+            console.log('[App] No universeMapVisualization instance');
+            return;
+        }
+
+        try {
+            console.log('[App] Loading universe data...');
+            const response = await fetch('/game_data/universe_data.json');
+            if (!response.ok) {
+                console.warn('[App] universe_data.json not found, universe view disabled');
+                return;
+            }
+            const universeData = await response.json();
+            console.log('[App] Loaded universe data with', universeData?.superclusters?.length || 0, 'superclusters');
+
+            // Initialize universe system
+            if (this.universeSystem) {
+                this.universeSystem.init(universeData, this.galaxySystem);
+                console.log('[App] UniverseSystem initialized');
+            }
+
+            // Initialize the universe map visualization
+            await this.universeMapVisualization.init(universeData);
+
+            // Link systems
+            if (this.universeSystem && this.universeMapVisualization) {
+                this.universeMapVisualization.universeSystem = this.universeSystem;
+                this.universeSystem.visualization = this.universeMapVisualization;
+            }
+
+            // Initialize universe panel UI
+            if (typeof UniversePanel !== 'undefined' && this.universeSystem && this.universeMapVisualization) {
+                this.universePanel = new UniversePanel(this.universeSystem, this.universeMapVisualization);
+                this.universePanel.init();
+            }
+
+            console.log('[App] Universe map visualization initialized successfully');
+
+        } catch (error) {
+            console.error('[App] Failed to initialize universe map:', error);
+        }
+    }
+
+    /**
+     * Check and update universe unlock status
+     * Called periodically to check galaxy completion
+     */
+    checkUniverseUnlock() {
+        if (this.universeUnlocked) return true;
+
+        if (this.galaxySystem && this.galaxySystem.isUniverseUnlockable()) {
+            this.universeUnlocked = true;
+            console.log('[App] Universe view unlocked! Galaxy at 99% completion.');
+
+            // Show notification
+            if (typeof showToast === 'function') {
+                showToast('Universe View Unlocked! Press U in Galaxy view.', 'success');
+            }
+
+            // Dispatch event
+            window.dispatchEvent(new CustomEvent('universe-unlocked'));
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Force unlock universe view for testing
+     * Use in browser console: app.unlockUniverse()
+     */
+    unlockUniverse() {
+        this.universeUnlocked = true;
+        console.log('[App] Universe view force unlocked for testing');
+        console.log('[App] Press I to enter galaxy view, then U to enter universe view');
+        if (typeof showToast === 'function') {
+            showToast('Universe View Unlocked (Debug Mode)', 'success');
+        }
+        return 'Universe unlocked! Press I for galaxy, then U for universe.';
+    }
+
+    /**
+     * Directly show universe view for testing
+     * Use in browser console: app.showUniverse()
+     */
+    showUniverse() {
+        this.universeUnlocked = true;
+        if (this.universeMapVisualization && this.universeMapVisualization.isInitialized) {
+            this.universeMapVisualization.show();
+            return 'Universe view activated!';
+        } else {
+            return 'Universe map not yet initialized. Wait a moment and try again.';
+        }
     }
 
     async checkAuth() {
         // Skip authentication for now - show game menu
         this.isAuthenticated = true;
         this.hideAuthModal();
-        
-        // Small delay to ensure UI is ready, then show game menu
+
+        // DEV MODE: Skip saved game check, start fresh in interstellar mode
+        console.log('[App] Starting fresh game in interstellar mode');
+        try {
+            await this.startNewGame('interstellar', 'earth', null);
+            return;
+        } catch (e) {
+            console.error('Failed to start interstellar game:', e);
+        }
+
+        // Fallback: show game menu if auto-start fails
         setTimeout(() => {
             this.showGameMenu();
         }, 100);
+    }
+
+    /**
+     * Resume from a saved game state (for auto-resume)
+     */
+    async resumeSavedGame(sessionId, gameState) {
+        try {
+            const menuModal = document.getElementById('game-menu-modal');
+
+            // Hide menu if shown
+            if (menuModal) {
+                menuModal.style.display = 'none';
+            }
+
+            // Show loading screen
+            this.showLoadingScreen();
+
+            // Resume using the engine client
+            await window.gameEngine.resumeGame(sessionId, gameState);
+
+            // Get restored state and restore galaxy before showing
+            const restoredState = window.gameEngine.getGameState();
+            if (restoredState) {
+                // Restore galaxy state if available
+                if (restoredState.galaxy && this.starMapVisualization) {
+                    this.starMapVisualization.restoreGalaxyState(restoredState.galaxy);
+                }
+            }
+
+            // Show galaxy view WHILE loading screen is still visible
+            console.log('[App] Resuming in galaxy view');
+            window.startInInterstellarMode = true;
+
+            const showStarMap = async () => {
+                for (let i = 0; i < 50; i++) {
+                    if (this.starMapVisualization?.isInitialized) {
+                        this.starMapVisualization.show();
+                        console.log('[App] Galaxy view activated behind loading screen');
+                        return true;
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                return false;
+            };
+
+            await showStarMap();
+
+            // Now fade out loading screen - galaxy view is already visible underneath
+            await this.fadeOutLoadingScreen();
+
+            if (restoredState) {
+                this.updateUIPanels(restoredState);
+                this.updateVisualization(restoredState);
+            }
+
+            console.log('Game resumed successfully');
+        } catch (error) {
+            console.error('Failed to resume game:', error);
+            // Fall back to showing menu
+            this.showGameMenu();
+        }
     }
     
     async showGameMenu() {
         const menuModal = document.getElementById('game-menu-modal');
         const savedGamesList = document.getElementById('saved-games-list');
-        const loadingScreen = document.getElementById('loading-screen');
-        
-        // Hide loading screen when showing menu
-        if (loadingScreen) {
-            loadingScreen.style.display = 'none';
-        }
+
+        // Fade out loading screen when showing menu
+        await this.fadeOutLoadingScreen();
         
         if (!menuModal) {
             // If menu doesn't exist, just start new game
@@ -488,7 +1019,7 @@ class App {
                                     await gameStorage.deleteGameState(game.sessionId);
                                     this.showGameMenu(); // Refresh the list
                                 } catch (error) {
-                                    alert('Failed to delete game: ' + error.message);
+                                    window.toast?.error('Failed to delete game: ' + error.message);
                                 }
                             }
                         };
@@ -515,14 +1046,14 @@ class App {
         
         // Set up new game button
         // Difficulty buttons - now open skill allocation modal
-        const endgameBtn = document.getElementById('endgame-game-btn');
+        const interstellarBtn = document.getElementById('interstellar-game-btn');
         const easyBtn = document.getElementById('easy-game-btn');
         const mediumBtn = document.getElementById('medium-game-btn');
         const hardBtn = document.getElementById('hard-game-btn');
-        
-        if (endgameBtn) {
-            endgameBtn.onclick = null;
-            endgameBtn.addEventListener('click', () => this.showSkillAllocationModal('endgame'));
+
+        if (interstellarBtn) {
+            interstellarBtn.onclick = null;
+            interstellarBtn.addEventListener('click', () => this.showSkillAllocationModal('interstellar'));
         }
         if (easyBtn) {
             easyBtn.onclick = null;
@@ -535,6 +1066,15 @@ class App {
         if (hardBtn) {
             hardBtn.onclick = null;
             hardBtn.addEventListener('click', () => this.showSkillAllocationModal('hard'));
+        }
+
+        // Close button for game menu
+        const closeBtn = document.getElementById('game-menu-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                const gameMenu = document.getElementById('game-menu-modal');
+                if (gameMenu) gameMenu.style.display = 'none';
+            });
         }
     }
     
@@ -564,8 +1104,8 @@ class App {
         // Update difficulty label
         const difficultyLabel = document.getElementById('difficulty-label');
         if (difficultyLabel) {
-            const labels = { endgame: 'Endgame', easy: 'Easy', medium: 'Medium', hard: 'Hard' };
-            difficultyLabel.textContent = `${labels[difficulty]} Difficulty`;
+            const labels = { interstellar: 'Interstellar', easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+            difficultyLabel.textContent = `${labels[difficulty]} Mode`;
         }
         
         // Reset planet selection
@@ -798,18 +1338,17 @@ class App {
     }
     
     async loadGame(sessionId) {
-        const loadingScreen = document.getElementById('loading-screen');
-        
         try {
             console.log('Loading game:', sessionId);
-            
-            // Show loading screen
+
+            // Show loading screen with loading message
+            this.showLoadingScreen();
+            const loadingScreen = document.getElementById('loading-screen');
             if (loadingScreen) {
-                loadingScreen.style.display = 'flex';
-                const loadingText = loadingScreen.querySelector('p');
+                const loadingText = loadingScreen.querySelector('.loading-status');
                 if (loadingText) loadingText.textContent = 'Loading game...';
             }
-            
+
             this.hideGameMenu();
             
             // Wait for gameEngine to be available
@@ -836,17 +1375,45 @@ class App {
             
             // Load game from state
             await window.gameEngine.loadFromState(sessionId, {}, gameState);
-            
-            // Hide loading screen
-            if (loadingScreen) {
-                loadingScreen.style.display = 'none';
-            }
-            
-            // Display game state
+
+            // Get state and restore galaxy before showing
             const initialState = window.gameEngine.getGameState();
+            if (initialState) {
+                // Restore galaxy state if available
+                if (initialState.galaxy && this.starMapVisualization) {
+                    this.starMapVisualization.restoreGalaxyState(initialState.galaxy);
+                }
+            }
+
+            // Show galaxy view WHILE loading screen is still visible
+            console.log('[App] Loading in galaxy view');
+            window.startInInterstellarMode = true;
+
+            const showStarMap = async () => {
+                for (let i = 0; i < 50; i++) {
+                    if (this.starMapVisualization?.isInitialized) {
+                        this.starMapVisualization.show();
+                        console.log('[App] Galaxy view activated behind loading screen');
+                        return true;
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                return false;
+            };
+
+            await showStarMap();
+
+            // Now fade out loading screen - galaxy view is already visible underneath
+            await this.fadeOutLoadingScreen(true);
+
             if (initialState) {
                 this.updateUIPanels(initialState);
                 this.updateVisualization(initialState);
+
+                // Populate initial resource particles from saved state
+                if (this.solarSystem && this.solarSystem.populateInitialParticles) {
+                    this.solarSystem.populateInitialParticles(initialState);
+                }
             }
         } catch (error) {
             console.error('Failed to load game:', error);
@@ -889,7 +1456,7 @@ class App {
             this.hideAuthModal();
             await this.startNewGame();
         } catch (error) {
-            alert('Login failed: ' + error.message);
+            window.toast?.error('Login failed: ' + error.message);
         }
     }
 
@@ -904,7 +1471,7 @@ class App {
             this.hideAuthModal();
             await this.startNewGame();
         } catch (error) {
-            alert('Registration failed: ' + error.message);
+            window.toast?.error('Registration failed: ' + error.message);
         }
     }
 
@@ -913,21 +1480,24 @@ class App {
         
         // Define difficulty configurations
         const difficultyConfigs = {
-            endgame: {
-                initial_probes: 1000,
-                initial_metal: 100,
-                initial_energy: 100000,
+            interstellar: {
+                initial_probes: 1e12,  // Trillion probes - ready for interstellar
+                initial_metal: 1e12,
+                initial_energy: 1e18,
                 initial_structures: {
-                    power_station: 10,
-                    data_center: 10,
-                    mass_driver: 2
+                    power_station: 10000,
+                    data_center: 10000,
+                    mass_driver: 1000,
+                    factory: 1000
                 },
                 initial_zone_resources: {
-                    methalox: 1000
+                    methalox: 1e9
                 },
-                // Dyson sphere starts at 50% completion
-                initial_dyson_mass: 10e22,  // 50% of 20e22 target mass
-                // All research trees at tier 5 (first 5 tiers completed with all 10 tranches each)
+                // Dyson sphere complete!
+                initial_dyson_mass: 2e27,  // 100% complete Dyson sphere
+                // Propulsion tier 14 = 1g Torch Drive (Antimatter-Catalyzed Fusion)
+                propulsion_tier: 14,
+                // All research trees at tier 14 (first 14 tiers completed with all 10 tranches each)
                 initial_research_state: {
                     propulsion: {
                         raptor_3_engines: { tranches_completed: 10, progress: 0, enabled: false, completed: true },
@@ -1185,12 +1755,18 @@ class App {
                 // Wait a moment for cleanup
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
+
+            // Reset galaxy view state for new game
+            if (this.starMapVisualization && this.starMapVisualization.resetToNewGame) {
+                console.log('Resetting galaxy view for new game...');
+                this.starMapVisualization.resetToNewGame();
+            }
             
             // Hide game menu and show loading screen
             this.hideGameMenu();
+            this.showLoadingScreen();
             if (loadingScreen) {
-                loadingScreen.style.display = 'flex';
-                const loadingText = loadingScreen.querySelector('p');
+                const loadingText = loadingScreen.querySelector('.loading-status');
                 if (loadingText) loadingText.textContent = 'Initializing game engine...';
             }
             
@@ -1228,20 +1804,46 @@ class App {
             
             // Update loading message
             if (loadingScreen) {
-                const loadingText = loadingScreen.querySelector('p');
-                if (loadingText) loadingText.textContent = 'Loading game...';
+                const loadingText = loadingScreen.querySelector('.loading-status');
+                if (loadingText) loadingText.textContent = 'Loading galaxy...';
             }
-            
-            // Hide loading screen
-            if (loadingScreen) {
-                loadingScreen.style.display = 'none';
-            }
-            
+
+            // IMPORTANT: Show galaxy view WHILE loading screen is still visible as overlay
+            // This ensures galaxy view is ready before loading screen fades out
+            console.log('[App] Starting in galaxy view');
+            window.startInInterstellarMode = true;
+
+            // Wait for star map to be ready and show it (behind the loading screen)
+            const showStarMap = async () => {
+                // Wait up to 5 seconds for star map to initialize
+                for (let i = 0; i < 50; i++) {
+                    if (this.starMapVisualization?.isInitialized) {
+                        this.starMapVisualization.show();
+                        console.log('[App] Galaxy view activated behind loading screen');
+                        return true;
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                console.warn('[App] Star map failed to initialize');
+                return false;
+            };
+
+            await showStarMap();
+
+            // Now fade out loading screen - galaxy view is already visible underneath
+            await this.fadeOutLoadingScreen(true);
+
             // Display initial game state
             const initialState = window.gameEngine.getGameState();
             if (initialState) {
                 this.updateUIPanels(initialState);
                 this.updateVisualization(initialState);
+
+                // Populate initial resource particles from starting state
+                // This is especially useful for endgame difficulty which has pre-existing resources
+                if (this.solarSystem && this.solarSystem.populateInitialParticles) {
+                    this.solarSystem.populateInitialParticles(initialState);
+                }
             }
         } catch (error) {
             console.error('Failed to start game:', error);
@@ -1311,8 +1913,9 @@ class App {
                     profiler.recordUIProbeUpdateTime(probeUITime);
                 }
                 
-                // Check for game completion
-                if (gameState.dyson_sphere?.progress >= 1.0) {
+                // Check for game completion (only trigger once)
+                if (gameState.dyson_sphere?.progress >= 1.0 && !this._gameCompleted) {
+                    this._gameCompleted = true;
                     this.onGameComplete();
                 }
             }
@@ -1426,13 +2029,14 @@ class App {
         if (window.gameEngine) {
             window.gameEngine.stop();
         }
-        
-        // Hide game UI
+
+        // Ensure loading screen is hidden (in case it was shown during error)
         const loadingScreen = document.getElementById('loading-screen');
         if (loadingScreen) {
+            loadingScreen.classList.remove('fade-out');
             loadingScreen.style.display = 'none';
         }
-        
+
         // Show menu
         this.showGameMenu();
     }
@@ -1488,7 +2092,8 @@ class App {
 
         // Update structures visualization
         if (this.structuresViz) {
-            this.structuresViz.update(baseDeltaTime); // Structures don't need to speed up
+            const gameState = window.gameEngine?.getGameState();
+            this.structuresViz.update(baseDeltaTime, gameState); // Pass gameState for depletion checking
         }
         
         // Animate transfer dots smoothly every frame (60fps)

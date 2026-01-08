@@ -780,17 +780,20 @@ class ResourceDisplay {
             }
         }
         
+        // Get consumption from derived totals
+        const intelligenceConsumed = totals.intelligence_consumed || 0;
+
         if (activeResearchCount > 0) {
             const flopsPerProject = totalProduction / activeResearchCount;
-            
+
             html += `<div class="breakdown-category">
                 <div class="category-header">🔬 Active Research <span class="header-detail">(${activeResearchCount} project${activeResearchCount > 1 ? 's' : ''})</span></div>`;
-            
+
             for (const project of researchProjects.slice(0, 5)) { // Show up to 5
                 const treeName = project.tree.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                 html += `<div class="breakdown-row indent">
                     <span class="row-label">${treeName} T${project.tier} <span class="detail">(${project.progress}%)</span></span>
-                    <span class="row-value">${this.formatFLOPS(flopsPerProject)}</span>
+                    <span class="row-value negative">${this.formatFLOPS(flopsPerProject)}</span>
                 </div>`;
             }
             if (researchProjects.length > 5) {
@@ -807,11 +810,57 @@ class ResourceDisplay {
                 </div>
             </div>`;
         }
-        
-        html += '</div>';
-        
-        // Note
-        html += `<div class="breakdown-note">💡 Compute power is distributed equally among active research projects. Probe compute scales with intelligence research.</div>`;
+
+        // Drone coordination compute usage
+        // Get total probe count for coordination info
+        let totalProbeCount = 0;
+        for (const [zoneId, zoneProbes] of Object.entries(probesByZone)) {
+            totalProbeCount += zoneProbes['probe'] || 0;
+        }
+
+        if (totalProbeCount > 0) {
+            // Compute skill helps with drone coordination
+            const computerSkill = gameState.skills?.computer?.total || 1.0;
+            const baseEfficiency = Math.max(0, 100 - (40 * Math.log2(Math.max(1, totalProbeCount)) / Math.log2(2)));
+            const improvedEfficiency = Math.max(0, 100 - (1 * Math.log2(Math.max(1, totalProbeCount)) / Math.log2(2)));
+            const currentEfficiency = baseEfficiency + (improvedEfficiency - baseEfficiency) * ((computerSkill - 1.0) / 2.18);
+
+            html += `<div class="breakdown-category">
+                <div class="category-header">🤖 Drone Coordination <span class="header-detail">(skill-based)</span></div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Total Drones</span>
+                    <span class="row-value">${this.formatNumber(totalProbeCount)}</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Computer Skill</span>
+                    <span class="row-value">${computerSkill.toFixed(2)}x</span>
+                </div>
+                <div class="breakdown-row indent">
+                    <span class="row-label">Coordination Efficiency</span>
+                    <span class="row-value ${currentEfficiency > 50 ? 'positive' : 'warning'}">${currentEfficiency.toFixed(1)}%</span>
+                </div>
+            </div>`;
+        }
+
+        // Consumption total
+        html += `<div class="breakdown-total">
+            <span class="total-label">Total Compute Used</span>
+            <span class="total-value negative">${this.formatFLOPS(intelligenceConsumed)}</span>
+        </div></div>`;
+
+        // ======= NET SECTION =======
+        const netIntelligence = totalProduction - intelligenceConsumed;
+        const netClass = netIntelligence < 0 ? 'negative' : (activeResearchCount > 0 ? 'dimmed' : 'positive');
+        html += `<div class="breakdown-net ${netClass}">
+            <span class="net-label">Net Compute</span>
+            <span class="net-value">${this.formatFLOPS(netIntelligence)}</span>
+        </div>`;
+
+        if (activeResearchCount === 0 && totalProduction > 0) {
+            html += `<div class="breakdown-note">💡 No active research projects. Enable research in the Tech Tree to use compute power.</div>`;
+        } else if (activeResearchCount > 0) {
+            html += `<div class="breakdown-note">💡 Compute is distributed equally among active research projects.</div>`;
+        }
         
         container.innerHTML = html;
     }
@@ -1285,9 +1334,10 @@ class ResourceDisplay {
         if (energyConsumedEl) energyConsumedEl.textContent = this.formatEnergy(energyConsumption);
 
         // Update intelligence display (Net, Produced, Consumed)
+        // Intelligence is consumed by active research projects
         const intelligenceProduction = totals.intelligence_produced || 0;
-        const intelligenceConsumption = 0; // Intelligence is not consumed, only produced
-        const intelligenceNet = intelligenceProduction - intelligenceConsumption;
+        const intelligenceConsumption = totals.intelligence_consumed || 0;
+        const intelligenceNet = totals.intelligence_net || (intelligenceProduction - intelligenceConsumption);
         const intelligenceNetEl = document.getElementById('resource-intelligence-net');
         const intelligenceProducedEl = document.getElementById('resource-intelligence-produced');
         const intelligenceConsumedEl = document.getElementById('resource-intelligence-consumed');

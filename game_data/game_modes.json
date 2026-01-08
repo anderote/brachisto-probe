@@ -1,0 +1,188 @@
+{
+  "description": "Game starting modes - different ways to begin the game",
+
+  "modes": [
+    {
+      "id": "standard",
+      "name": "Standard Start",
+      "description": "Begin with a small probe on Earth. Build up from nothing to colonize the solar system.",
+      "unlock_requirement": null,
+      "starting_state": {
+        "time": 0,
+        "probes_by_zone": {
+          "earth": 1
+        },
+        "structures_by_zone": {},
+        "dyson_sphere": {
+          "mass_kg": 0,
+          "completion_percent": 0
+        },
+        "research": {},
+        "propulsion_tier": 1,
+        "all_tiers": 1
+      }
+    },
+    {
+      "id": "solar_era",
+      "name": "Solar Era",
+      "description": "Start with 1 million probes and basic infrastructure. Skip the early grind.",
+      "unlock_requirement": "complete_standard_once",
+      "starting_state": {
+        "time": 365,
+        "probes_by_zone": {
+          "earth": 100000,
+          "mars": 100000,
+          "asteroid_belt": 500000,
+          "jupiter": 200000,
+          "saturn": 100000
+        },
+        "structures_by_zone": {
+          "earth": { "solar_array": 100, "mass_driver": 10 },
+          "mars": { "solar_array": 50, "mass_driver": 5 },
+          "asteroid_belt": { "solar_array": 200, "mass_driver": 20, "factory": 10 }
+        },
+        "dyson_sphere": {
+          "mass_kg": 1e20,
+          "completion_percent": 0.0001
+        },
+        "propulsion_tier": 6,
+        "all_tiers": 5
+      }
+    },
+    {
+      "id": "dyson_era",
+      "name": "Dyson Era",
+      "description": "Start with a 50% complete Dyson Sphere and advanced technology. Focus on finishing the sphere.",
+      "unlock_requirement": "complete_solar_era_once",
+      "starting_state": {
+        "time": 3650,
+        "probes_by_zone": {
+          "earth": 1e9,
+          "mars": 1e9,
+          "asteroid_belt": 1e10,
+          "jupiter": 5e9,
+          "saturn": 2e9,
+          "uranus": 1e9,
+          "neptune": 5e8,
+          "kuiper_belt": 1e9,
+          "inner_oort": 1e8
+        },
+        "structures_by_zone": {
+          "earth": { "solar_array": 10000, "mass_driver": 1000, "factory": 500 },
+          "asteroid_belt": { "solar_array": 50000, "mass_driver": 5000, "factory": 2000 },
+          "jupiter": { "solar_array": 20000, "mass_driver": 2000 }
+        },
+        "dyson_sphere": {
+          "mass_kg": 1e26,
+          "completion_percent": 50
+        },
+        "propulsion_tier": 12,
+        "all_tiers": 10
+      }
+    },
+    {
+      "id": "interstellar_era",
+      "name": "Interstellar Era",
+      "description": "Start with a COMPLETE Dyson Sphere around Sol. All research at tier 17. Ready to colonize the stars!",
+      "unlock_requirement": "complete_dyson_sphere_once",
+      "starting_state": {
+        "time": 36500,
+        "probes_by_zone": {
+          "earth": 1e12,
+          "mars": 1e12,
+          "asteroid_belt": 1e13,
+          "jupiter": 5e12,
+          "saturn": 2e12,
+          "uranus": 1e12,
+          "neptune": 1e12,
+          "kuiper_belt": 5e12,
+          "inner_oort": 1e12,
+          "outer_oort": 5e11
+        },
+        "structures_by_zone": {
+          "earth": { "solar_array": 100000, "mass_driver": 10000, "factory": 5000 },
+          "asteroid_belt": { "solar_array": 500000, "mass_driver": 50000, "factory": 20000 },
+          "jupiter": { "solar_array": 200000, "mass_driver": 20000, "factory": 10000 },
+          "saturn": { "solar_array": 100000, "mass_driver": 10000, "factory": 5000 }
+        },
+        "dyson_sphere": {
+          "mass_kg": 2e27,
+          "completion_percent": 100,
+          "power_output_w": 3.828e26
+        },
+        "propulsion_tier": 17,
+        "all_tiers": 17,
+        "galaxy_unlocked": true,
+        "nearby_stars_discovered": true
+      }
+    },
+    {
+      "id": "warp_era",
+      "name": "Warp Era",
+      "description": "Start with Alcubierre warp drive (tier 18) and 3 colonized star systems. Race to the galactic center!",
+      "unlock_requirement": "colonize_3_systems",
+      "starting_state": {
+        "time": 365000,
+        "probes_by_zone": {
+          "earth": 1e15,
+          "asteroid_belt": 1e16,
+          "jupiter": 1e15,
+          "kuiper_belt": 1e15
+        },
+        "structures_by_zone": {
+          "asteroid_belt": { "solar_array": 1000000, "mass_driver": 100000, "factory": 50000 }
+        },
+        "dyson_sphere": {
+          "mass_kg": 2e27,
+          "completion_percent": 100
+        },
+        "propulsion_tier": 18,
+        "all_tiers": 18,
+        "galaxy_unlocked": true,
+        "colonized_systems": ["sol", "alpha_centauri", "barnards_star"],
+        "systems_state": {
+          "alpha_centauri": {
+            "colonized": true,
+            "probes": 1e12,
+            "dyson_percent": 10
+          },
+          "barnards_star": {
+            "colonized": true,
+            "probes": 5e11,
+            "dyson_percent": 5
+          }
+        }
+      }
+    }
+  ],
+
+  "mode_progression": {
+    "description": "Unlocking higher modes",
+    "standard": { "unlocks": ["solar_era"] },
+    "solar_era": { "unlocks": ["dyson_era"] },
+    "dyson_era": { "unlocks": ["interstellar_era"] },
+    "interstellar_era": { "unlocks": ["warp_era"] }
+  },
+
+  "sandbox_mode": {
+    "id": "sandbox",
+    "name": "Sandbox",
+    "description": "Start with everything unlocked. For testing and experimentation.",
+    "unlock_requirement": null,
+    "always_available": true,
+    "starting_state": {
+      "time": 0,
+      "probes_by_zone": {
+        "earth": 1e18
+      },
+      "dyson_sphere": {
+        "mass_kg": 0,
+        "completion_percent": 0
+      },
+      "propulsion_tier": 18,
+      "all_tiers": 18,
+      "galaxy_unlocked": true,
+      "infinite_resources": true
+    }
+  }
+}

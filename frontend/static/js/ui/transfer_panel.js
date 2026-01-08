@@ -138,18 +138,20 @@ class TransferPanel {
                 if (massDriverCount > 0) {
                     // Estimate mass driver stats from game state's tech upgrade factors
                     const upgradeFactors = this.gameState.tech_upgrade_factors || {};
-                    const basePowerMW = 100; // Default base power
-                    const baseEfficiency = 0.4; // Default efficiency
-                    const baseMuzzleVelocityKmS = 3.0; // Default muzzle velocity
-                    
+                    const basePowerMW = 100; // Default base power from buildings.json
+                    const baseEfficiency = 0.4; // Default efficiency from buildings.json
+                    const baseMuzzleVelocityKmS = 8.5; // Base muzzle velocity from economic_rules.json
+                    const maxMuzzleVelocityKmS = 45; // Max muzzle velocity from economic_rules.json
+
                     // Apply upgrade factors
                     const powerFactor = upgradeFactors.mass_driver_power || 1.0;
                     const efficiencyFactor = upgradeFactors.mass_driver_efficiency || 1.0;
                     const muzzleVelocityFactor = upgradeFactors.mass_driver_muzzle_velocity || 1.0;
-                    
+
                     const effectivePowerMW = basePowerMW * powerFactor * massDriverCount;
                     const effectiveEfficiency = Math.min(1.0, baseEfficiency * efficiencyFactor);
-                    const effectiveMuzzleVelocityKmS = baseMuzzleVelocityKmS * muzzleVelocityFactor;
+                    // Cap muzzle velocity at max
+                    const effectiveMuzzleVelocityKmS = Math.min(maxMuzzleVelocityKmS, baseMuzzleVelocityKmS * muzzleVelocityFactor);
                     
                     // Estimate delta-v from zone info (use transfer_time as proxy for distance)
                     // For now, use a reference delta-v of 5 km/s as a rough estimate

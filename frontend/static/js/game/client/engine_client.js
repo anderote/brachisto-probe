@@ -13,6 +13,9 @@ class GameEngineClient {
         this.pendingActions = new Map();
         this.actionIdCounter = 0;
         this.timeSpeed = 1.0; // Default time speed
+        this.autoSaveInterval = null;
+        this.lastSaveTime = 0;
+        this.autoSaveIntervalMs = 5000; // Auto-save every 5 seconds
     }
     
     /**
@@ -71,6 +74,8 @@ class GameEngineClient {
                 if (data.gameState) {
                     this.stateManager.updateState(data.gameState);
                 }
+                // Start auto-save after game starts
+                this.startAutoSave();
                 break;
                 
             case 'stopComplete':
@@ -179,6 +184,10 @@ class GameEngineClient {
      * Stop game engine
      */
     stop() {
+        // Save before stopping
+        this.saveGame();
+        this.stopAutoSave();
+
         if (this.worker) {
             this.worker.postMessage({ type: 'stop' });
         }
@@ -234,6 +243,140 @@ class GameEngineClient {
      */
     generateActionId() {
         return 'action_' + Date.now() + '_' + (++this.actionIdCounter);
+    }
+
+    /**
+     * Start auto-save interval
+     */
+    startAutoSave() {
+        this.stopAutoSave(); // Clear any existing interval
+        this.autoSaveInterval = setInterval(() => {
+            this.saveGame();
+        }, this.autoSaveIntervalMs);
+
+        // Also save on page unload
+        this._beforeUnloadHandler = () => {
+            this.saveGameSync();
+        };
+        window.addEventListener('beforeunload', this._beforeUnloadHandler);
+    }
+
+    /**
+     * Stop auto-save interval
+     */
+    stopAutoSave() {
+        if (this.autoSaveInterval) {
+            clearInterval(this.autoSaveInterval);
+            this.autoSaveInterval = null;
+        }
+        if (this._beforeUnloadHandler) {
+            window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+            this._beforeUnloadHandler = null;
+        }
+    }
+
+    /**
+     * Save current game state to IndexedDB
+     */
+    async saveGame() {
+        if (!this.sessionId || !this.isRunning) return;
+
+        const gameState = this.getGameState();
+        if (!gameState) return;
+
+        // Include galaxy state if star map visualization exists
+        if (window.app?.starMapVisualization) {
+            gameState.galaxy = window.app.starMapVisualization.getGalaxyState();
+        }
+
+        try {
+            await gameStorage.saveGameState(this.sessionId, gameState);
+            this.lastSaveTime = Date.now();
+            // Store session ID for quick resume
+            localStorage.setItem('brachisto-last-session', this.sessionId);
+        } catch (error) {
+            console.warn('Auto-save failed:', error);
+        }
+    }
+
+    /**
+     * Synchronous save for beforeunload (uses localStorage as fallback)
+     */
+    saveGameSync() {
+        if (!this.sessionId || !this.isRunning) return;
+
+        const gameState = this.getGameState();
+        if (!gameState) return;
+
+        // Include galaxy state if star map visualization exists
+        if (window.app?.starMapVisualization) {
+            gameState.galaxy = window.app.starMapVisualization.getGalaxyState();
+        }
+
+        try {
+            // Store in localStorage as emergency backup
+            const saveData = {
+                sessionId: this.sessionId,
+                gameState: gameState,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('brachisto-emergency-save', JSON.stringify(saveData));
+        } catch (error) {
+            console.warn('Emergency save failed:', error);
+        }
+    }
+
+    /**
+     * Check if there's a saved game to resume
+     * @returns {Promise<{sessionId: string, gameState: object}|null>}
+     */
+    async checkForSavedGame() {
+        try {
+            // First check emergency save
+            const emergencySave = localStorage.getItem('brachisto-emergency-save');
+            if (emergencySave) {
+                const saveData = JSON.parse(emergencySave);
+                // Only use if less than 1 hour old
+                if (Date.now() - saveData.timestamp < 3600000) {
+                    console.log('Found emergency save from', new Date(saveData.timestamp).toLocaleString());
+                    return saveData;
+                }
+            }
+
+            // Check last session
+            const lastSessionId = localStorage.getItem('brachisto-last-session');
+            if (lastSessionId) {
+                const savedState = await gameStorage.loadGameState(lastSessionId);
+                if (savedState) {
+                    return { sessionId: lastSessionId, gameState: savedState };
+                }
+            }
+
+            return null;
+        } catch (error) {
+            console.warn('Failed to check for saved game:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Clear emergency save (call after successful load)
+     */
+    clearEmergencySave() {
+        try {
+            localStorage.removeItem('brachisto-emergency-save');
+        } catch (e) {
+            // Ignore
+        }
+    }
+
+    /**
+     * Resume from saved game state
+     */
+    async resumeGame(sessionId, savedState) {
+        this.sessionId = sessionId;
+        this.clearEmergencySave();
+        return this.start(sessionId, {}, savedState);
     }
 }
 

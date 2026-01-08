@@ -285,36 +285,55 @@ class EnergyCalculator {
      */
     calculateProbeEnergyConsumption(probesByZone, probeAllocationsByZone, skills, state = null) {
         let totalConsumption = 0;
-        
+
         // Calculate effective energy costs based on current skills
         // Only mining and slag recycling consume energy
         const miningCost = this.getEffectiveEnergyCost(this.BASE_ENERGY_COST_MINING, skills, 'mining');
         const recycleSlagCost = this.getEffectiveEnergyCost(this.BASE_ENERGY_COST_RECYCLE_SLAG, skills, 'recycle_slag');
-        
+
+        // Get zone data for resource availability
+        const zones = state?.zones || {};
+
         for (const zoneId in probesByZone) {
             const zoneProbes = probesByZone[zoneId] || {};
             const totalProbes = zoneProbes['probe'] || 0;
-            
+
             if (totalProbes === 0) continue;
-            
+
+            // Get zone resource availability
+            const zoneData = zones[zoneId] || {};
+            const massRemaining = zoneData.mass_remaining || 0;
+            const slagAvailable = zoneData.slag_mass || 0;
+
             // Get allocations for this zone
             const allocations = probeAllocationsByZone[zoneId] || {};
             const harvestAllocation = allocations.harvest || 0;
             const recycleAllocation = allocations.recycle || 0;  // Slag recycling
-            
+
             // Calculate probes doing each activity that costs energy
-            const miningProbes = totalProbes * harvestAllocation;
-            const recycleSlagProbes = totalProbes * recycleAllocation;
-            
+            // BUT only consume energy if there's actually work to do
+            let miningProbes = totalProbes * harvestAllocation;
+            let recycleSlagProbes = totalProbes * recycleAllocation;
+
+            // If zone is depleted (no mass remaining), mining consumes no energy
+            if (massRemaining <= 0) {
+                miningProbes = 0;
+            }
+
+            // If no slag available, recycling consumes no energy
+            if (slagAvailable <= 0) {
+                recycleSlagProbes = 0;
+            }
+
             // Calculate consumption by activity type (using skill-adjusted costs)
             // Only mining and slag recycling have energy costs
             let zoneConsumption = 0;
             zoneConsumption += miningProbes * miningCost;
             zoneConsumption += recycleSlagProbes * recycleSlagCost;
-            
+
             totalConsumption += zoneConsumption;
         }
-        
+
         return totalConsumption;
     }
     

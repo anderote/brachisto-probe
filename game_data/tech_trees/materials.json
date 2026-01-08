@@ -1,0 +1,451 @@
+{
+  "tree_id": "materials",
+  "name": "Materials Science",
+  "category": "dexterity",
+  "description": "Structural materials affecting mass, strength, and durability. Lighter materials mean more delta-v and easier construction.",
+
+  "physics_model": {
+    "primary_effect": "mass_reduction_factor",
+    "secondary_effects": ["tensile_strength", "radiation_resistance"],
+    "key_metric": "specific_strength",
+    "formula": "specific_strength = tensile_strength / density (N·m/kg)"
+  },
+
+  "display_format": {
+    "primary": "{tensile_strength_gpa} GPa",
+    "secondary": "({density_kg_m3} kg/m³)",
+    "effect": "[{mass_factor}× mass, {strength_factor}× strength]",
+    "example": "130 GPa (1000 kg/m³) [0.2× mass, 260× strength]"
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "id": "steel_alloys",
+      "name": "Steel Alloys",
+      "description": "High-strength low-alloy steels. Reliable, well-understood, but heavy.",
+      "physics": {
+        "tensile_strength_mpa": 1000,
+        "tensile_strength_gpa": 1.0,
+        "density_kg_m3": 7850,
+        "specific_strength_knm_kg": 127,
+        "youngs_modulus_gpa": 200,
+        "thermal_expansion_ppm_k": 12
+      },
+      "derived_effects": {
+        "mass_factor": 1.0,
+        "strength_factor": 1.0,
+        "probe_mass_reduction": 1.0,
+        "description": "Baseline structural material"
+      },
+      "research": {
+        "base_cost_eflop_days": 5,
+        "tranches": 5,
+        "cost_per_tranche": 1
+      },
+      "historical_reference": "Maraging steel, 4340, 17-4 PH stainless",
+      "unlocks": ["aluminum_alloys"]
+    },
+    {
+      "tier": 2,
+      "id": "aluminum_alloys",
+      "name": "Aluminum Alloys (7075-T6)",
+      "description": "Aerospace-grade aluminum. Lower strength than steel but much lighter.",
+      "physics": {
+        "tensile_strength_mpa": 570,
+        "tensile_strength_gpa": 0.57,
+        "density_kg_m3": 2810,
+        "specific_strength_knm_kg": 203,
+        "youngs_modulus_gpa": 72,
+        "thermal_expansion_ppm_k": 24
+      },
+      "derived_effects": {
+        "mass_factor": 0.85,
+        "strength_factor": 0.6,
+        "specific_strength_ratio": 1.6,
+        "description": "Standard aerospace material"
+      },
+      "research": {
+        "base_cost_eflop_days": 15,
+        "tranches": 6,
+        "cost_per_tranche": 2.5
+      },
+      "historical_reference": "Aircraft structures, rocket bodies, Apollo",
+      "unlocks": ["titanium_alloys"]
+    },
+    {
+      "tier": 3,
+      "id": "titanium_alloys",
+      "name": "Titanium Alloys (Ti-6Al-4V)",
+      "description": "High strength-to-weight with excellent corrosion and radiation resistance.",
+      "physics": {
+        "tensile_strength_mpa": 1100,
+        "tensile_strength_gpa": 1.1,
+        "density_kg_m3": 4430,
+        "specific_strength_knm_kg": 248,
+        "youngs_modulus_gpa": 114,
+        "radiation_resistant": true
+      },
+      "derived_effects": {
+        "mass_factor": 0.75,
+        "strength_factor": 1.1,
+        "radiation_bonus": 1.5,
+        "description": "Premium aerospace material"
+      },
+      "research": {
+        "base_cost_eflop_days": 40,
+        "tranches": 8,
+        "cost_per_tranche": 5
+      },
+      "historical_reference": "SR-71, jet engines, spacecraft, medical implants",
+      "unlocks": ["cfrp"]
+    },
+    {
+      "tier": 4,
+      "id": "cfrp",
+      "name": "Carbon Fiber Reinforced Polymer",
+      "description": "Polymer matrix with carbon fiber reinforcement. Exceptional specific strength.",
+      "physics": {
+        "tensile_strength_mpa": 3500,
+        "tensile_strength_gpa": 3.5,
+        "density_kg_m3": 1550,
+        "specific_strength_knm_kg": 2258,
+        "youngs_modulus_gpa": 181,
+        "anisotropic": true
+      },
+      "derived_effects": {
+        "mass_factor": 0.50,
+        "strength_factor": 3.5,
+        "specific_strength_ratio": 17.8,
+        "description": "Modern high-performance composites"
+      },
+      "research": {
+        "base_cost_eflop_days": 100,
+        "tranches": 8,
+        "cost_per_tranche": 12.5
+      },
+      "historical_reference": "787 Dreamliner, F1 cars, spacecraft",
+      "unlocks": ["cnt_composites"]
+    },
+    {
+      "tier": 5,
+      "id": "cnt_composites",
+      "name": "Carbon Nanotube Composites",
+      "description": "CNT-reinforced materials. Approaching theoretical carbon bond strength.",
+      "physics": {
+        "tensile_strength_mpa": 50000,
+        "tensile_strength_gpa": 50,
+        "density_kg_m3": 1350,
+        "specific_strength_knm_kg": 37037,
+        "youngs_modulus_gpa": 1000,
+        "electrical_conductivity": "high"
+      },
+      "derived_effects": {
+        "mass_factor": 0.30,
+        "strength_factor": 50,
+        "space_elevator_viable": "marginal",
+        "description": "Beginning of nanotechnology materials"
+      },
+      "research": {
+        "base_cost_eflop_days": 400,
+        "tranches": 10,
+        "cost_per_tranche": 40
+      },
+      "historical_reference": "Lab demonstrations, early commercial products",
+      "unlocks": ["graphene_composites"]
+    },
+    {
+      "tier": 6,
+      "id": "graphene_composites",
+      "name": "Graphene Composites",
+      "description": "Single-layer carbon sheets in structural matrices. Theoretical strength of carbon bonds.",
+      "physics": {
+        "tensile_strength_mpa": 130000,
+        "tensile_strength_gpa": 130,
+        "density_kg_m3": 1000,
+        "specific_strength_knm_kg": 130000,
+        "youngs_modulus_gpa": 1050,
+        "electrical_conductivity": "metallic"
+      },
+      "derived_effects": {
+        "mass_factor": 0.20,
+        "strength_factor": 130,
+        "space_elevator_viable": true,
+        "description": "Space elevators become practical"
+      },
+      "research": {
+        "base_cost_eflop_days": 1200,
+        "tranches": 10,
+        "cost_per_tranche": 120
+      },
+      "historical_reference": "Nobel Prize 2010, intense research ongoing",
+      "unlocks": ["bnnt"]
+    },
+    {
+      "tier": 7,
+      "id": "bnnt",
+      "name": "Boron Nitride Nanotubes",
+      "description": "BN analog of CNTs. Chemically inert, radiation resistant, electrically insulating.",
+      "physics": {
+        "tensile_strength_mpa": 60000,
+        "tensile_strength_gpa": 60,
+        "density_kg_m3": 1380,
+        "specific_strength_knm_kg": 43478,
+        "youngs_modulus_gpa": 900,
+        "radiation_resistant": true,
+        "self_healing": true
+      },
+      "derived_effects": {
+        "mass_factor": 0.18,
+        "strength_factor": 60,
+        "radiation_bonus": 3.0,
+        "description": "Self-healing radiation-resistant structures"
+      },
+      "research": {
+        "base_cost_eflop_days": 4000,
+        "tranches": 10,
+        "cost_per_tranche": 400
+      },
+      "historical_reference": "NASA research, BNNT LLC commercial production",
+      "unlocks": ["diamond_nanothreads"]
+    },
+    {
+      "tier": 8,
+      "id": "diamond_nanothreads",
+      "name": "Diamond Nanothreads",
+      "description": "One-dimensional diamond crystals from compressed benzene. Ultimate tensile strength.",
+      "physics": {
+        "tensile_strength_mpa": 300000,
+        "tensile_strength_gpa": 300,
+        "density_kg_m3": 1100,
+        "specific_strength_knm_kg": 272727,
+        "youngs_modulus_gpa": 850,
+        "formation": "high_pressure_synthesis"
+      },
+      "derived_effects": {
+        "mass_factor": 0.12,
+        "strength_factor": 300,
+        "space_elevator_optimal": true,
+        "description": "Optimal space tether material"
+      },
+      "research": {
+        "base_cost_eflop_days": 12000,
+        "tranches": 10,
+        "cost_per_tranche": 1200
+      },
+      "historical_reference": "Penn State 2014, theoretical predictions confirmed",
+      "unlocks": ["metallic_hydrogen"]
+    },
+    {
+      "tier": 9,
+      "id": "metallic_hydrogen",
+      "name": "Metastable Metallic Hydrogen",
+      "description": "Solid metallic hydrogen stable at ambient conditions. Superconducting and extreme energy density.",
+      "physics": {
+        "tensile_strength_mpa": "unknown",
+        "density_kg_m3": 1300,
+        "superconducting": true,
+        "critical_temp_k": 300,
+        "energy_density_mj_kg": 216000,
+        "metastable": true
+      },
+      "derived_effects": {
+        "mass_factor": 0.10,
+        "strength_factor": 100,
+        "room_temp_superconductor": true,
+        "energy_storage_bonus": 1000,
+        "description": "Room-temperature superconductor + explosive energy"
+      },
+      "research": {
+        "base_cost_eflop_days": 40000,
+        "tranches": 10,
+        "cost_per_tranche": 4000
+      },
+      "historical_reference": "Theoretical since 1935, Harvard claims 2017 (disputed)",
+      "unlocks": ["apm"]
+    },
+    {
+      "tier": 10,
+      "id": "apm",
+      "name": "Atomically-Precise Manufacturing",
+      "description": "Molecular nanotechnology - build structures atom by atom with zero defects.",
+      "physics": {
+        "tensile_strength_mpa": "theoretical_max",
+        "density_kg_m3": "variable",
+        "defect_density": 0,
+        "note": "Achieves theoretical limits for any material"
+      },
+      "derived_effects": {
+        "mass_factor": 0.08,
+        "strength_factor": 500,
+        "perfect_crystals": true,
+        "description": "Manufacture anything at atomic precision"
+      },
+      "research": {
+        "base_cost_eflop_days": 120000,
+        "tranches": 10,
+        "cost_per_tranche": 12000
+      },
+      "historical_reference": "Drexler nanotechnology vision, mechanosynthesis research",
+      "unlocks": ["programmable_matter"]
+    },
+    {
+      "tier": 11,
+      "id": "programmable_matter",
+      "name": "Programmable Matter",
+      "description": "Materials that reconfigure their structure on command. Variable properties.",
+      "physics": {
+        "tensile_strength_mpa": "programmable",
+        "density_kg_m3": "variable",
+        "reconfiguration_time_s": 0.1,
+        "shape_memory": true
+      },
+      "derived_effects": {
+        "mass_factor": 0.05,
+        "strength_factor": "variable",
+        "morphing_structures": true,
+        "description": "Self-reconfiguring adaptive structures"
+      },
+      "research": {
+        "base_cost_eflop_days": 400000,
+        "tranches": 10,
+        "cost_per_tranche": 40000
+      },
+      "historical_reference": "DARPA programmable matter program, claytronics",
+      "unlocks": ["strange_matter"]
+    },
+    {
+      "tier": 12,
+      "id": "strange_matter",
+      "name": "Strange Quark Matter",
+      "description": "Stable strange quark matter nuggets. Nuclear density, absolute stability.",
+      "physics": {
+        "density_kg_m3": 4e17,
+        "density_note": "Nuclear density",
+        "stability": "absolute",
+        "strange_quark_content": true
+      },
+      "derived_effects": {
+        "mass_factor": 0.02,
+        "strength_factor": 1e10,
+        "indestructible": true,
+        "description": "Nearly indestructible structures"
+      },
+      "research": {
+        "base_cost_eflop_days": 2000000,
+        "tranches": 10,
+        "cost_per_tranche": 200000
+      },
+      "historical_reference": "Strange matter hypothesis (Witten 1984), RHIC searches",
+      "unlocks": ["exotic_matter"]
+    },
+    {
+      "tier": 13,
+      "id": "exotic_matter",
+      "name": "Negative Mass Exotic Matter",
+      "description": "Matter with negative gravitational mass. Required for warp drives and traversable wormholes.",
+      "physics": {
+        "mass_sign": "negative",
+        "violates": "weak_energy_condition",
+        "enables": ["alcubierre_drive", "traversable_wormholes", "exotic_confinement"]
+      },
+      "derived_effects": {
+        "mass_factor": 0.01,
+        "strength_factor": 1e11,
+        "warp_capable": true,
+        "description": "Enables spacetime engineering"
+      },
+      "research": {
+        "base_cost_eflop_days": 20000000,
+        "tranches": 10,
+        "cost_per_tranche": 2000000
+      },
+      "historical_reference": "Casimir effect, squeezed vacuum states, Alcubierre requirements",
+      "unlocks": ["metamaterial_cloak"]
+    },
+    {
+      "tier": 14,
+      "id": "metamaterial_cloak",
+      "name": "Trans-Medium Metamaterial",
+      "description": "Programmable metamaterial that enables seamless transition between space, atmosphere, and underwater. As observed in UAP exhibiting trans-medium travel.",
+      "physics": {
+        "refractive_index": "programmable",
+        "em_transparency": true,
+        "acoustic_transparency": true,
+        "plasma_sheath": "controlled",
+        "drag_coefficient": 0.001
+      },
+      "derived_effects": {
+        "mass_factor": 0.005,
+        "strength_factor": 1e12,
+        "trans_medium": true,
+        "description": "Seamless space/air/water transition"
+      },
+      "research": {
+        "base_cost_eflop_days": 200000000,
+        "tranches": 10,
+        "cost_per_tranche": 20000000
+      },
+      "historical_reference": "Tic Tac UAP trans-medium observations, USS Nimitz 2004, USS Omaha 2019",
+      "unlocks": ["phase_matter"]
+    },
+    {
+      "tier": 15,
+      "id": "phase_matter",
+      "name": "Phase-Shifted Matter",
+      "description": "Matter existing in partial phase displacement from normal spacetime. Can pass through solid objects and exists in superposition of states.",
+      "physics": {
+        "phase_displacement": 0.5,
+        "spacetime_anchor": "partial",
+        "solid_penetration": true,
+        "quantum_state": "superposition"
+      },
+      "derived_effects": {
+        "mass_factor": 0.001,
+        "strength_factor": 1e15,
+        "phase_shift": true,
+        "description": "Partially outside normal spacetime"
+      },
+      "research": {
+        "base_cost_eflop_days": 2000000000,
+        "tranches": 10,
+        "cost_per_tranche": 200000000
+      },
+      "historical_reference": "Skinwalker Ranch phenomena, DIA AAWSAP dimensional research",
+      "unlocks": []
+    }
+  ],
+
+  "cross_effects": {
+    "propulsion": {
+      "description": "Lighter probes have more delta-v for same fuel",
+      "formula": "effective_mass_ratio = base_ratio / materials_factor",
+      "effect": "20% mass reduction = ~22% more delta-v"
+    },
+    "structures": {
+      "description": "Lighter structures easier to build and transport",
+      "formula": "build_cost = base_cost × materials_factor"
+    },
+    "mass_driver": {
+      "description": "Stronger materials allow higher projectile acceleration",
+      "formula": "max_g = base_g × strength_factor"
+    },
+    "space_elevator": {
+      "description": "Requires specific strength > 50 MN·m/kg for Earth",
+      "threshold_knm_kg": 50000,
+      "earth_viable_tier": 6
+    },
+    "radiation": {
+      "description": "Some materials have intrinsic radiation resistance",
+      "bonus_materials": ["titanium_alloys", "bnnt"]
+    }
+  },
+
+  "skill_integration": {
+    "legacy_skill_names": ["materials", "structures"],
+    "calculation": {
+      "description": "Materials tier maps to legacy multiplier",
+      "formula": "multiplier = 1 / mass_factor"
+    }
+  }
+}

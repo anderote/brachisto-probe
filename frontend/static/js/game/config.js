@@ -28,7 +28,11 @@ class Config {
     
     // Base skill values (starting values before research)
     // Propulsion: specific impulse in seconds
-    static BASE_PROPULSION_ISP = 500;  // seconds (starting specific impulse)
+    static BASE_PROPULSION_ISP = 300;  // seconds (starting specific impulse)
+    static MAX_PROPULSION_ISP = 4500;  // seconds (fully upgraded specific impulse)
+
+    // Probe mass (reducible via materials research)
+    static MIN_PROBE_MASS = 30;  // kg (fully upgraded minimum)
     
     // Dyson sphere energy production constants
     static DYSON_POWER_PER_SQ_M = 5000;  // watts per square meter (5 kW/m²)
@@ -53,7 +57,8 @@ class Config {
     // Structure geometric scaling exponent - FALLBACK (see economic_rules.json structures section)
     // Controls how cost and output scale with structure count
     // Cost of building N = baseCost * N^exponent, Output of N structures = baseOutput * N^exponent
-    static STRUCTURE_GEOMETRIC_SCALING_EXPONENT = 3.2;
+    // 0.5 = square root scaling: building #20000 costs ~141x base, not millions
+    static STRUCTURE_GEOMETRIC_SCALING_EXPONENT = 0.5;
     
     // Alpha factors for tech tree scaling (performance benefits)
     // FALLBACK values - see game_data/economic_rules.json for primary values

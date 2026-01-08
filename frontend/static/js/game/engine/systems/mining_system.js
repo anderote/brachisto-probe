@@ -1,14 +1,41 @@
 /**
  * Mining System
- * 
+ *
  * Zone mining and depletion
  * All rates in kg/day
+ *
+ * Resource Pool Model:
+ * - Planet surface: stored_metal stays on planet until lifted by space elevators
+ * - Orbital pool: shared among planet and all its moons
+ * - Moon zones: mine directly into parent planet's orbital pool
+ * - Space elevators: lift 1000 GT/day from surface to orbital pool
  */
 
 class MiningSystem {
     constructor(productionCalculator, orbitalMechanics) {
         this.productionCalculator = productionCalculator;
         this.orbitalMechanics = orbitalMechanics;
+
+        // Space elevator lifting capacity: 1000 gigatons/day = 1e15 kg/day
+        this.ELEVATOR_CAPACITY_KG_PER_DAY = 1e15;
+    }
+
+    /**
+     * Get the parent planet zone ID for a moon, or null if not a moon
+     */
+    getParentPlanetId(zoneId) {
+        const zoneData = this.orbitalMechanics.getZone(zoneId);
+        if (zoneData && zoneData.parent_zone) {
+            return zoneData.parent_zone;
+        }
+        return null;
+    }
+
+    /**
+     * Check if a zone is a moon
+     */
+    isMoonZone(zoneId) {
+        return this.getParentPlanetId(zoneId) !== null;
     }
     
     /**
@@ -48,20 +75,26 @@ class MiningSystem {
             if (!zones[zoneId]) {
                 // Get zone data from orbital mechanics
                 const zoneData = this.orbitalMechanics.getZone(zoneId);
-                
+
                 if (!zoneData) {
                     // Zone not found in orbital mechanics data - skip
                     continue;
                 }
-                
-                // New zone structure: track mass, not metal directly
+
+                // Check if this is a moon zone
+                const isMoon = this.isMoonZone(zoneId);
+
+                // Zone structure with surface/orbital resource pools
                 zones[zoneId] = {
                     mass_remaining: zoneData.total_mass_kg || 0,  // Un-mined mass
-                    stored_metal: 0,                               // Metal stored locally (for construction)
+                    stored_metal: 0,                               // Surface metal (on planet, needs elevator to lift)
+                    orbital_metal: 0,                              // Orbital metal (accessible to moons and orbital structures)
                     probe_mass: 0,                                 // Mass of all probes in zone
                     structure_mass: 0,                             // Mass of all structures in zone
                     slag_mass: 0,                                  // Mass of slag in zone
-                    depleted: false                                // True when mass_remaining <= 0
+                    depleted: false,                               // True when mass_remaining <= 0
+                    is_moon: isMoon,                               // True if this is a moon zone
+                    parent_zone: zoneData.parent_zone || null      // Parent planet ID for moons
                 };
             }
             
@@ -132,21 +165,126 @@ class MiningSystem {
             // Update zone state
             zone.mass_remaining = Math.max(0, massRemaining - actualMassExtracted);
             zone.slag_mass = (zone.slag_mass || 0) + slagProduced;
-            
-            // Add metal to zone's local storage (not global pool)
-            zone.stored_metal = (zone.stored_metal || 0) + metalExtracted;
-            
+
+            // Determine where to deposit metal based on zone type
+            const parentZoneId = zone.parent_zone;
+
+            if (parentZoneId && zones[parentZoneId]) {
+                // Moon zone: metal goes directly to parent planet's orbital pool
+                zones[parentZoneId].orbital_metal = (zones[parentZoneId].orbital_metal || 0) + metalExtracted;
+            } else if (parentZoneId) {
+                // Parent zone not yet initialized - store locally for now
+                zone.stored_metal = (zone.stored_metal || 0) + metalExtracted;
+            } else {
+                // Planet zone: metal goes to surface storage (needs elevator to lift)
+                zone.stored_metal = (zone.stored_metal || 0) + metalExtracted;
+            }
+
             // Check if depleted
             if (zone.mass_remaining <= 0) {
                 zone.depleted = true;
+
+                // Handle planet depletion - merge resources into orbit
+                if (!zone.is_moon && !zone.parent_zone) {
+                    this.handlePlanetDepletion(zones, zoneId);
+                }
             }
-            
+
             // Add slag to global pool (for global tracking, but also stored per-zone)
             newState.slag = (newState.slag || 0) + slagProduced;
         }
-        
+
+        // Process space elevator lifting for all zones
+        this.processSpaceElevators(newState, deltaTime, structuresByZone);
+
         newState.zones = zones;
         return newState;
+    }
+
+    /**
+     * Handle planet depletion - merge all resources into orbital pool
+     * When a planet is fully mined:
+     * - Surface metal moves to orbital pool
+     * - Moon resources merge into the orbital pool
+     * - Moons become independent (orbit the sun)
+     * @param {Object} zones - Zones object from state
+     * @param {string} planetZoneId - The depleted planet's zone ID
+     */
+    handlePlanetDepletion(zones, planetZoneId) {
+        const planetZone = zones[planetZoneId];
+        if (!planetZone) return;
+
+        // Move all surface metal to orbital pool
+        const surfaceMetal = planetZone.stored_metal || 0;
+        if (surfaceMetal > 0) {
+            planetZone.orbital_metal = (planetZone.orbital_metal || 0) + surfaceMetal;
+            planetZone.stored_metal = 0;
+        }
+
+        // Find all moons of this planet and make them independent
+        for (const zoneId of Object.keys(zones)) {
+            const zone = zones[zoneId];
+
+            if (zone.parent_zone === planetZoneId) {
+                // This is a moon of the depleted planet
+
+                // Any stored metal on the moon goes to the orbital pool
+                const moonStoredMetal = zone.stored_metal || 0;
+                if (moonStoredMetal > 0) {
+                    planetZone.orbital_metal = (planetZone.orbital_metal || 0) + moonStoredMetal;
+                    zone.stored_metal = 0;
+                }
+
+                // Moon becomes independent - clears parent reference
+                zone.parent_zone = null;
+                zone.is_moon = false;
+                zone.independent = true;  // Mark as formerly a moon, now independent
+                zone.former_parent = planetZoneId;  // Track what it used to orbit
+            }
+        }
+
+        // Mark planet as collapsed (all resources now in orbit)
+        planetZone.collapsed = true;
+    }
+
+    /**
+     * Process space elevators lifting metal from surface to orbital pool
+     * Each elevator lifts 1000 GT/day
+     */
+    processSpaceElevators(state, deltaTime, structuresByZone) {
+        const zones = state.zones || {};
+
+        for (const zoneId of Object.keys(zones)) {
+            const zone = zones[zoneId];
+
+            // Skip moon zones (elevators only on planets)
+            if (zone.is_moon || zone.parent_zone) {
+                continue;
+            }
+
+            // Get elevator count for this zone
+            const zoneStructures = structuresByZone[zoneId] || {};
+            const elevatorCount = zoneStructures['space_elevator'] || 0;
+
+            if (elevatorCount <= 0) {
+                continue;
+            }
+
+            // Calculate lifting capacity
+            const liftingCapacity = elevatorCount * this.ELEVATOR_CAPACITY_KG_PER_DAY * deltaTime;
+
+            // Get available surface metal
+            const surfaceMetal = zone.stored_metal || 0;
+
+            if (surfaceMetal <= 0) {
+                continue;
+            }
+
+            // Lift metal from surface to orbital pool
+            const metalLifted = Math.min(liftingCapacity, surfaceMetal);
+            zone.stored_metal = surfaceMetal - metalLifted;
+            zone.orbital_metal = (zone.orbital_metal || 0) + metalLifted;
+        }
     }
 }
 

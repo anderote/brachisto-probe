@@ -14,6 +14,14 @@ class OrbitalZoneSelector {
         // Transfer menu mode: 'probe' (default, 1 probe one-time), 'metal' (10% continuous), or 'methalox' (10% continuous)
         this.transferMenuMode = null; // null = closed, 'probe', 'metal', or 'methalox' = open
         this.transferMenuOpen = false; // Whether transfer menu (delta-v window) is open
+
+        // Moon selection mode - when pressing a planet hotkey twice in transfer menu
+        this.moonSelectionMode = false; // True when showing moon selection for a planet
+        this.moonSelectionPlanet = null; // The planet whose moons are being shown
+
+        // Moon data for planets with moons - loaded dynamically from data loader
+        // Keys are parent planet IDs, values are arrays of moon zone data
+        this.moonData = {};
         
         // Local calculation instances for UI (loaded separately from worker thread)
         this.dataLoader = null;
@@ -60,7 +68,42 @@ class OrbitalZoneSelector {
             // Load orbital zones
             const zonesResponse = await fetch('/game_data/orbital_mechanics.json');
             const zonesData = await zonesResponse.json();
-            this.orbitalZones = zonesData.orbital_zones;
+            const planetZones = zonesData.orbital_zones;
+
+            // Extract moon data and create flattened zones array
+            this.moonData = {};
+            this.orbitalZones = [];
+            this.planetZonesOnly = []; // For hotkey mapping - excludes moons
+
+            for (const zone of planetZones) {
+                // Add the planet zone
+                this.orbitalZones.push(zone);
+                this.planetZonesOnly.push(zone); // Add to planet-only array for hotkeys
+
+                // Extract moons if any
+                if (zone.moons && Array.isArray(zone.moons)) {
+                    this.moonData[zone.id] = zone.moons.map(moon => ({
+                        ...moon,
+                        // Ensure the moon has essential properties for UI display
+                        id: moon.id.replace(`${zone.id}_`, ''), // Strip parent prefix for display
+                        full_id: moon.id, // Keep full ID for zone operations
+                        parent_zone: zone.id
+                    }));
+
+                    // Also add moon zones to orbitalZones for full zone functionality
+                    for (const moon of zone.moons) {
+                        const moonZone = {
+                            ...moon,
+                            is_moon: true,
+                            parent_zone: zone.id,
+                            radius_au: zone.radius_au,
+                            radius_au_start: zone.radius_au,
+                            radius_au_end: zone.radius_au
+                        };
+                        this.orbitalZones.push(moonZone);
+                    }
+                }
+            }
             
             // Load economic rules for skill coefficients
             try {
@@ -322,35 +365,36 @@ class OrbitalZoneSelector {
     /**
      * Get mass driver muzzle velocity (delta-v capacity) from game state using weighted sum formula from economic rules
      * Formula: factor = 1 + Σ(weight_i * (skill_i - 1))
+     * Scales from base_muzzle_velocity (8.5 km/s) to max_muzzle_velocity (45 km/s) based on skills
      * @param {string} zoneId - Zone ID
      * @returns {number} Muzzle velocity in km/s
      */
     getMassDriverMuzzleVelocity(zoneId) {
         if (!this.gameState) return 0;
-        
+
         const structuresByZone = this.gameState.structures_by_zone || {};
         const zoneStructures = structuresByZone[zoneId] || {};
         const massDriverCount = zoneStructures['mass_driver'] || 0;
-        
+
         if (massDriverCount === 0) return 0;
-        
-        // Get base muzzle velocity from buildings.json or use default
-        let baseMuzzleVelocityKmS = 3.0; // Default
-        if (this.buildings && this.buildings.mass_driver) {
-            baseMuzzleVelocityKmS = this.buildings.mass_driver.base_muzzle_velocity_km_s || 3.0;
-        }
-        
+
+        // Get base and max muzzle velocity from economic_rules.json
+        const massDriverConfig = this.economicRules?.mass_driver || {};
+        let baseMuzzleVelocityKmS = massDriverConfig.base_muzzle_velocity_km_s || 8.5;
+        const maxMuzzleVelocityKmS = massDriverConfig.max_muzzle_velocity_km_s || 45;
+
         // Add mass driver delta-v bonus from starting skill points
         const massDriverDvBonus = this.gameState?.skill_bonuses?.mass_driver_dv_bonus || 0;
         baseMuzzleVelocityKmS += massDriverDvBonus;
-        
+
         // Get skill values from game state
         const skills = this.gameState.skills || this.gameState.research?.skills || {};
-        
+
         // Calculate upgrade factor from economic rules
         const upgradeFactor = this.calculateUpgradeFactorFromEconomicRules('mass_driver_muzzle_velocity', skills);
-        
-        return baseMuzzleVelocityKmS * upgradeFactor;
+
+        // Cap at max velocity
+        return Math.min(maxMuzzleVelocityKmS, baseMuzzleVelocityKmS * upgradeFactor);
     }
     
     /**
@@ -840,104 +884,238 @@ class OrbitalZoneSelector {
                 return;
             }
             
-            // Handle left/right arrow keys to navigate destination zones (only when menu is open)
-            if (this.transferMenuOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            // Handle Tab key to switch transfer type (probe/metal/methalox)
+            if (this.transferMenuOpen && e.key === 'Tab') {
                 e.preventDefault();
                 e.stopPropagation();
-                
-                // Get all zones sorted by radius (dyson, mercury, venus, etc.)
-                const allZones = [...(this.orbitalZones || [])].sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
-                
-                // Filter out the source zone
-                const availableZones = allZones.filter(z => z.id !== this.transferSourceZone);
-                
-                if (availableZones.length === 0) return;
-                
-                // Find current destination index
-                let currentIndex = -1;
-                if (this.transferDestinationZone) {
-                    currentIndex = availableZones.findIndex(z => z.id === this.transferDestinationZone);
-                }
-                
-                // Navigate left or right
-                let newIndex;
-                if (e.key === 'ArrowRight') {
-                    newIndex = currentIndex < availableZones.length - 1 ? currentIndex + 1 : 0;
+
+                // Toggle between probe and metal (shift+tab goes backwards)
+                const currentMode = this.transferMenuMode || 'probe';
+                let newMode;
+
+                if (e.shiftKey) {
+                    // probe <- metal <- methalox <- probe
+                    if (currentMode === 'probe') newMode = 'methalox';
+                    else if (currentMode === 'methalox') newMode = 'metal';
+                    else newMode = 'probe';
                 } else {
-                    newIndex = currentIndex > 0 ? currentIndex - 1 : availableZones.length - 1;
+                    // probe -> metal -> methalox -> probe
+                    if (currentMode === 'probe') newMode = 'metal';
+                    else if (currentMode === 'metal') newMode = 'methalox';
+                    else newMode = 'probe';
                 }
-                
-                // Set new destination
-                this.transferDestinationZone = availableZones[newIndex].id;
-                
-                // Update the overlay chart, transfer details, and transfer controls
-                if (this.deltaVOverlayCanvas) {
-                    const resourceType = this.transferMenuMode || 'probe';
-                    this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
-                    
-                    // Update transfer controls with new destination
-                    if (this.updateTransferControls) {
-                        this.updateTransferControls(this.transferSourceZone, this.transferDestinationZone, resourceType);
-                    }
-                    
-                    const upgradesDiv = document.getElementById('delta-v-upgrades');
-                    if (upgradesDiv) {
-                        this.updateTransferDetails(upgradesDiv, this.transferSourceZone, this.transferDestinationZone, resourceType);
-                    }
-                }
-                
-                // Update trajectory planner with new destination
-                if (typeof trajectoryPlanner !== 'undefined') {
-                    trajectoryPlanner.updateDestination(this.transferDestinationZone, this.transferMenuMode);
-                }
-                return;
-            }
-            
-            // Handle up/down arrow keys to switch transfer type (only when menu is open)
-            if (this.transferMenuOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                // Resource types in order: probe, metal, methalox
-                const resourceTypes = ['probe', 'metal', 'methalox'];
-                const currentIndex = resourceTypes.indexOf(this.transferMenuMode);
-                
-                let newIndex;
-                if (e.key === 'ArrowDown') {
-                    newIndex = currentIndex < resourceTypes.length - 1 ? currentIndex + 1 : 0;
-                } else {
-                    newIndex = currentIndex > 0 ? currentIndex - 1 : resourceTypes.length - 1;
-                }
-                
-                const newMode = resourceTypes[newIndex];
-                
+
                 // Check if mass driver is available for metal/methalox transfers
                 if (newMode === 'metal' || newMode === 'methalox') {
                     const structuresByZone = this.gameState?.structures_by_zone || {};
                     const zoneStructures = structuresByZone[this.transferSourceZone] || {};
                     const hasMassDriver = (zoneStructures['mass_driver'] || 0) > 0;
-                    
+
                     if (!hasMassDriver) {
                         this.showQuickMessage('Mass Driver required for ' + newMode + ' transfers');
-                        return;
+                        // Skip to next valid mode
+                        newMode = 'probe';
                     }
                 }
-                
+
                 this.transferMenuMode = newMode;
                 this.updateTransferMenu();
-                
+
                 // Update trajectory planner with new resource type
                 if (typeof trajectoryPlanner !== 'undefined') {
                     trajectoryPlanner.updateResourceType(newMode);
                 }
                 return;
             }
+
+            // Handle left/right arrow keys to switch destination targets
+            if (this.transferMenuOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const resourceType = this.transferMenuMode || 'probe';
+
+                if (this.moonSelectionMode) {
+                    // In moon view - navigate between moons
+                    const moons = this.moonData[this.moonSelectionPlanet];
+                    if (moons && moons.length > 0) {
+                        let currentMoonIndex = 0;
+                        if (this.transferDestinationZone && this.transferDestinationZone.includes('_')) {
+                            const moonId = this.transferDestinationZone.split('_')[1];
+                            currentMoonIndex = moons.findIndex(m => m.id === moonId);
+                            if (currentMoonIndex < 0) currentMoonIndex = 0;
+                        }
+
+                        let newIndex;
+                        if (e.key === 'ArrowRight') {
+                            newIndex = (currentMoonIndex + 1) % moons.length;
+                        } else {
+                            newIndex = currentMoonIndex > 0 ? currentMoonIndex - 1 : moons.length - 1;
+                        }
+
+                        const moon = moons[newIndex];
+                        // Use full_id if available (from JSON), otherwise construct it
+                        this.transferDestinationZone = moon.full_id || `${this.moonSelectionPlanet}_${moon.id}`;
+
+                        if (this.deltaVOverlayCanvas) {
+                            this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, resourceType);
+                        }
+                        this.showQuickMessage(`Selected ${moon.name}`);
+                    }
+                } else {
+                    // In planet view - navigate between zones (exclude moon zones)
+                    const allZones = [...(this.orbitalZones || [])]
+                        .filter(z => !z.is_moon) // Only show planets, not moons
+                        .sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
+                    const availableZones = allZones.filter(z => z.id !== this.transferSourceZone);
+
+                    if (availableZones.length === 0) return;
+
+                    let currentIndex = -1;
+                    if (this.transferDestinationZone) {
+                        currentIndex = availableZones.findIndex(z => z.id === this.transferDestinationZone);
+                    }
+
+                    let newIndex;
+                    if (e.key === 'ArrowRight') {
+                        newIndex = currentIndex < availableZones.length - 1 ? currentIndex + 1 : 0;
+                    } else {
+                        newIndex = currentIndex > 0 ? currentIndex - 1 : availableZones.length - 1;
+                    }
+
+                    this.transferDestinationZone = availableZones[newIndex].id;
+
+                    if (this.deltaVOverlayCanvas) {
+                        this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+
+                        if (this.updateTransferControls) {
+                            this.updateTransferControls(this.transferSourceZone, this.transferDestinationZone, resourceType);
+                        }
+
+                        const upgradesDiv = document.getElementById('delta-v-upgrades');
+                        if (upgradesDiv) {
+                            this.updateTransferDetails(upgradesDiv, this.transferSourceZone, this.transferDestinationZone, resourceType);
+                        }
+                    }
+
+                    if (typeof trajectoryPlanner !== 'undefined') {
+                        trajectoryPlanner.updateDestination(this.transferDestinationZone, this.transferMenuMode);
+                    }
+
+                    this.showQuickMessage(`Selected ${this.getZoneName(this.transferDestinationZone)}`);
+                }
+                return;
+            }
+
+            // Handle up/down arrow keys to toggle planet/moon view (only when menu is open)
+            if (this.transferMenuOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const resourceType = this.transferMenuMode || 'probe';
+
+                if (this.moonSelectionMode) {
+                    // In moon view - up goes back to planet view
+                    if (e.key === 'ArrowUp') {
+                        this.moonSelectionMode = false;
+                        const planetId = this.moonSelectionPlanet;
+                        this.moonSelectionPlanet = null;
+                        this.transferDestinationZone = planetId; // Set planet as destination
+
+                        // Redraw planet chart
+                        if (this.deltaVOverlayCanvas) {
+                            this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+                        }
+
+                        // Restore header
+                        this.updateTransferMenuHeader(resourceType);
+                        this.showQuickMessage(`Selected ${this.getZoneName(planetId)} orbit`);
+                    } else {
+                        // Down in moon view - navigate between moons
+                        const moons = this.moonData[this.moonSelectionPlanet];
+                        if (moons && moons.length > 0) {
+                            // Find current moon index
+                            let currentMoonIndex = -1;
+                            if (this.transferDestinationZone && this.transferDestinationZone.includes('_')) {
+                                const moonId = this.transferDestinationZone.split('_')[1];
+                                currentMoonIndex = moons.findIndex(m => m.id === moonId);
+                            }
+                            // Go to next moon (wrap around)
+                            const nextIndex = (currentMoonIndex + 1) % moons.length;
+                            const moon = moons[nextIndex];
+                            this.transferDestinationZone = moon.full_id || `${this.moonSelectionPlanet}_${moon.id}`;
+
+                            if (this.deltaVOverlayCanvas) {
+                                this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, resourceType);
+                            }
+                            this.showQuickMessage(`Selected ${moon.name}`);
+                        }
+                    }
+                } else {
+                    // In planet view - down goes to moon view if destination has moons
+                    if (e.key === 'ArrowDown' && this.transferDestinationZone && this.moonData[this.transferDestinationZone]) {
+                        this.moonSelectionMode = true;
+                        this.moonSelectionPlanet = this.transferDestinationZone;
+
+                        // Select first moon by default
+                        const moons = this.moonData[this.moonSelectionPlanet];
+                        if (moons && moons.length > 0) {
+                            this.transferDestinationZone = moons[0].full_id || `${this.moonSelectionPlanet}_${moons[0].id}`;
+                        }
+
+                        // Redraw with moon view
+                        if (this.deltaVOverlayCanvas) {
+                            this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, resourceType);
+                        }
+
+                        // Update header
+                        const title = document.getElementById('transfer-window-title');
+                        if (title) {
+                            const planetName = this.getZoneName(this.moonSelectionPlanet).toUpperCase();
+                            title.textContent = `${planetName} MOONS (↑ back to orbit)`;
+                        }
+                        this.showQuickMessage(`Viewing ${this.getZoneName(this.moonSelectionPlanet)} moons`);
+                    } else if (e.key === 'ArrowDown' && this.transferDestinationZone && !this.moonData[this.transferDestinationZone]) {
+                        this.showQuickMessage(`${this.getZoneName(this.transferDestinationZone)} has no moons`);
+                    }
+                }
+                return;
+            }
             
-            // Escape to close transfer menu
+            // Escape to close transfer menu (or back out of moon selection)
             if (e.key === 'Escape' && this.transferMenuOpen) {
                 e.preventDefault();
                 e.stopPropagation();
-                this.closeTransferMenu();
+                if (this.moonSelectionMode) {
+                    // Back out of moon selection to planet view
+                    this.moonSelectionMode = false;
+                    const previousPlanet = this.moonSelectionPlanet;
+                    this.moonSelectionPlanet = null;
+                    this.transferDestinationZone = previousPlanet; // Keep planet selected
+                    // Redraw planet chart
+                    if (this.deltaVOverlayCanvas) {
+                        const resourceType = this.transferMenuMode || 'probe';
+                        this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+                    }
+                    // Restore header
+                    const header = document.getElementById('transfer-window-header');
+                    const title = document.getElementById('transfer-window-title');
+                    if (header && title) {
+                        const resourceType = this.transferMenuMode || 'probe';
+                        if (resourceType === 'probe') {
+                            header.style.background = '#00ffff';
+                            title.textContent = 'PROBE TRANSFER';
+                        } else if (resourceType === 'metal') {
+                            header.style.background = '#c0c0c0';
+                            title.textContent = 'METAL TRANSFER';
+                        } else if (resourceType === 'methalox') {
+                            header.style.background = '#87ceeb';
+                            title.textContent = 'FUEL TRANSFER';
+                        }
+                    }
+                } else {
+                    this.closeTransferMenu();
+                }
                 return;
             }
             
@@ -998,28 +1176,95 @@ class OrbitalZoneSelector {
                     }
                 }
             } else if (key >= '1' && key <= '9') {
-                // 1-9 map to zones 1-9 (mercury through neptune)
+                // 1-9 map to planet zones 1-9 (mercury through neptune) - excludes moons
                 const zoneIndex = parseInt(key);
-                if (this.orbitalZones && zoneIndex < this.orbitalZones.length) {
-                    const zoneId = this.orbitalZones[zoneIndex].id;
+                if (this.planetZonesOnly && zoneIndex < this.planetZonesOnly.length) {
+                    const zoneId = this.planetZonesOnly[zoneIndex].id;
                     if (this.transferMenuOpen && this.transferSourceZone && this.transferSourceZone !== zoneId) {
-                        // In transfer menu mode: select as destination
-                        this.transferDestinationZone = zoneId;
-                        if (this.deltaVOverlayCanvas) {
-                            const resourceType = this.transferMenuMode || 'probe';
-                            this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
-                            const upgradesDiv = document.getElementById('delta-v-upgrades');
-                            if (upgradesDiv) {
-                                this.updateTransferDetails(upgradesDiv, this.transferSourceZone, zoneId, resourceType);
+                        // In transfer menu mode
+                        if (this.moonSelectionMode) {
+                            // In moon selection mode: number keys select moons (1-based index)
+                            const moons = this.moonData[this.moonSelectionPlanet];
+                            const moonIndex = parseInt(key) - 1;
+                            if (moons && moonIndex >= 0 && moonIndex < moons.length) {
+                                const moon = moons[moonIndex];
+                                // Select moon as destination using full_id
+                                this.transferDestinationZone = moon.full_id || `${this.moonSelectionPlanet}_${moon.id}`;
+                                // Redraw chart with moon selected
+                                if (this.deltaVOverlayCanvas) {
+                                    const resourceType = this.transferMenuMode || 'probe';
+                                    this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, resourceType);
+                                }
+                                this.showQuickMessage(`Selected ${moon.name}`);
+                            }
+                        } else if (this.transferDestinationZone === zoneId && this.moonData[zoneId]) {
+                            // Pressing same key again: enter moon selection mode (if planet has moons)
+                            this.moonSelectionMode = true;
+                            this.moonSelectionPlanet = zoneId;
+                            // Redraw with moon view
+                            if (this.deltaVOverlayCanvas) {
+                                const resourceType = this.transferMenuMode || 'probe';
+                                this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, zoneId, resourceType);
+                            }
+                            // Update header to show moon selection
+                            const title = document.getElementById('transfer-window-title');
+                            if (title) {
+                                const planetName = this.getZoneName(zoneId).toUpperCase();
+                                title.textContent = `${planetName} MOONS - Press 1-${this.moonData[zoneId].length} to select`;
+                            }
+                        } else {
+                            // Select as destination
+                            this.transferDestinationZone = zoneId;
+                            if (this.deltaVOverlayCanvas) {
+                                const resourceType = this.transferMenuMode || 'probe';
+                                this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+                                const upgradesDiv = document.getElementById('delta-v-upgrades');
+                                if (upgradesDiv) {
+                                    this.updateTransferDetails(upgradesDiv, this.transferSourceZone, zoneId, resourceType);
+                                }
+                            }
+                            // Update trajectory planner with new destination
+                            if (typeof trajectoryPlanner !== 'undefined') {
+                                trajectoryPlanner.updateDestination(zoneId);
                             }
                         }
-                        // Update trajectory planner with new destination
-                        if (typeof trajectoryPlanner !== 'undefined') {
-                            trajectoryPlanner.updateDestination(zoneId);
-                        }
                     } else {
-                        // Normal zone selection
-                        this.selectZone(zoneId);
+                        // Normal zone selection with planet/moon cycling
+                        // Check if pressing the same hotkey as current selection
+                        const moons = this.moonData[zoneId];
+                        const currentZone = this.selectedZone;
+
+                        if (currentZone === zoneId && moons && moons.length > 0) {
+                            // Currently on planet, cycle to first moon
+                            const firstMoon = moons[0];
+                            const moonId = firstMoon.full_id || `${zoneId}_${firstMoon.id}`;
+                            this.selectZone(moonId);
+                        } else if (moons && moons.length > 0) {
+                            // Check if current zone is a moon of this planet
+                            const currentMoonIndex = moons.findIndex(m => {
+                                const moonId = m.full_id || `${zoneId}_${m.id}`;
+                                return moonId === currentZone;
+                            });
+
+                            if (currentMoonIndex >= 0) {
+                                // Currently on a moon, cycle to next moon or back to planet
+                                if (currentMoonIndex < moons.length - 1) {
+                                    // Go to next moon
+                                    const nextMoon = moons[currentMoonIndex + 1];
+                                    const moonId = nextMoon.full_id || `${zoneId}_${nextMoon.id}`;
+                                    this.selectZone(moonId);
+                                } else {
+                                    // Last moon, go back to planet
+                                    this.selectZone(zoneId);
+                                }
+                            } else {
+                                // Different zone, just select the planet
+                                this.selectZone(zoneId);
+                            }
+                        } else {
+                            // No moons, just select the zone
+                            this.selectZone(zoneId);
+                        }
                     }
                 }
             } else if (key === '0') {
@@ -1042,7 +1287,33 @@ class OrbitalZoneSelector {
                             trajectoryPlanner.updateDestination('kuiper');
                         }
                     } else {
-                        this.selectZone('kuiper');
+                        // Normal zone selection with moon cycling for Kuiper/Charon
+                        const moons = this.moonData['kuiper'];
+                        const currentZone = this.selectedZone;
+
+                        if (currentZone === 'kuiper' && moons && moons.length > 0) {
+                            const firstMoon = moons[0];
+                            const moonId = firstMoon.full_id || `kuiper_${firstMoon.id}`;
+                            this.selectZone(moonId);
+                        } else if (moons && moons.length > 0) {
+                            const currentMoonIndex = moons.findIndex(m => {
+                                const moonId = m.full_id || `kuiper_${m.id}`;
+                                return moonId === currentZone;
+                            });
+                            if (currentMoonIndex >= 0) {
+                                if (currentMoonIndex < moons.length - 1) {
+                                    const nextMoon = moons[currentMoonIndex + 1];
+                                    const moonId = nextMoon.full_id || `kuiper_${nextMoon.id}`;
+                                    this.selectZone(moonId);
+                                } else {
+                                    this.selectZone('kuiper');
+                                }
+                            } else {
+                                this.selectZone('kuiper');
+                            }
+                        } else {
+                            this.selectZone('kuiper');
+                        }
                     }
                 }
             } else if (key === '-' || key === '_') {
@@ -1188,6 +1459,9 @@ class OrbitalZoneSelector {
     render() {
         if (!this.container || !this.orbitalZones) return;
 
+        // Filter out moon zones - only show planets in main view
+        const planetZones = this.orbitalZones.filter(z => !z.is_moon);
+
         let html = '<div class="orbital-zone-selector-content">';
         html += '<div class="orbital-zone-bars">';
 
@@ -1195,8 +1469,8 @@ class OrbitalZoneSelector {
         const zoneMasses = {};
         let minMass = Infinity;
         let maxMass = -Infinity;
-        
-        this.orbitalZones.forEach(zone => {
+
+        planetZones.forEach(zone => {
             const zoneTotalMass = zone.total_mass_kg || this.getZoneMass(zone.id);
             zoneMasses[zone.id] = zoneTotalMass;
             if (zoneTotalMass > 0) {
@@ -1204,16 +1478,16 @@ class OrbitalZoneSelector {
                 maxMass = Math.max(maxMass, zoneTotalMass);
             }
         });
-        
+
         const massRange = maxMass - minMass || 1;
         const minSquareSize = 20; // Minimum square size in pixels
         const maxSquareSize = 50; // Maximum square size in pixels
-        
+
         // Calculate dynamic spacing to fit window width
         // Get available width (accounting for padding/margins)
         const containerPadding = 40; // Total padding on both sides
         const availableWidth = window.innerWidth - containerPadding;
-        const numZones = this.orbitalZones.length;
+        const numZones = planetZones.length;
         const tileWidth = 110; // Reduced from 120px
         const minGap = 10; // Minimum gap between tiles
         const maxGap = 20; // Maximum gap between tiles
@@ -1248,15 +1522,15 @@ class OrbitalZoneSelector {
             hasMassDriver = massDriverCount > 0;
         }
         
-        this.orbitalZones.forEach((zone, index) => {
+        planetZones.forEach((zone, index) => {
             const zoneTotalMass = zoneMasses[zone.id] || 0;
-            
+
             // Calculate square size proportional to planet mass
-            const squareSize = zoneTotalMass > 0 ? 
-                minSquareSize + ((zoneTotalMass - minMass) / massRange) * (maxSquareSize - minSquareSize) : 
+            const squareSize = zoneTotalMass > 0 ?
+                minSquareSize + ((zoneTotalMass - minMass) / massRange) * (maxSquareSize - minSquareSize) :
                 minSquareSize;
             const squareSizePx = Math.max(minSquareSize, Math.min(maxSquareSize, squareSize));
-            
+
             // Position squares above their corresponding tiles
             // Tiles are centered using flexbox, so calculate position from center
             // Position from center: calculate offset for each tile
@@ -1354,7 +1628,7 @@ class OrbitalZoneSelector {
         html += '</div>';
         
         // Render zone tiles (uniform size, no planet square inside)
-        this.orbitalZones.forEach((zone, tileIndex) => {
+        planetZones.forEach((zone, tileIndex) => {
             // Remove "Orbit" from zone name
             const zoneName = zone.name.replace(/\s+Orbit\s*$/i, '');
             
@@ -2095,9 +2369,13 @@ class OrbitalZoneSelector {
     async selectZone(zoneId) {
         // Handle transfer menu mode (spacebar initiated)
         if (this.transferMenuOpen && this.transferSourceZone && this.transferSourceZone !== zoneId) {
+            // Exit moon selection mode when selecting a new planet
+            this.moonSelectionMode = false;
+            this.moonSelectionPlanet = null;
+
             // Set as destination zone
             this.transferDestinationZone = zoneId;
-            
+
             // Update the transfer menu display
             if (this.deltaVOverlayCanvas) {
                 const resourceType = this.transferMenuMode || 'probe';
@@ -2183,6 +2461,7 @@ class OrbitalZoneSelector {
                 if (hasPlanet) {
                     sceneManager.startPlanetMoonTracking(zoneId);
                 }
+                // For moons, tracking is already handled by startCameraTracking above
             }
             return;
         }
@@ -2210,12 +2489,23 @@ class OrbitalZoneSelector {
             window.zoneInfoPanel.setSelectedZone(zoneId);
         }
         
-        // Start planet/moon tracking if this zone has a planet
+        // Start planet/moon tracking if this zone has a planet or is a moon
         const sceneManager = window.app?.sceneManager || window.sceneManager;
         if (sceneManager && sceneManager.solarSystem) {
             const hasPlanet = sceneManager.solarSystem.planets && sceneManager.solarSystem.planets[zoneId];
             if (hasPlanet) {
                 sceneManager.startPlanetMoonTracking(zoneId);
+            } else {
+                // Check if this is a moon zone (contains underscore like "earth_luna")
+                const underscoreIndex = zoneId.indexOf('_');
+                if (underscoreIndex > 0) {
+                    const parentZoneId = zoneId.substring(0, underscoreIndex);
+                    const hasMoonParent = sceneManager.solarSystem.planets && sceneManager.solarSystem.planets[parentZoneId];
+                    if (hasMoonParent) {
+                        // Start tracking the moon's position via camera tracking
+                        this.startCameraTracking(zoneId);
+                    }
+                }
             }
         }
         
@@ -2572,6 +2862,9 @@ class OrbitalZoneSelector {
             if (this.transferMenuOpen) {
                 this.transferMenuMode = newType;
                 this.transferDestinationZone = null; // Reset destination when switching types
+                // Exit moon selection mode when changing resource types
+                this.moonSelectionMode = false;
+                this.moonSelectionPlanet = null;
             }
             // Reset transfer-specific values when switching modes
             if (newType === 'probe') {
@@ -2667,10 +2960,12 @@ class OrbitalZoneSelector {
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
                 
-                // Find which zone column was clicked
+                // Find which zone column was clicked (exclude moons - planets only in main view)
                 const padding = { left: 80, right: 20 };
                 const chartWidth = canvas.width - padding.left - padding.right;
-                const allZones = [...(this.orbitalZones || [])].sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
+                const allZones = [...(this.orbitalZones || [])]
+                    .filter(z => !z.is_moon)
+                    .sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
                 const numZones = allZones.length;
                 const columnWidth = chartWidth / numZones;
                 
@@ -2679,6 +2974,9 @@ class OrbitalZoneSelector {
                     if (columnIndex >= 0 && columnIndex < allZones.length) {
                         const clickedZone = allZones[columnIndex];
                         if (clickedZone.id !== this.transferSourceZone) {
+                            // Exit moon selection mode when clicking on planet chart
+                            this.moonSelectionMode = false;
+                            this.moonSelectionPlanet = null;
                             this.transferDestinationZone = clickedZone.id;
                             this.drawOverlayChart(canvas, sourceZone, resourceType);
                             this.updateTransferDetails(upgradesDiv, sourceZone, clickedZone.id, resourceType);
@@ -2720,8 +3018,9 @@ class OrbitalZoneSelector {
                 z-index: 10;
             `;
             hintsDiv.innerHTML = `
-                <div><span style="color: rgba(255,255,255,0.8);">←/→</span> Change destination</div>
-                <div><span style="color: rgba(255,255,255,0.8);">↑/↓</span> Change resource type</div>
+                <div><span style="color: rgba(255,255,255,0.8);">←/→</span> Switch targets</div>
+                <div><span style="color: rgba(255,255,255,0.8);">↓/↑</span> Moons ↓ / Planet ↑</div>
+                <div><span style="color: rgba(255,255,255,0.8);">Tab</span> Probe / Metal / Fuel</div>
                 <div><span style="color: rgba(255,255,255,0.8);">Space</span> Launch transfer</div>
                 <div><span style="color: rgba(255,255,255,0.8);">Esc</span> Close</div>
             `;
@@ -2750,9 +3049,13 @@ class OrbitalZoneSelector {
             const rect = canvas.getBoundingClientRect();
             canvas.width = rect.width || 700;
             canvas.height = 480; // Fixed height for chart (increased for transfer indicator)
-            // Redraw when resized
+            // Redraw when resized (respecting moon selection mode)
             if (this.deltaVOverlayVisible && sourceZone) {
-                this.drawOverlayChart(canvas, sourceZone, resourceType);
+                if (this.moonSelectionMode && this.moonSelectionPlanet) {
+                    this.drawMoonOverlayChart(canvas, this.transferSourceZone, this.moonSelectionPlanet, this.transferMenuMode || 'probe');
+                } else {
+                    this.drawOverlayChart(canvas, sourceZone, resourceType);
+                }
             }
         };
         
@@ -3650,11 +3953,12 @@ class OrbitalZoneSelector {
             // Get current planet positions
             const planetPositions = this.getAllPlanetPositions();
             
-            // Build list of transfers (skip belt zones - they use Hohmann)
+            // Build list of transfers (skip belt zones - they use Hohmann, skip moons - they're shown separately)
             const transfers = [];
             for (const zone of this.orbitalZones) {
                 if (zone.id === sourceZoneId) continue;
                 if (beltZones.includes(zone.id)) continue;
+                if (zone.is_moon) continue; // Moons are handled in moon view
                 
                 transfers.push({
                     from_zone: sourceZoneId,
@@ -3714,9 +4018,13 @@ class OrbitalZoneSelector {
                 }
             }
             
-            // After computing, redraw the overlay if it's visible
+            // After computing, redraw the overlay if it's visible (but not in moon mode)
             if (this.deltaVOverlayVisible && this.deltaVOverlayCanvas && this.deltaVOverlayResourceType === 'probe') {
-                this.drawOverlayChart(this.deltaVOverlayCanvas, sourceZoneId, 'probe');
+                if (this.moonSelectionMode && this.moonSelectionPlanet) {
+                    this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, 'probe');
+                } else {
+                    this.drawOverlayChart(this.deltaVOverlayCanvas, sourceZoneId, 'probe');
+                }
             }
             
         } catch (error) {
@@ -3786,22 +4094,17 @@ class OrbitalZoneSelector {
         this.lastTransferControlsHash = null; // Reset hash for next menu open
         this.currentMassRateKgPerDay = 0; // Reset mass rate for chart display
         this.currentProbeTransferCount = 0; // Reset probe count for chart display
+        // Reset moon selection state
+        this.moonSelectionMode = false;
+        this.moonSelectionPlanet = null;
         this.hideDeltaVOverlay();
         this.render(); // Re-render to remove transfer highlights
     }
     
     /**
-     * Update transfer menu display
+     * Update transfer menu header based on resource type
      */
-    updateTransferMenu() {
-        if (!this.transferMenuOpen || !this.deltaVOverlayCanvas) return;
-        
-        const resourceType = this.transferMenuMode || 'probe';
-        // Sync deltaVOverlayResourceType so game loop updates use the correct type
-        this.deltaVOverlayResourceType = resourceType;
-        this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
-        
-        // Update header title and color based on resource type
+    updateTransferMenuHeader(resourceType) {
         const header = document.getElementById('transfer-window-header');
         const title = document.getElementById('transfer-window-title');
         if (header && title) {
@@ -3821,6 +4124,29 @@ class OrbitalZoneSelector {
             }
             header.style.background = headerColor;
             title.textContent = headerTitle;
+        }
+    }
+
+    /**
+     * Update transfer menu display
+     */
+    updateTransferMenu() {
+        if (!this.transferMenuOpen || !this.deltaVOverlayCanvas) return;
+
+        const resourceType = this.transferMenuMode || 'probe';
+        // Sync deltaVOverlayResourceType so game loop updates use the correct type
+        this.deltaVOverlayResourceType = resourceType;
+
+        // Draw appropriate chart based on moon selection mode
+        if (this.moonSelectionMode && this.moonSelectionPlanet) {
+            this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, resourceType);
+        } else {
+            this.drawOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, resourceType);
+        }
+
+        // Update header (don't override if in moon mode)
+        if (!this.moonSelectionMode) {
+            this.updateTransferMenuHeader(resourceType);
         }
         
         // Sync radio buttons with current mode
@@ -4191,8 +4517,10 @@ class OrbitalZoneSelector {
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         
-        // Get all zones including Dyson sphere, sorted by radius_au
-        const allZones = [...(this.orbitalZones || [])].sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
+        // Get all zones including Dyson sphere, sorted by radius_au (exclude moons - they're shown in moon view)
+        const allZones = [...(this.orbitalZones || [])]
+            .filter(z => !z.is_moon)
+            .sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
         
         if (allZones.length === 0) return;
         
@@ -4908,7 +5236,253 @@ class OrbitalZoneSelector {
         const sourceZoneName = sourceZone.name.replace(/\s+Orbit\s*$/i, '');
         ctx.fillText(`${resourceTypeName} Delta-V Chart: ${sourceZoneName}`, width / 2, padding.top - 20);
     }
-    
+
+    /**
+     * Draw moon selection overlay chart
+     * Shows moons ordered left-to-right by orbital radius (inner to outer)
+     * Each moon shows delta-v to reach and escape velocity from that moon
+     */
+    drawMoonOverlayChart(canvas, fromZoneId, planetId, resourceType) {
+        const moons = this.moonData[planetId];
+        if (!moons || moons.length === 0) return;
+
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width || canvas.offsetWidth || 600;
+        const height = canvas.height || canvas.offsetHeight || 400;
+
+        if (width <= 0 || height <= 0) return;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Padding
+        const padding = { top: 80, right: 50, bottom: 100, left: 80 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+
+        // Get source zone info
+        const sourceZone = this.orbitalZones?.find(z => z.id === fromZoneId);
+        const planetZone = this.orbitalZones?.find(z => z.id === planetId);
+        if (!sourceZone || !planetZone) return;
+
+        // Calculate planet-to-planet delta-v
+        const planetDeltaV = this.getTransferDeltaV(fromZoneId, planetId, resourceType);
+
+        // Calculate escape velocity from source (needed for capacity display)
+        const zones = this.gameState?.zones || {};
+        const fromZoneData = zones[fromZoneId] || {};
+        const fromZoneMass = fromZoneData.mass_remaining !== undefined ? fromZoneData.mass_remaining : (sourceZone.total_mass_kg || 0);
+        const escapeDeltaV = this.orbitalMechanics
+            ? this.orbitalMechanics.calculateEscapeDeltaV(fromZoneId, fromZoneMass)
+            : this.calculateEscapeDeltaV(fromZoneId, fromZoneMass);
+
+        // Get probe capacity
+        const skills = this.gameState?.skills || {};
+        const probeDvBonus = this.gameState?.skill_bonuses?.probe_dv_bonus || 0;
+        const probeCapacity = this.orbitalMechanics
+            ? this.orbitalMechanics.getProbeDeltaVCapacity(skills, probeDvBonus)
+            : this.getProbeDeltaVCapacity(skills);
+
+        // Calculate delta-v for each moon based on orbital position
+        // Physics: moons further out sit higher in the gravity well, need less delta-v to escape system
+        const G = 6.674e-11; // gravitational constant
+        const planetMass = planetZone.total_mass_kg || 1e24;
+
+        // Sort moons by orbital radius (should already be sorted, but ensure)
+        const sortedMoons = [...moons].sort((a, b) => a.orbit_km - b.orbit_km);
+
+        // Calculate delta-v data for each moon
+        const moonDeltaVData = sortedMoons.map((moon, index) => {
+            // Escape velocity from planet at moon's orbital distance
+            // v_escape = sqrt(2 * G * M / r)
+            const orbitMeters = moon.orbit_km * 1000;
+            const vEscapeAtMoon = Math.sqrt(2 * G * planetMass / orbitMeters) / 1000; // km/s
+
+            // Moon's orbital velocity
+            // v_orbital = sqrt(G * M / r)
+            const vOrbitalMoon = Math.sqrt(G * planetMass / orbitMeters) / 1000; // km/s
+
+            // Delta-v to reach moon from planet orbit (rough Hohmann approximation)
+            const toMoonDeltaV = Math.abs(vOrbitalMoon - vEscapeAtMoon / Math.sqrt(2)) + 0.5; // + capture cost
+
+            // Total delta-v from source to this moon
+            const totalDeltaV = escapeDeltaV + planetDeltaV + toMoonDeltaV;
+
+            // System escape delta-v (lower for outer moons)
+            const systemEscapeDeltaV = vEscapeAtMoon + moon.escape_delta_v_km_s;
+
+            return {
+                moon: moon,
+                index: index,
+                toMoonDeltaV: toMoonDeltaV,
+                totalDeltaV: totalDeltaV,
+                moonEscapeDeltaV: moon.escape_delta_v_km_s,
+                systemEscapeDeltaV: systemEscapeDeltaV,
+                vEscapeAtMoon: vEscapeAtMoon,
+                isReachable: probeCapacity >= totalDeltaV
+            };
+        });
+
+        // Draw background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillRect(0, 0, width, height);
+
+        // Draw grid
+        ctx.strokeStyle = 'rgba(74, 158, 255, 0.2)';
+        ctx.lineWidth = 1;
+        const numGridLines = 5;
+        const maxDeltaV = Math.max(50, ...moonDeltaVData.map(d => d.totalDeltaV + 5));
+        const zeroY = padding.top + chartHeight * 0.8; // Zero line at 80% down
+
+        for (let i = 0; i <= numGridLines; i++) {
+            const y = padding.top + (chartHeight * 0.8 * i / numGridLines);
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+        }
+
+        // Draw Y-axis labels
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= numGridLines; i++) {
+            const y = padding.top + (chartHeight * 0.8 * i / numGridLines);
+            const value = maxDeltaV * (1 - i / numGridLines);
+            ctx.fillText(`${value.toFixed(0)} km/s`, padding.left - 10, y + 4);
+        }
+
+        // Draw columns for each moon
+        const numMoons = sortedMoons.length;
+        const columnWidth = chartWidth / numMoons;
+        const barWidth = columnWidth * 0.6;
+
+        moonDeltaVData.forEach((data, i) => {
+            const x = padding.left + (i * columnWidth) + (columnWidth - barWidth) / 2;
+            const centerX = x + barWidth / 2;
+
+            // Calculate bar height based on total delta-v
+            const barHeight = Math.min((data.totalDeltaV / maxDeltaV) * chartHeight * 0.8, chartHeight * 0.8);
+            const barTop = zeroY - barHeight;
+
+            // Check if this moon is selected
+            const moonZoneId = data.moon.full_id || `${planetId}_${data.moon.id}`;
+            const isSelected = this.transferDestinationZone === moonZoneId;
+
+            // Draw total delta-v bar
+            if (isSelected) {
+                // Highlight selected moon
+                ctx.fillStyle = 'rgba(0, 255, 128, 0.8)';
+                ctx.strokeStyle = '#00ff80';
+                ctx.lineWidth = 2;
+                ctx.fillRect(x, barTop, barWidth, barHeight);
+                ctx.strokeRect(x, barTop, barWidth, barHeight);
+            } else if (data.isReachable) {
+                // Reachable moon - green
+                ctx.fillStyle = 'rgba(74, 158, 255, 0.6)';
+                ctx.fillRect(x, barTop, barWidth, barHeight);
+            } else {
+                // Unreachable - red
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.6)';
+                ctx.fillRect(x, barTop, barWidth, barHeight);
+            }
+
+            // Draw system escape line (shows how easy it is to leave from this moon)
+            const escapeY = zeroY - (data.systemEscapeDeltaV / maxDeltaV) * chartHeight * 0.8;
+            ctx.strokeStyle = 'rgba(255, 200, 50, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x, escapeY);
+            ctx.lineTo(x + barWidth, escapeY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw moon name and hotkey
+            ctx.fillStyle = isSelected ? '#00ff80' : '#ffffff';
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`[${i + 1}] ${data.moon.name}`, centerX, zeroY + 20);
+
+            // Draw orbital distance
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.font = '10px monospace';
+            const orbitStr = data.moon.orbit_km >= 1000000
+                ? `${(data.moon.orbit_km / 1000000).toFixed(2)}M km`
+                : `${(data.moon.orbit_km / 1000).toFixed(0)}k km`;
+            ctx.fillText(orbitStr, centerX, zeroY + 35);
+
+            // Draw delta-v values
+            ctx.fillStyle = data.isReachable ? 'rgba(100, 200, 255, 0.9)' : 'rgba(255, 150, 150, 0.9)';
+            ctx.font = '11px monospace';
+            ctx.fillText(`Δv: ${data.totalDeltaV.toFixed(1)}`, centerX, zeroY + 52);
+
+            // Draw system escape delta-v (lower = easier to leave)
+            ctx.fillStyle = 'rgba(255, 200, 50, 0.8)';
+            ctx.font = '9px monospace';
+            ctx.fillText(`esc: ${data.systemEscapeDeltaV.toFixed(1)}`, centerX, zeroY + 65);
+        });
+
+        // Draw probe capacity line
+        const capacityY = zeroY - (probeCapacity / maxDeltaV) * chartHeight * 0.8;
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left, capacityY);
+        ctx.lineTo(width - padding.right, capacityY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Capacity label
+        ctx.fillStyle = '#00ff88';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Probe Δv: ${probeCapacity.toFixed(1)} km/s`, padding.left + 5, capacityY - 5);
+
+        // Draw title
+        ctx.fillStyle = '#ffcc00';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        const planetName = this.getZoneName(planetId).toUpperCase();
+        ctx.fillText(`${planetName} MOONS - Inner → Outer`, width / 2, padding.top - 40);
+
+        // Draw instructions
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.font = '11px monospace';
+        ctx.fillText('Press 1-' + numMoons + ' to select moon | ESC to go back', width / 2, padding.top - 20);
+
+        // Legend
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        const legendY = height - 25;
+
+        ctx.fillStyle = 'rgba(74, 158, 255, 0.6)';
+        ctx.fillRect(padding.left, legendY - 8, 15, 10);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillText('Total Δv to reach', padding.left + 20, legendY);
+
+        ctx.strokeStyle = 'rgba(255, 200, 50, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left + 150, legendY - 3);
+        ctx.lineTo(padding.left + 170, legendY - 3);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText('System escape Δv', padding.left + 175, legendY);
+
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left + 320, legendY - 3);
+        ctx.lineTo(padding.left + 345, legendY - 3);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText('Probe capacity', padding.left + 350, legendY);
+    }
+
     /**
      * Draw delta-v capacity chart on canvas (for quick transfer mode - legacy, kept for compatibility)
      */
@@ -5389,8 +5963,10 @@ class OrbitalZoneSelector {
             // Clear canvas
             ctx.clearRect(0, 0, width, height);
             
-            // Get orbital zones sorted by radius
-            const zones = [...(this.orbitalZones || [])].filter(z => z.id !== 'dyson_sphere').sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
+            // Get orbital zones sorted by radius (exclude moons - they're shown in moon view)
+            const zones = [...(this.orbitalZones || [])]
+                .filter(z => z.id !== 'dyson_sphere' && !z.is_moon)
+                .sort((a, b) => (a.radius_au || 0) - (b.radius_au || 0));
             
             if (zones.length === 0) return;
             
@@ -6048,9 +6624,8 @@ class OrbitalZoneSelector {
                     );
                     const netDeltaV = reachInfo.netDeltaV; // Use netDeltaV from reachInfo (already calculated correctly)
                     
-                    let errorMsg = `Cannot transfer probes: transfer requires ${hohmannDeltaV.toFixed(2)} km/s, but net Δv is ${netDeltaV.toFixed(2)} km/s`;
-                    errorMsg += ` (capacity: ${reachInfo.totalCapacity.toFixed(2)} - escape: ${escapeDeltaV.toFixed(2)})`;
-                    alert(errorMsg);
+                    let errorMsg = `Cannot transfer probes: requires ${hohmannDeltaV.toFixed(2)} km/s, net Δv is ${netDeltaV.toFixed(2)} km/s`;
+                    window.toast?.error(errorMsg);
                     return;
                 }
             } else if (resourceType === 'metal' && hasMassDriver && this.transferSystem) {
@@ -6061,7 +6636,7 @@ class OrbitalZoneSelector {
                     const muzzleVelocity = this.transferSystem.getMassDriverMuzzleVelocity(this.gameState, fromZoneId);
                     const netDeltaV = muzzleVelocity - escapeDeltaV;
                     
-                    alert(`Cannot transfer metal: transfer requires ${hohmannDeltaV.toFixed(2)} km/s, but net Δv is ${netDeltaV.toFixed(2)} km/s (muzzle: ${muzzleVelocity.toFixed(2)} - escape: ${escapeDeltaV.toFixed(2)})`);
+                    window.toast?.error(`Cannot transfer metal: requires ${hohmannDeltaV.toFixed(2)} km/s, net Δv is ${netDeltaV.toFixed(2)} km/s`);
                     return;
                 }
             }
@@ -6139,11 +6714,11 @@ class OrbitalZoneSelector {
                     // Show error message to user
                     const errorMsg = result.error || 'Unknown error';
                     console.error('[OrbitalZoneSelector] Transfer failed:', errorMsg);
-                    alert(`Transfer failed: ${errorMsg}`);
+                    window.toast?.error(`Transfer failed: ${errorMsg}`);
                 }
             }).catch(error => {
                 console.error('[OrbitalZoneSelector] Failed to create transfer:', error);
-                alert(`Transfer failed: ${error.message || error}`);
+                window.toast?.error(`Transfer failed: ${error.message || error}`);
             });
         }
         
@@ -6226,12 +6801,16 @@ class OrbitalZoneSelector {
         
         this.gameState = gameState;
         
-        // Update delta-v overlay if visible
+        // Update delta-v overlay if visible (respecting moon selection mode)
         if (this.deltaVOverlayVisible && this.deltaVOverlayCanvas) {
             const sourceZone = this.quickTransferMode ? this.transferSourceZone : (this.deltaVOverlaySourceZone || this.selectedZone);
             const resourceType = this.quickTransferMode ? this.quickTransferMode : (this.deltaVOverlayResourceType || 'probe');
             if (sourceZone) {
-                this.drawOverlayChart(this.deltaVOverlayCanvas, sourceZone, resourceType);
+                if (this.moonSelectionMode && this.moonSelectionPlanet) {
+                    this.drawMoonOverlayChart(this.deltaVOverlayCanvas, this.transferSourceZone, this.moonSelectionPlanet, resourceType);
+                } else {
+                    this.drawOverlayChart(this.deltaVOverlayCanvas, sourceZone, resourceType);
+                }
             }
         }
         
@@ -6286,8 +6865,9 @@ class OrbitalZoneSelector {
             this.metalUpdateFrameCount = 0;
         }
         
-        // Update each zone's displayed stats
+        // Update each zone's displayed stats (only planets, moons don't have display elements)
         for (const zone of this.orbitalZones) {
+            if (zone.is_moon) continue; // Skip moons - they don't have display elements
             const zoneData = zones[zone.id] || {};
             const probeCount = zoneData.probe_count || 0;
             
@@ -6362,8 +6942,9 @@ class OrbitalZoneSelector {
             // Maximum dots to show per zone (reduced to prevent DOM overload)
             const MAX_DOTS_PER_ZONE = 50; // Reduced from 200 to prevent crashes
             
-            // Distribute dots proportionally across zones
+            // Distribute dots proportionally across zones (only planets have display elements)
             this.orbitalZones.forEach(zone => {
+                if (zone.is_moon) return; // Skip moons - they don't have display elements
                 const planetSquare = this.container.querySelector(`.orbital-zone-planet-square-float[data-zone="${zone.id}"]`);
                 if (!planetSquare) return;
                 

@@ -537,29 +537,59 @@ class OrbitalMechanics {
     }
     
     /**
-     * Calculate probe delta-v capacity from skills
+     * Calculate probe delta-v capacity from ISP and mass ratio using Tsiolkovsky rocket equation
+     * Delta-v = ISP × g0 × ln(mass_ratio)
+     * ISP scales from base (300s) to max (4500s) based on propulsion skill
      * @param {Object} skills - Current skills from research
      * @param {number} probeDvBonus - Optional probe delta-v bonus from starting skill points (km/s)
      * @returns {number} Probe delta-v capacity in km/s
      */
     getProbeDeltaVCapacity(skills, probeDvBonus = 0) {
-        if (!this.economicRules || !this.economicRules.probe_transfer) {
-            return 1.0 + probeDvBonus; // Default base capacity + bonus
-        }
-        
-        // Add probe delta-v bonus from starting skill points
-        const baseDeltaV = (this.economicRules.probe_transfer.base_delta_v_km_s || 1.0) + probeDvBonus;
-        
-        if (!this.economicRules.skill_coefficients || !this.economicRules.skill_coefficients.probe_delta_v_capacity) {
-            return baseDeltaV; // No upgrades
-        }
-        
-        const coefficients = this.economicRules.skill_coefficients.probe_delta_v_capacity;
-        const skillInfo = this.buildSkillValues(coefficients, skills);
-        const upgradeFactor = this.calculateTechTreeUpgradeFactor(skillInfo);
-        
-        // Capacity increases with upgrade factor
-        return baseDeltaV * upgradeFactor;
+        const g0 = 9.80665; // Standard gravity m/s²
+        const baseMassRatio = 3.0; // Typical wet/dry mass ratio
+
+        // Get ISP config
+        const propulsionConfig = this.economicRules?.propulsion || {};
+        const baseIsp = propulsionConfig.base_isp_seconds || 300;
+        const maxIsp = propulsionConfig.max_isp_seconds || 4500;
+
+        // Get propulsion skill (starts at 1.0)
+        const propulsionSkill = skills?.propulsion || 1.0;
+
+        // Calculate max skill for normalization (~6.5x max from full research)
+        const maxSkill = 6.5;
+
+        // Normalize skill progress (0 at skill=1, 1 at skill=maxSkill)
+        const skillProgress = Math.min(1, Math.max(0, (propulsionSkill - 1) / (maxSkill - 1)));
+
+        // Interpolate ISP from base to max based on skill progress
+        const effectiveIsp = baseIsp + (maxIsp - baseIsp) * skillProgress;
+
+        // Calculate exhaust velocity (m/s)
+        const exhaustVelocity = effectiveIsp * g0;
+
+        // Calculate delta-v using Tsiolkovsky rocket equation (m/s)
+        const deltaVMs = exhaustVelocity * Math.log(baseMassRatio);
+
+        // Convert to km/s and add bonus
+        const deltaVKmS = deltaVMs / 1000 + probeDvBonus;
+
+        return deltaVKmS;
+    }
+
+    /**
+     * Get effective ISP based on propulsion skill (for display purposes)
+     * @param {Object} skills - Current skills from research
+     * @returns {number} Effective ISP in seconds
+     */
+    getEffectiveIsp(skills) {
+        const propulsionConfig = this.economicRules?.propulsion || {};
+        const baseIsp = propulsionConfig.base_isp_seconds || 300;
+        const maxIsp = propulsionConfig.max_isp_seconds || 4500;
+        const propulsionSkill = skills?.propulsion || 1.0;
+        const maxSkill = 6.5;
+        const skillProgress = Math.min(1, Math.max(0, (propulsionSkill - 1) / (maxSkill - 1)));
+        return baseIsp + (maxIsp - baseIsp) * skillProgress;
     }
     
     /**

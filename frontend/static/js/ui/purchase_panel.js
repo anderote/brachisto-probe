@@ -204,7 +204,7 @@ class PurchasePanel {
             // Check if zone is selected before proceeding
             if (!this.selectedZone) {
                 console.warn('[PurchasePanel] No zone selected, cannot toggle construction');
-                alert('Please select an orbital zone first by clicking on it in the zone selector.');
+                window.toast?.warning('Please select an orbital zone first');
                 return;
             }
             
@@ -475,6 +475,13 @@ class PurchasePanel {
                                 </div>
                             </div>
                             <div class="structure-count-badge" id="count-${buildingId}">${currentCount} built</div>
+                            ${currentCount > 0 ? `
+                            <button class="recycle-structure-btn"
+                                    id="recycle-btn-${buildingId}"
+                                    onclick="event.stopPropagation(); purchasePanel.recycleStructure('${buildingId}')"
+                                    title="Recycle 1 structure (75% metal, 25% slag)">
+                                Recycle
+                            </button>` : ''}
                         </div>
                         <div class="structure-progress-section building-progress-container" id="progress-${buildingId}">
                             <div class="structure-progress-header">
@@ -610,7 +617,7 @@ class PurchasePanel {
             } else {
                 // Buildings use toggle construction - require zone selection
                 if (!this.selectedZone) {
-                    alert('Please select an orbital zone first by clicking on it in the zone selector.');
+                    window.toast?.warning('Please select an orbital zone first');
                     // Revert card state
                     const card = document.getElementById(`building-${buildingId}`);
                     const statusIndicator = document.getElementById(`status-${buildingId}`);
@@ -672,7 +679,7 @@ class PurchasePanel {
                 } else {
                     console.warn('[PurchasePanel] Action failed:', response);
                     const errorMsg = response.result?.error || response.error || 'Unknown error';
-                    alert(`Failed to toggle construction: ${errorMsg}`);
+                    window.toast?.error(`Construction failed: ${errorMsg}`);
                     
                     // Revert card state on failure
                     const card = document.getElementById(`building-${buildingId}`);
@@ -699,7 +706,7 @@ class PurchasePanel {
             }
         } catch (error) {
             console.error('[PurchasePanel] Toggle construction failed:', error);
-            alert(error.message || 'Toggle construction failed');
+            window.toast?.error(error.message || 'Construction failed');
             // Revert card state on error
             const card = document.getElementById(`building-${buildingId}`);
             const statusIndicator = document.getElementById(`status-${buildingId}`);
@@ -1086,6 +1093,9 @@ class PurchasePanel {
 
         // Update recycling section
         this.updateRecyclingSection(gameState);
+
+        // Update recycling progress (continuous recycling)
+        this.updateRecyclingProgress(gameState);
     }
 
     getBuildingById(buildingId) {
@@ -1175,7 +1185,122 @@ class PurchasePanel {
             });
         } catch (error) {
             console.error('Recycling failed:', error);
-            alert(error.message || 'Recycling failed');
+            window.toast?.error(error.message || 'Recycling failed');
+        }
+    }
+
+    /**
+     * Toggle structure recycling in the currently selected zone
+     * Recycling is now a continuous operation using probe build power
+     * @param {string} buildingId - The building type to recycle
+     */
+    async recycleStructure(buildingId) {
+        if (!this.selectedZone) {
+            window.toast?.warning('Please select a zone first');
+            return;
+        }
+
+        try {
+            const result = await gameEngine.performAction('recycle_structure', {
+                building_id: buildingId,
+                zone_id: this.selectedZone
+            });
+
+            if (result.success && result.result) {
+                const enabled = result.result.enabled;
+                if (enabled) {
+                    window.toast?.info(`Recycling started for ${buildingId}`);
+                } else {
+                    window.toast?.info(`Recycling paused for ${buildingId}`);
+                }
+                // Update button state immediately
+                this.updateRecycleButtonState(buildingId, enabled);
+            } else {
+                window.toast?.error(result.result?.error || result.error || 'Recycling failed');
+            }
+        } catch (error) {
+            console.error('Recycling failed:', error);
+            window.toast?.error(error.message || 'Recycling failed');
+        }
+    }
+
+    /**
+     * Update the recycle button visual state
+     * @param {string} buildingId - The building ID
+     * @param {boolean} enabled - Whether recycling is enabled
+     */
+    updateRecycleButtonState(buildingId, enabled) {
+        const btn = document.getElementById(`recycle-btn-${buildingId}`);
+        if (btn) {
+            if (enabled) {
+                btn.classList.add('recycling-active');
+                btn.textContent = 'Stop';
+            } else {
+                btn.classList.remove('recycling-active');
+                btn.textContent = 'Recycle';
+            }
+        }
+    }
+
+    /**
+     * Update recycling progress UI for all buildings
+     * Called from update() method
+     * @param {Object} gameState - Current game state
+     */
+    updateRecyclingProgress(gameState) {
+        if (!this.selectedZone) return;
+
+        const enabledRecycling = gameState.enabled_recycling || [];
+        const recyclingProgress = gameState.structure_recycling_progress || {};
+
+        // Update recycle button states
+        if (this.buildings) {
+            this.buildings.forEach(building => {
+                const buildingId = building.id;
+                const enabledKey = `${this.selectedZone}::${buildingId}`;
+                const isRecycling = enabledRecycling.includes(enabledKey);
+
+                // Update button state
+                this.updateRecycleButtonState(buildingId, isRecycling);
+
+                // Update recycling progress display if recycling is active
+                const progressSection = document.getElementById(`progress-${buildingId}`);
+                const progressBar = document.getElementById(`progress-bar-${buildingId}`);
+                const progressPercent = document.getElementById(`progress-percent-${buildingId}`);
+                const progressTitle = progressSection?.querySelector('.structure-progress-title');
+
+                if (isRecycling && progressSection) {
+                    // Show recycling progress
+                    const progress = recyclingProgress[enabledKey] || 0;
+
+                    // Get structure cost (for percentage calculation)
+                    const structuresByZone = gameState.structures_by_zone || {};
+                    const zoneStructures = structuresByZone[this.selectedZone] || {};
+                    const currentCount = zoneStructures[buildingId] || 0;
+
+                    if (currentCount > 0) {
+                        const costMetal = this.getBuildingCost(building, buildingId);
+                        const percent = costMetal > 0 ? (progress / costMetal) * 100 : 0;
+
+                        if (progressBar) {
+                            progressBar.style.width = `${Math.min(100, percent)}%`;
+                            progressBar.classList.add('recycling');
+                        }
+                        if (progressPercent) {
+                            progressPercent.textContent = `${percent.toFixed(1)}%`;
+                        }
+                        if (progressTitle) {
+                            progressTitle.textContent = 'Recycling Progress';
+                        }
+                    }
+                } else if (progressBar) {
+                    // Reset to construction mode
+                    progressBar.classList.remove('recycling');
+                    if (progressTitle) {
+                        progressTitle.textContent = 'Construction Progress';
+                    }
+                }
+            });
         }
     }
 }

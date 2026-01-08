@@ -7,7 +7,50 @@ class StructuresVisualization {
         this.orbitalData = null;
         this.time = 0;
         this.buildingsData = null;
+
+        // Shared geometries and materials for memory efficiency
+        this.sharedGeometries = {};
+        this.sharedMaterials = {};
+
+        // Instanced meshes for high-count structures {zoneId: {buildingId: InstancedMesh}}
+        this.instancedMeshes = {};
+
+        // Max instances per instanced mesh (pre-allocated for performance)
+        this.maxInstances = 500;
+
         this.init();
+        this.initSharedResources();
+    }
+
+    /**
+     * Initialize shared geometries and materials (created once, reused for all instances)
+     */
+    initSharedResources() {
+        // Power station shared resources
+        this.sharedGeometries.powerStation = new THREE.PlaneGeometry(0.15, 0.45);
+        this.sharedMaterials.powerStation = new THREE.MeshStandardMaterial({
+            color: 0xCCCCCC,
+            metalness: 0.3,
+            roughness: 0.7,
+            side: THREE.DoubleSide
+        });
+
+        // Data center (ODC) shared resources - simplified to single plane for performance
+        this.sharedGeometries.dataCenter = new THREE.PlaneGeometry(0.08, 0.08);
+        this.sharedMaterials.dataCenter = new THREE.MeshStandardMaterial({
+            color: 0xDDDDDD,
+            metalness: 0.5,
+            roughness: 0.4,
+            side: THREE.DoubleSide
+        });
+
+        // Mass driver shared resources
+        this.sharedGeometries.massDriver = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 8);
+        this.sharedMaterials.massDriver = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            metalness: 0.8,
+            roughness: 0.2
+        });
     }
 
     async init() {
@@ -32,76 +75,46 @@ class StructuresVisualization {
     }
 
     /**
-     * Calculate visible count: 10 real structures = 1 visual structure
-     * 1-10 → 1, 11-20 → 2, 21-30 → 3, etc.
+     * Calculate visible count with logarithmic scaling for performance
+     * Low counts: 1 visual per 10 structures (1-100 → 1-10 visuals)
+     * Medium counts: 1 visual per 100 structures (100-1000 → 10-19 visuals)
+     * High counts: 1 visual per 1000 structures (1000+ → 19+ visuals, capped at 50)
      */
     calculateVisibleCount(count) {
         if (count <= 0) return 0;
-        // Each visual structure represents up to 10 real structures
-        // Always show at least 1 visual if any structures exist
-        return Math.ceil(count / 10);
+        if (count <= 100) {
+            // 1-100 structures: 1 visual per 10 (max 10 visuals)
+            return Math.ceil(count / 10);
+        } else if (count <= 1000) {
+            // 100-1000 structures: base 10 + 1 visual per 100 additional
+            return 10 + Math.ceil((count - 100) / 100);
+        } else {
+            // 1000+ structures: base 19 + 1 visual per 1000 additional, capped at 50
+            return Math.min(50, 19 + Math.ceil((count - 1000) / 1000));
+        }
     }
 
     /**
-     * Create ODC mesh - small satellite with small radiator fins, pointing towards sun
+     * Create ODC mesh - simplified single plane for performance (uses shared resources)
      */
     createODCMesh() {
-        const group = new THREE.Group();
-        
-        // Central body - smaller box
-        const bodyGeometry = new THREE.BoxGeometry(0.02, 0.02, 0.02);
-        const bodyMaterial = new THREE.MeshStandardMaterial({
-            color: 0xCCCCCC,
-            metalness: 0.7,
-            roughness: 0.3
-        });
-        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-        group.add(body);
-
-        // Create 4 smaller flat panels (radiator fins) extending outward
-        const panelGeometry = new THREE.PlaneGeometry(0.04, 0.08); // Smaller: 0.04 x 0.08 (was 0.1 x 0.2)
-        const panelMaterial = new THREE.MeshStandardMaterial({
-            color: 0xDDDDDD,
-            metalness: 0.5,
-            roughness: 0.4,
-            side: THREE.DoubleSide
-        });
-
-        // Panel positions: front, back, left, right (smaller distances)
-        const panelPositions = [
-            { x: 0, y: 0, z: 0.06, rotY: 0 },      // Front
-            { x: 0, y: 0, z: -0.06, rotY: Math.PI }, // Back
-            { x: 0.06, y: 0, z: 0, rotY: Math.PI / 2 }, // Right
-            { x: -0.06, y: 0, z: 0, rotY: -Math.PI / 2 } // Left
-        ];
-
-        panelPositions.forEach(pos => {
-            const panel = new THREE.Mesh(panelGeometry, panelMaterial);
-            panel.position.set(pos.x, pos.y, pos.z);
-            panel.rotation.y = pos.rotY;
-            group.add(panel);
-        });
-
-        // Orientation will be set in updateStructurePosition to point 90 degrees from sun direction
-
-        return group;
+        // Use shared geometry and material for performance
+        const mesh = new THREE.Mesh(
+            this.sharedGeometries.dataCenter,
+            this.sharedMaterials.dataCenter
+        );
+        return mesh;
     }
 
     /**
-     * Create power station mesh - tall rectangular strip that faces the sun
+     * Create power station mesh - tall rectangular strip that faces the sun (uses shared resources)
      */
     createPowerStationMesh() {
-        const width = 0.15; // Width of the panel
-        const height = 0.45; // Height (3X the width)
-        const geometry = new THREE.PlaneGeometry(width, height);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0xCCCCCC,
-            metalness: 0.3,
-            roughness: 0.7,
-            side: THREE.DoubleSide
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        // Will be oriented to face sun in updateStructurePosition
+        // Use shared geometry and material for performance
+        const mesh = new THREE.Mesh(
+            this.sharedGeometries.powerStation,
+            this.sharedMaterials.powerStation
+        );
         return mesh;
     }
 
@@ -138,16 +151,14 @@ class StructuresVisualization {
     // }
 
     /**
-     * Create mass driver mesh - long thin cylinder (tangent to orbital circle)
+     * Create mass driver mesh - long thin cylinder (uses shared resources)
      */
     createMassDriverMesh() {
-        const geometry = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 16); // Longer: 0.8 units
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x888888,
-            metalness: 0.8,
-            roughness: 0.2
-        });
-        const mesh = new THREE.Mesh(geometry, material);
+        // Use shared geometry and material for performance
+        const mesh = new THREE.Mesh(
+            this.sharedGeometries.massDriver,
+            this.sharedMaterials.massDriver
+        );
         // Rotate to horizontal
         mesh.rotation.z = Math.PI / 2;
         return mesh;
@@ -376,28 +387,7 @@ class StructuresVisualization {
                     if (zoneGroup[buildingId]) {
                         zoneGroup[buildingId].forEach(mesh => {
                             this.scene.remove(mesh);
-                            // Clean up geometry and materials
-                            if (mesh.geometry) mesh.geometry.dispose();
-                            if (mesh.material) {
-                                if (Array.isArray(mesh.material)) {
-                                    mesh.material.forEach(mat => mat.dispose());
-                                } else {
-                                    mesh.material.dispose();
-                                }
-                            }
-                            // If it's a group, dispose children
-                            if (mesh.children) {
-                                mesh.children.forEach(child => {
-                                    if (child.geometry) child.geometry.dispose();
-                                    if (child.material) {
-                                        if (Array.isArray(child.material)) {
-                                            child.material.forEach(mat => mat.dispose());
-                                        } else {
-                                            child.material.dispose();
-                                        }
-                                    }
-                                });
-                            }
+                            this.disposeMeshResources(mesh);
                         });
                         delete zoneGroup[buildingId];
                     }
@@ -656,28 +646,7 @@ class StructuresVisualization {
                     const toRemove = meshArray.splice(requiredCount);
                     toRemove.forEach(mesh => {
                         this.scene.remove(mesh);
-                        // Clean up geometry and materials
-                        if (mesh.geometry) mesh.geometry.dispose();
-                        if (mesh.material) {
-                            if (Array.isArray(mesh.material)) {
-                                mesh.material.forEach(mat => mat.dispose());
-                            } else {
-                                mesh.material.dispose();
-                            }
-                        }
-                        // If it's a group, dispose children
-                        if (mesh.children) {
-                            mesh.children.forEach(child => {
-                                if (child.geometry) child.geometry.dispose();
-                                if (child.material) {
-                                    if (Array.isArray(child.material)) {
-                                        child.material.forEach(mat => mat.dispose());
-                                    } else {
-                                        child.material.dispose();
-                                    }
-                                }
-                            });
-                        }
+                        this.disposeMeshResources(mesh);
                     });
                 }
             });
@@ -688,27 +657,7 @@ class StructuresVisualization {
                     if (zoneGroup[buildingId]) {
                         zoneGroup[buildingId].forEach(mesh => {
                             this.scene.remove(mesh);
-                            // Clean up
-                            if (mesh.geometry) mesh.geometry.dispose();
-                            if (mesh.material) {
-                                if (Array.isArray(mesh.material)) {
-                                    mesh.material.forEach(mat => mat.dispose());
-                                } else {
-                                    mesh.material.dispose();
-                                }
-                            }
-                            if (mesh.children) {
-                                mesh.children.forEach(child => {
-                                    if (child.geometry) child.geometry.dispose();
-                                    if (child.material) {
-                                        if (Array.isArray(child.material)) {
-                                            child.material.forEach(mat => mat.dispose());
-                                        } else {
-                                            child.material.dispose();
-                                        }
-                                    }
-                                });
-                            }
+                            this.disposeMeshResources(mesh);
                         });
                         delete zoneGroup[buildingId];
                     }
@@ -723,27 +672,7 @@ class StructuresVisualization {
                 Object.values(zoneGroup).forEach(meshArray => {
                     meshArray.forEach(mesh => {
                         this.scene.remove(mesh);
-                        // Clean up
-                        if (mesh.geometry) mesh.geometry.dispose();
-                        if (mesh.material) {
-                            if (Array.isArray(mesh.material)) {
-                                mesh.material.forEach(mat => mat.dispose());
-                            } else {
-                                mesh.material.dispose();
-                            }
-                        }
-                        if (mesh.children) {
-                            mesh.children.forEach(child => {
-                                if (child.geometry) child.geometry.dispose();
-                                if (child.material) {
-                                    if (Array.isArray(child.material)) {
-                                        child.material.forEach(mat => mat.dispose());
-                                    } else {
-                                        child.material.dispose();
-                                    }
-                                }
-                            });
-                        }
+                        this.disposeMeshResources(mesh);
                     });
                 });
                 delete this.structureGroups[zoneId];
@@ -953,16 +882,49 @@ class StructuresVisualization {
 
     /**
      * Update animation
+     * @param {number} deltaTime - Time since last update
+     * @param {Object} gameState - Optional game state for depletion checking
      */
-    update(deltaTime) {
+    update(deltaTime, gameState = null) {
         this.time += deltaTime;
 
+        // Get depleted zones from game state
+        const depletedZones = new Set();
+        if (gameState && gameState.zones) {
+            Object.entries(gameState.zones).forEach(([zoneId, zone]) => {
+                if (zone.depleted || (zone.mass_remaining !== undefined && zone.mass_remaining <= 0)) {
+                    depletedZones.add(zoneId);
+                }
+            });
+        }
+
         // Update all structure positions
-        Object.values(this.structureGroups).forEach(zoneGroup => {
-            Object.values(zoneGroup).forEach(meshArray => {
+        Object.entries(this.structureGroups).forEach(([zoneId, zoneGroup]) => {
+            const isZoneDepleted = depletedZones.has(zoneId);
+
+            Object.entries(zoneGroup).forEach(([buildingId, meshArray]) => {
                 meshArray.forEach(mesh => {
                     const userData = mesh.userData;
                     if (!userData) return;
+
+                    // Handle depleted zones: hide planet-dependent structures but keep mass drivers
+                    if (isZoneDepleted) {
+                        // Space elevators require a planet - hide them
+                        if (userData.isSpaceElevator) {
+                            mesh.visible = false;
+                            return;
+                        }
+                        // EM Gas Miners require a planet atmosphere - hide them
+                        if (userData.isEMGasMiner) {
+                            mesh.visible = false;
+                            return;
+                        }
+                        // Mass drivers can stay - they work in space
+                        // Power stations, ODCs can stay - they orbit the zone
+                    }
+
+                    // Show structures in non-depleted zones
+                    mesh.visible = true;
 
                     const planetData = this.getPlanetData(userData.zoneId);
                     if (!planetData) return;
@@ -1028,6 +990,47 @@ class StructuresVisualization {
     }
 
     /**
+     * Check if a geometry/material is shared (should not be disposed individually)
+     */
+    isSharedResource(resource) {
+        if (!resource) return false;
+        // Check if it's one of our shared geometries or materials
+        for (const key in this.sharedGeometries) {
+            if (this.sharedGeometries[key] === resource) return true;
+        }
+        for (const key in this.sharedMaterials) {
+            if (this.sharedMaterials[key] === resource) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Dispose a mesh's resources (geometry/material) if they're not shared
+     */
+    disposeMeshResources(mesh) {
+        if (!mesh) return;
+
+        // Don't dispose shared resources
+        if (mesh.geometry && !this.isSharedResource(mesh.geometry)) {
+            mesh.geometry.dispose();
+        }
+        if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+                mesh.material.forEach(mat => {
+                    if (!this.isSharedResource(mat)) mat.dispose();
+                });
+            } else if (!this.isSharedResource(mesh.material)) {
+                mesh.material.dispose();
+            }
+        }
+
+        // Handle children (for groups like EM gas miner, space elevator)
+        if (mesh.children) {
+            mesh.children.forEach(child => this.disposeMeshResources(child));
+        }
+    }
+
+    /**
      * Clean up and destroy
      */
     destroy() {
@@ -1036,30 +1039,20 @@ class StructuresVisualization {
             Object.values(zoneGroup).forEach(meshArray => {
                 meshArray.forEach(mesh => {
                     this.scene.remove(mesh);
-                    // Clean up geometry and materials
-                    if (mesh.geometry) mesh.geometry.dispose();
-                    if (mesh.material) {
-                        if (Array.isArray(mesh.material)) {
-                            mesh.material.forEach(mat => mat.dispose());
-                        } else {
-                            mesh.material.dispose();
-                        }
-                    }
-                    if (mesh.children) {
-                        mesh.children.forEach(child => {
-                            if (child.geometry) child.geometry.dispose();
-                            if (child.material) {
-                                if (Array.isArray(child.material)) {
-                                    child.material.forEach(mat => mat.dispose());
-                                } else {
-                                    child.material.dispose();
-                                }
-                            }
-                        });
-                    }
+                    this.disposeMeshResources(mesh);
                 });
             });
         });
         this.structureGroups = {};
+
+        // Now dispose shared resources (only on full destroy)
+        Object.values(this.sharedGeometries).forEach(geom => {
+            if (geom) geom.dispose();
+        });
+        Object.values(this.sharedMaterials).forEach(mat => {
+            if (mat) mat.dispose();
+        });
+        this.sharedGeometries = {};
+        this.sharedMaterials = {};
     }
 }

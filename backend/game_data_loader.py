@@ -34,6 +34,8 @@ class GameDataLoader:
         self._research_trees = None
         self._zone_metal_limits = None
         self._economic_rules = None
+        self._moon_zones = []
+        self._parent_zone_map = {}
         
     def load_orbital_mechanics(self):
         """Load orbital mechanics data."""
@@ -41,21 +43,50 @@ class GameDataLoader:
             file_path = self.data_dir / 'orbital_mechanics.json'
             with open(file_path, 'r') as f:
                 data = json.load(f)
-                self._orbital_zones = data['orbital_zones']
-                
-                # Calculate metal limits per zone based on true planetary masses
+                # Start with planet zones
+                self._orbital_zones = list(data['orbital_zones'])
+
+                # Store moon-related data
+                self._moon_zones = []
+                self._parent_zone_map = {}  # moonId -> parentZoneId
+
+                # Flatten moons into separate zone entries
+                for zone in data['orbital_zones']:
+                    if 'moons' in zone and isinstance(zone['moons'], list):
+                        for moon in zone['moons']:
+                            # Create a full zone entry for the moon
+                            moon_zone = {
+                                **moon,
+                                'is_moon': True,
+                                'parent_zone': zone['id'],
+                                # Inherit parent's radius_au for positioning purposes
+                                'radius_au': zone.get('radius_au', 1.0),
+                                'radius_au_start': zone.get('radius_au', 1.0),
+                                'radius_au_end': zone.get('radius_au', 1.0)
+                            }
+                            self._orbital_zones.append(moon_zone)
+                            self._moon_zones.append(moon_zone)
+                            self._parent_zone_map[moon['id']] = zone['id']
+
+                # Calculate metal limits per zone (including moons)
                 self._zone_metal_limits = {}
-                
+
                 for zone in self._orbital_zones:
                     zone_id = zone['id']
-                    if zone_id in PLANETARY_MASSES:
+                    # Use metal_stores_kg from JSON if available (for moons and some zones)
+                    if 'metal_stores_kg' in zone:
+                        self._zone_metal_limits[zone_id] = zone['metal_stores_kg']
+                    elif 'total_mass_kg' in zone:
+                        # Use total_mass_kg for moons
+                        self._zone_metal_limits[zone_id] = zone['total_mass_kg']
+                    elif zone_id in PLANETARY_MASSES:
                         # Use true planetary mass directly
                         zone_mass = PLANETARY_MASSES[zone_id]
                         self._zone_metal_limits[zone_id] = zone_mass
                     else:
                         # Default for zones without mass data
                         self._zone_metal_limits[zone_id] = 0
-                
+
         return self._orbital_zones
     
     def get_zone_metal_limit(self, zone_id):
@@ -72,7 +103,32 @@ class GameDataLoader:
             if zone['id'] == zone_id:
                 return zone
         return None
-    
+
+    def is_moon_zone(self, zone_id):
+        """Check if a zone is a moon."""
+        if self._orbital_zones is None:
+            self.load_orbital_mechanics()
+        zone = self.get_zone_by_id(zone_id)
+        return zone.get('is_moon', False) if zone else False
+
+    def get_parent_zone(self, moon_zone_id):
+        """Get parent zone ID for a moon zone."""
+        if self._orbital_zones is None:
+            self.load_orbital_mechanics()
+        return self._parent_zone_map.get(moon_zone_id)
+
+    def get_moons_for_zone(self, parent_zone_id):
+        """Get moon zones for a specific parent planet."""
+        if self._orbital_zones is None:
+            self.load_orbital_mechanics()
+        return [m for m in self._moon_zones if m.get('parent_zone') == parent_zone_id]
+
+    def get_all_moon_zones(self):
+        """Get all moon zones."""
+        if self._orbital_zones is None:
+            self.load_orbital_mechanics()
+        return self._moon_zones
+
     def load_buildings(self):
         """Load buildings data."""
         if self._buildings is None:

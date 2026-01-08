@@ -1,38 +1,31 @@
-/** Dyson Swarm Visualization - Black dots in polar orbital rings with exponential waterfall distribution */
+/** Dyson Swarm Visualization - Simplified with evenly distributed orbital rings */
 class DysonSphereVisualization {
     constructor(scene, solarSystem) {
         this.scene = scene;
         this.solarSystem = solarSystem;
         this.dysonGroup = new THREE.Group();
-        this.scene.add(this.dysonGroup);
-        
-        // Orbital configuration
-        // Polar orbital rings, densely packed for a fuller appearance
-        this.numOrbitalRings = 1024;
-        this.maxParticlesPerRing = 512;
-        this.maxTotalParticles = this.numOrbitalRings * this.maxParticlesPerRing; // 524,288 max
-        
-        // 5 different orbital altitudes (as multipliers of base radius)
-        // Pattern: distributed from 0.95x to 1.05x in a wave pattern
-        this.numAltitudes = 5;
-        this.altitudeMultipliers = [];
-        for (let i = 0; i < this.numAltitudes; i++) {
-            // Create a wave pattern: 0.95 to 1.05 with smooth distribution
-            const t = i / (this.numAltitudes - 1); // 0 to 1
-            // Use sine wave for smooth distribution: 0.95 + 0.1 * sin(π * t)
-            const multiplier = 0.95 + 0.1 * Math.sin(Math.PI * t);
-            this.altitudeMultipliers.push(multiplier);
+        if (this.scene) {
+            this.scene.add(this.dysonGroup);
+        } else {
+            console.warn('[DysonSphere] Scene not provided to constructor');
         }
-        
-        // Exponential waterfall distribution weights
-        // Ring i gets weight 1/e^i
-        this.E = Math.E;
+
+        // Simplified orbital configuration
+        // More rings with better distribution for fuller complete sphere
+        this.numOrbitalRings = 96;
+        this.maxParticlesPerRing = 256;
+        this.maxTotalParticles = this.numOrbitalRings * this.maxParticlesPerRing; // 24,576 max (3x original)
+
+        // 3 different orbital altitudes (as multipliers of base radius)
+        this.numAltitudes = 3;
+        this.altitudeMultipliers = [0.96, 1.0, 1.04];
+
+        // Even distribution weights (all rings get equal weight)
         this.ringWeights = [];
         this.totalWeight = 0;
-        for (let i = 1; i <= this.numOrbitalRings; i++) {
-            const weight = 1 / Math.pow(this.E, i);
-            this.ringWeights.push(weight);
-            this.totalWeight += weight;
+        for (let i = 0; i < this.numOrbitalRings; i++) {
+            this.ringWeights.push(1.0);
+            this.totalWeight += 1.0;
         }
         
         // Particle system (first shell)
@@ -88,7 +81,7 @@ class DysonSphereVisualization {
             this.positions[i * 3] = 0;
             this.positions[i * 3 + 1] = 0;
             this.positions[i * 3 + 2] = 0;
-            this.sizes[i] = 0.12; // 3x larger dots
+            this.sizes[i] = 0.48; // 4x larger dots for complete sphere
         }
         
         this.particleGeometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
@@ -189,12 +182,19 @@ class DysonSphereVisualization {
     }
     
     createCompletionSign() {
-        // Create a DOM element for the completion sign
+        // Create a DOM element for the interstellar prompt (above time controls)
         this.completionSign = document.createElement('div');
-        this.completionSign.className = 'dyson-completion-sign';
-        this.completionSign.textContent = 'COMPLETE';
+        this.completionSign.className = 'dyson-interstellar-prompt';
+        this.completionSign.innerHTML = '<span class="prompt-icon">🌟</span> Dyson complete! Press <kbd>I</kbd> to see interstellar map';
         this.completionSign.style.display = 'none';
-        document.getElementById('app').appendChild(this.completionSign);
+
+        // Insert above time controls
+        const timeControls = document.getElementById('time-controls');
+        if (timeControls && timeControls.parentNode) {
+            timeControls.parentNode.insertBefore(this.completionSign, timeControls);
+        } else {
+            document.getElementById('app').appendChild(this.completionSign);
+        }
     }
     
     // Get Dyson orbit radius - just inside Mercury's orbit
@@ -356,25 +356,29 @@ class DysonSphereVisualization {
         const orbitRadius = this.getDysonOrbitRadius();
         const baseOrbitalSpeed = this.getBaseOrbitalSpeed();
         
+        // Golden angle for even spherical distribution (avoids polar clustering)
+        const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
         for (let ringIndex = 0; ringIndex < this.numOrbitalRings; ringIndex++) {
             const particleCount = this.ringParticleCounts[ringIndex];
             if (particleCount === 0) continue;
-            
-            // Ring polar angle: 0°, 1°, 2°, ... 359° (converted to radians)
-            // Map to phi: 0 to π for full sphere coverage
-            // Ring 0 at 0° (north pole), ring 180 at 180° (south pole), etc.
-            const polarAngleDegrees = ringIndex * 1;
-            const phi = (polarAngleDegrees / 180) * Math.PI; // Convert to radians, 0 to ~2π
-            
-            // Assign this ring to one of the 10 altitudes using a pattern
-            // Use ringIndex to cycle through altitudes in a repeating pattern
+
+            // Use golden angle distribution for even coverage
+            // phi ranges from 0 to π (equator to poles, evenly distributed)
+            const t = ringIndex / this.numOrbitalRings;
+            const phi = Math.acos(1 - 2 * t);  // Even distribution on sphere
+
+            // Golden angle offset for ring azimuth (prevents alignment)
+            const ringAzimuthOffset = ringIndex * goldenAngle;
+
+            // Assign this ring to one of the altitudes using a pattern
             const altitudeIndex = ringIndex % this.numAltitudes;
             const altitudeMultiplier = this.altitudeMultipliers[altitudeIndex];
             const ringRadius = orbitRadius * altitudeMultiplier;
             
             for (let i = 0; i < particleCount; i++) {
-                // Distribute particles evenly around the ring
-                const angle = (i / particleCount) * Math.PI * 2;
+                // Distribute particles evenly around the ring with golden angle offset
+                const angle = (i / particleCount) * Math.PI * 2 + ringAzimuthOffset;
                 
                 // Slight speed variation for visual interest
                 const speedVariation = 0.9 + Math.random() * 0.2;

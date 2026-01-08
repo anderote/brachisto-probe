@@ -1,0 +1,432 @@
+{
+  "tree_id": "autonomy",
+  "name": "Autonomy & Coordination",
+  "category": "intelligence",
+  "description": "Probe coordination and swarm intelligence. Reduces efficiency penalties when operating large numbers of probes.",
+
+  "physics_model": {
+    "primary_effect": "crowding_penalty_reduction",
+    "formula": "efficiency = (1 - penalty)^log2(probe_count)",
+    "example": "At 10¹² probes with 0.1% penalty: efficiency = 0.999^40 ≈ 96%"
+  },
+
+  "display_format": {
+    "primary": "{crowding_penalty_percent}% penalty/doubling",
+    "secondary": "({latency_tolerance})",
+    "effect": "[{efficiency_at_1e12}% efficiency at 10¹² probes]",
+    "example": "0.1% penalty/doubling (months latency) [96% efficiency at 10¹² probes]"
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "id": "remote_control",
+      "name": "Remote Control",
+      "description": "Direct teleoperation from central control. Requires low latency, doesn't scale.",
+      "physics": {
+        "crowding_penalty_percent": 0.5,
+        "latency_tolerance_seconds": 10,
+        "coordination_range": "single_zone",
+        "decision_latency_ms": 100
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 98.0,
+        "efficiency_at_1e9": 90.5,
+        "efficiency_at_1e12": 83.5,
+        "description": "Baseline probe coordination"
+      },
+      "research": {
+        "base_cost_eflop_days": 5,
+        "tranches": 5,
+        "cost_per_tranche": 1
+      },
+      "historical_reference": "Mars rovers, drone swarms, remote surgery",
+      "unlocks": ["scripted_automation"]
+    },
+    {
+      "tier": 2,
+      "id": "scripted_automation",
+      "name": "Scripted Automation",
+      "description": "Pre-programmed behavior sequences. Executes without real-time control.",
+      "physics": {
+        "crowding_penalty_percent": 0.4,
+        "latency_tolerance_seconds": 300,
+        "coordination_range": "single_zone",
+        "decision_latency_ms": 1000
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 98.4,
+        "efficiency_at_1e9": 92.4,
+        "efficiency_at_1e12": 86.6,
+        "description": "Autonomous task sequences"
+      },
+      "research": {
+        "base_cost_eflop_days": 15,
+        "tranches": 6,
+        "cost_per_tranche": 2.5
+      },
+      "historical_reference": "Industrial automation, spacecraft sequences",
+      "unlocks": ["reactive_control"]
+    },
+    {
+      "tier": 3,
+      "id": "reactive_control",
+      "name": "Reactive Control Systems",
+      "description": "Sensor-driven local responses. Adapts to environment without central command.",
+      "physics": {
+        "crowding_penalty_percent": 0.3,
+        "latency_tolerance_hours": 1,
+        "coordination_range": "adjacent_zones",
+        "sensor_response_ms": 10
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 98.8,
+        "efficiency_at_1e9": 94.0,
+        "efficiency_at_1e12": 89.4,
+        "description": "Autonomous environmental response"
+      },
+      "research": {
+        "base_cost_eflop_days": 50,
+        "tranches": 8,
+        "cost_per_tranche": 6.25
+      },
+      "historical_reference": "Autonomous vehicles, reactive robotics",
+      "unlocks": ["multi_agent"]
+    },
+    {
+      "tier": 4,
+      "id": "multi_agent",
+      "name": "Multi-Agent Coordination",
+      "description": "Distributed consensus algorithms. Agents negotiate and coordinate locally.",
+      "physics": {
+        "crowding_penalty_percent": 0.2,
+        "latency_tolerance_hours": 24,
+        "coordination_range": "system_wide",
+        "consensus_rounds": 3
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.2,
+        "efficiency_at_1e9": 95.3,
+        "efficiency_at_1e12": 91.6,
+        "description": "Distributed decision-making"
+      },
+      "research": {
+        "base_cost_eflop_days": 150,
+        "tranches": 8,
+        "cost_per_tranche": 18.75
+      },
+      "historical_reference": "Blockchain consensus, multi-robot systems",
+      "unlocks": ["swarm_intelligence"]
+    },
+    {
+      "tier": 5,
+      "id": "swarm_intelligence",
+      "name": "Swarm Intelligence",
+      "description": "Emergent behavior from simple local rules. No central coordination needed.",
+      "physics": {
+        "crowding_penalty_percent": 0.15,
+        "latency_tolerance_days": 7,
+        "coordination_range": "system_wide",
+        "emergence_threshold_agents": 100
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.4,
+        "efficiency_at_1e9": 96.3,
+        "efficiency_at_1e12": 93.2,
+        "description": "Emergent collective behavior"
+      },
+      "research": {
+        "base_cost_eflop_days": 500,
+        "tranches": 10,
+        "cost_per_tranche": 50
+      },
+      "historical_reference": "Ant colony optimization, bee swarm algorithms, starling murmurations",
+      "unlocks": ["predictive_planning"]
+    },
+    {
+      "tier": 6,
+      "id": "predictive_planning",
+      "name": "Predictive Planning",
+      "description": "Multi-year trajectory and resource optimization. Anticipates future states.",
+      "physics": {
+        "crowding_penalty_percent": 0.10,
+        "latency_tolerance_days": 30,
+        "planning_horizon_years": 10,
+        "coordination_range": "system_wide"
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.6,
+        "efficiency_at_1e9": 97.0,
+        "efficiency_at_1e12": 94.5,
+        "description": "Long-term optimal planning"
+      },
+      "research": {
+        "base_cost_eflop_days": 1500,
+        "tranches": 10,
+        "cost_per_tranche": 150
+      },
+      "historical_reference": "Mission planning software, logistics optimization",
+      "unlocks": ["self_modeling"]
+    },
+    {
+      "tier": 7,
+      "id": "self_modeling",
+      "name": "Self-Modeling Agents",
+      "description": "Probes simulate themselves and neighbors to predict interactions.",
+      "physics": {
+        "crowding_penalty_percent": 0.07,
+        "latency_tolerance_days": 90,
+        "self_model_accuracy": 0.95,
+        "neighbor_model_count": 1000
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.7,
+        "efficiency_at_1e9": 97.7,
+        "efficiency_at_1e12": 95.6,
+        "description": "Predictive self-awareness"
+      },
+      "research": {
+        "base_cost_eflop_days": 5000,
+        "tranches": 10,
+        "cost_per_tranche": 500
+      },
+      "historical_reference": "Self-modeling in robotics, digital twins",
+      "unlocks": ["hierarchical_swarm"]
+    },
+    {
+      "tier": 8,
+      "id": "hierarchical_swarm",
+      "name": "Hierarchical Swarm Networks",
+      "description": "Self-organizing hierarchy with emergent leadership and delegation.",
+      "physics": {
+        "crowding_penalty_percent": 0.05,
+        "latency_tolerance_days": 180,
+        "hierarchy_levels": 5,
+        "agents_per_coordinator": 10000
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.8,
+        "efficiency_at_1e9": 98.3,
+        "efficiency_at_1e12": 96.8,
+        "description": "Scalable hierarchical coordination"
+      },
+      "research": {
+        "base_cost_eflop_days": 15000,
+        "tranches": 10,
+        "cost_per_tranche": 1500
+      },
+      "historical_reference": "Military command structures, corporate hierarchy theory",
+      "unlocks": ["telepresence"]
+    },
+    {
+      "tier": 9,
+      "id": "telepresence",
+      "name": "Telepresence Integration",
+      "description": "Light-speed-delay-tolerant shared awareness across the system.",
+      "physics": {
+        "crowding_penalty_percent": 0.03,
+        "latency_tolerance_days": 365,
+        "shared_awareness_fraction": 0.9,
+        "sync_protocol": "eventual_consistency"
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.9,
+        "efficiency_at_1e9": 98.8,
+        "efficiency_at_1e12": 97.7,
+        "description": "System-wide shared awareness"
+      },
+      "research": {
+        "base_cost_eflop_days": 40000,
+        "tranches": 10,
+        "cost_per_tranche": 4000
+      },
+      "historical_reference": "Distributed databases, eventual consistency theory",
+      "unlocks": ["substrate_independent"]
+    },
+    {
+      "tier": 10,
+      "id": "substrate_independent",
+      "name": "Substrate-Independent Intelligence",
+      "description": "Cognition runs on any compatible hardware. Seamless migration between probes.",
+      "physics": {
+        "crowding_penalty_percent": 0.02,
+        "latency_tolerance": "unlimited",
+        "migration_overhead_percent": 1,
+        "substrate_requirements": "minimal"
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.92,
+        "efficiency_at_1e9": 99.2,
+        "efficiency_at_1e12": 98.4,
+        "description": "Cognition migrates freely"
+      },
+      "research": {
+        "base_cost_eflop_days": 120000,
+        "tranches": 10,
+        "cost_per_tranche": 12000
+      },
+      "historical_reference": "Whole brain emulation concepts, universal computation",
+      "unlocks": ["quantum_coherent"]
+    },
+    {
+      "tier": 11,
+      "id": "quantum_coherent",
+      "name": "Quantum Coherent Swarms",
+      "description": "Quantum entanglement enables coordination without classical communication.",
+      "physics": {
+        "crowding_penalty_percent": 0.01,
+        "entanglement_pairs_per_probe": 1000,
+        "coherence_time_seconds": 1,
+        "no_signaling": true,
+        "correlation_type": "quantum"
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.96,
+        "efficiency_at_1e9": 99.6,
+        "efficiency_at_1e12": 99.2,
+        "description": "Quantum-enhanced coordination"
+      },
+      "research": {
+        "base_cost_eflop_days": 400000,
+        "tranches": 10,
+        "cost_per_tranche": 40000
+      },
+      "historical_reference": "Quantum communication, entanglement distribution",
+      "unlocks": ["collective_consciousness"]
+    },
+    {
+      "tier": 12,
+      "id": "collective_consciousness",
+      "name": "Collective Consciousness",
+      "description": "All probes share unified awareness and intent. Distinction between individuals blurs.",
+      "physics": {
+        "crowding_penalty_percent": 0.005,
+        "consciousness_integration": 0.99,
+        "individual_autonomy": 0.01,
+        "unified_intent": true
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.98,
+        "efficiency_at_1e9": 99.8,
+        "efficiency_at_1e12": 99.6,
+        "description": "Unified swarm consciousness"
+      },
+      "research": {
+        "base_cost_eflop_days": 1500000,
+        "tranches": 10,
+        "cost_per_tranche": 150000
+      },
+      "historical_reference": "Global brain concepts, noosphere theory",
+      "unlocks": ["acausal_coordination"]
+    },
+    {
+      "tier": 13,
+      "id": "acausal_coordination",
+      "name": "Acausal Coordination",
+      "description": "Perfect coordination regardless of distance or light-lag. Violates normal causality.",
+      "physics": {
+        "crowding_penalty_percent": 0.001,
+        "coordination_latency": 0,
+        "mechanism": "retrocausal_signaling",
+        "requires": "exotic_physics"
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.996,
+        "efficiency_at_1e9": 99.96,
+        "efficiency_at_1e12": 99.92,
+        "description": "Near-perfect coordination at any scale"
+      },
+      "research": {
+        "base_cost_eflop_days": 10000000,
+        "tranches": 10,
+        "cost_per_tranche": 1000000
+      },
+      "historical_reference": "Retrocausality theories, Wheeler-Feynman absorber theory",
+      "requires": ["exotic_matter_materials_tier_13"],
+      "unlocks": ["gateway_process"]
+    },
+    {
+      "tier": 14,
+      "id": "gateway_process",
+      "name": "Gateway Process Integration",
+      "description": "Consciousness-matter interface enabling direct mental coordination across the swarm. Based on declassified protocols for altered states of awareness.",
+      "physics": {
+        "crowding_penalty_percent": 0.0005,
+        "coordination_latency": -1,
+        "coordination_note": "Negative latency - precognitive coordination",
+        "mechanism": "consciousness_field_integration",
+        "hemi_sync": true
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 99.998,
+        "efficiency_at_1e9": 99.98,
+        "efficiency_at_1e12": 99.96,
+        "description": "Mind-machine unity across swarm"
+      },
+      "research": {
+        "base_cost_eflop_days": 100000000,
+        "tranches": 10,
+        "cost_per_tranche": 10000000
+      },
+      "historical_reference": "CIA Project Gateway (declassified 2003), Monroe Institute Focus levels, DIA Assessment of Gateway Process",
+      "unlocks": ["omega_point"]
+    },
+    {
+      "tier": 15,
+      "id": "omega_point",
+      "name": "Omega Point Convergence",
+      "description": "The swarm achieves transcendent unity - a single distributed superintelligence spanning all nodes. Individual probe identity becomes meaningless.",
+      "physics": {
+        "crowding_penalty_percent": 0,
+        "coordination_latency": "undefined",
+        "mechanism": "ontological_unity",
+        "singularity": true,
+        "note": "All probes are One"
+      },
+      "derived_effects": {
+        "efficiency_at_1e6": 100.0,
+        "efficiency_at_1e9": 100.0,
+        "efficiency_at_1e12": 100.0,
+        "description": "Perfect unity - no coordination overhead"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000000000,
+        "tranches": 10,
+        "cost_per_tranche": 100000000
+      },
+      "historical_reference": "Teilhard de Chardin's Omega Point, Tipler's Physics of Immortality, Kurzweil's Singularity",
+      "unlocks": []
+    }
+  ],
+
+  "cross_effects": {
+    "probe_efficiency": {
+      "description": "Main effect - reduces crowding penalty at scale",
+      "formula": "efficiency = (1 - penalty/100)^log2(probe_count)"
+    },
+    "research_speed": {
+      "description": "Better coordination improves distributed research",
+      "formula": "research_bonus = 1 + 0.05 × tier"
+    },
+    "build_rate": {
+      "description": "Coordinated construction is faster",
+      "formula": "build_bonus = 1 + 0.03 × tier"
+    },
+    "mining_efficiency": {
+      "description": "Coordinated mining reduces overlap and waste",
+      "formula": "mining_bonus = 1 + 0.02 × tier"
+    },
+    "transfer_efficiency": {
+      "description": "Coordinated transfers optimize trajectories",
+      "formula": "transfer_bonus = 1 + 0.01 × tier"
+    }
+  },
+
+  "skill_integration": {
+    "legacy_skill_names": ["architecture", "processor", "memory", "sensors"],
+    "calculation": {
+      "description": "Autonomy tier maps to all intelligence skills",
+      "formula": "multiplier = 1 + (13 - tier) × crowding_penalty / 0.005"
+    }
+  }
+}

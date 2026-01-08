@@ -9,10 +9,66 @@ class StructureSystem {
     constructor(productionCalculator) {
         this.productionCalculator = productionCalculator;
         this.economicRules = null;
-        
+
         // Default values (fallbacks if economic rules not loaded)
         this.BASE_STRUCTURE_ENERGY_COST = 250000; // 250 kW base for structure energy multipliers
         this.GEOMETRIC_SCALING_EXPONENT = Config.STRUCTURE_GEOMETRIC_SCALING_EXPONENT || 3.2;
+
+        // Surface-only structures that pull from stored_metal (planet surface)
+        this.SURFACE_STRUCTURES = ['mass_driver', 'space_elevator'];
+    }
+
+    /**
+     * Get the metal pool to use for construction and consume metal from it
+     * - Moon zones: use parent planet's orbital_metal
+     * - Planet surface structures (mass_driver, space_elevator): use stored_metal
+     * - Planet orbital structures: use orbital_metal
+     *
+     * @param {Object} zones - All zones state
+     * @param {string} zoneId - The zone where construction is happening
+     * @param {string} buildingId - The building being constructed
+     * @param {number} metalNeeded - Amount of metal needed
+     * @returns {Object} { availableMetal, consumeMetal(amount) }
+     */
+    getMetalPoolForConstruction(zones, zoneId, buildingId) {
+        const zone = zones[zoneId];
+        if (!zone) {
+            return { availableMetal: 0, consumeMetal: () => {} };
+        }
+
+        // Check if this is a moon zone
+        const parentZoneId = zone.parent_zone;
+        if (parentZoneId && zones[parentZoneId]) {
+            // Moon zone: use parent planet's orbital pool
+            const parentZone = zones[parentZoneId];
+            return {
+                availableMetal: parentZone.orbital_metal || 0,
+                consumeMetal: (amount) => {
+                    parentZone.orbital_metal = Math.max(0, (parentZone.orbital_metal || 0) - amount);
+                }
+            };
+        }
+
+        // Planet zone: check if surface or orbital structure
+        const isSurfaceStructure = this.SURFACE_STRUCTURES.includes(buildingId);
+
+        if (isSurfaceStructure) {
+            // Surface structures use stored_metal (on-planet resources)
+            return {
+                availableMetal: zone.stored_metal || 0,
+                consumeMetal: (amount) => {
+                    zone.stored_metal = Math.max(0, (zone.stored_metal || 0) - amount);
+                }
+            };
+        } else {
+            // Orbital structures use orbital_metal (lifted by elevators)
+            return {
+                availableMetal: zone.orbital_metal || 0,
+                consumeMetal: (amount) => {
+                    zone.orbital_metal = Math.max(0, (zone.orbital_metal || 0) - amount);
+                }
+            };
+        }
     }
     
     /**
@@ -462,20 +518,27 @@ class StructureSystem {
                 // Calculate progress this tick - NO RESOURCE CHECK, start immediately
                 const progressThisTick = buildRatePerBuilding * deltaTime; // kg
                 const actualProgress = Math.min(progressThisTick, remainingToBuild);
-                
+
+                // Get the correct metal pool for this building type
+                // - Moon zones: use parent planet's orbital_metal
+                // - Planet surface structures (mass_driver, space_elevator): use stored_metal
+                // - Planet orbital structures: use orbital_metal
+                const metalPool = this.getMetalPoolForConstruction(zones, zoneId, buildingId);
+                const availableMetal = metalPool.availableMetal;
+
                 // Metal consumption throttled by available metal, but construction always progresses
                 // (even if 0 when no metal available)
                 const metalNeeded = actualProgress;
                 let metalConsumed = 0;
                 let progressMade = 0;
-                
-                if (storedMetal <= 0) {
+
+                if (availableMetal <= 0) {
                     // No metal available - construction progresses at 0 rate but remains enabled
                     metalConsumed = 0;
                     progressMade = 0;
-                } else if (storedMetal < metalNeeded) {
+                } else if (availableMetal < metalNeeded) {
                     // Not enough metal - throttle progress based on available metal
-                    const metalThrottle = storedMetal / metalNeeded;
+                    const metalThrottle = availableMetal / metalNeeded;
                     progressMade = actualProgress * metalThrottle;
                     metalConsumed = progressMade; // 1:1 ratio
                 } else {
@@ -483,10 +546,10 @@ class StructureSystem {
                     progressMade = actualProgress;
                     metalConsumed = metalNeeded;
                 }
-                
-                // Consume metal (always consume what we can, even if 0)
-                zone.stored_metal = Math.max(0, storedMetal - metalConsumed);
-                
+
+                // Consume metal from the correct pool
+                metalPool.consumeMetal(metalConsumed);
+
                 // Update progress (always update, even if 0)
                 structureProgress[enabledKey] = (structureProgress[enabledKey] || 0) + progressMade;
             }
@@ -514,7 +577,265 @@ class StructureSystem {
         
         return newState;
     }
-    
+
+    /**
+     * Process structure recycling - continuous operation using probe build power
+     * Works like construction in reverse: uses build rate to dismantle structures
+     * Returns metal (75%) and slag (25%) to the zone
+     * @param {Object} state - Current game state
+     * @param {number} deltaTime - Time delta in days
+     * @param {Object} skills - Current skills
+     * @param {Object} buildings - Building definitions
+     * @param {number} energyThrottle - Energy throttle factor (0-1)
+     * @returns {Object} Updated state
+     */
+    processStructureRecycling(state, deltaTime, skills, buildings, energyThrottle = 1.0) {
+        const newState = JSON.parse(JSON.stringify(state));  // Deep clone
+
+        // Initialize state if needed
+        if (!newState.enabled_recycling) {
+            newState.enabled_recycling = [];
+        }
+        if (!newState.structure_recycling_progress) {
+            newState.structure_recycling_progress = {};
+        }
+        if (!newState.structures_by_zone) {
+            newState.structures_by_zone = {};
+        }
+        if (!newState.zones) {
+            newState.zones = {};
+        }
+
+        const enabledRecycling = newState.enabled_recycling || [];
+        const recyclingProgress = newState.structure_recycling_progress || {};
+        const structuresByZone = newState.structures_by_zone || {};
+        const probesByZone = newState.probes_by_zone || {};
+        const probeAllocationsByZone = newState.probe_allocations_by_zone || {};
+        const zones = newState.zones || {};
+
+        // Recycling efficiency: 75% metal, 25% slag
+        const RECYCLING_METAL_EFFICIENCY = 0.75;
+        const RECYCLING_SLAG_EFFICIENCY = 0.25;
+
+        // Group enabled recycling by zone
+        const enabledRecyclingByZone = {};
+        for (const enabledKey of enabledRecycling) {
+            const [zoneId, buildingId] = enabledKey.split('::', 2);
+            if (zoneId && buildingId) {
+                if (!(zoneId in enabledRecyclingByZone)) {
+                    enabledRecyclingByZone[zoneId] = [];
+                }
+                enabledRecyclingByZone[zoneId].push({ enabledKey, buildingId });
+            }
+        }
+
+        // Process recycling for each zone that has enabled recycling
+        for (const zoneId in enabledRecyclingByZone) {
+            // Ensure zone exists
+            if (!zones[zoneId]) {
+                zones[zoneId] = {
+                    mass_remaining: 0,
+                    stored_metal: 0,
+                    probe_mass: 0,
+                    structure_mass: 0,
+                    slag_mass: 0,
+                    methalox: 0,
+                    depleted: false
+                };
+            }
+
+            const zone = zones[zoneId];
+
+            // Get probes in this zone
+            const zoneProbes = probesByZone[zoneId] || {};
+            const totalProbes = Object.values(zoneProbes).reduce((sum, count) => sum + (count || 0), 0);
+
+            if (totalProbes === 0) {
+                continue; // No probes in this zone
+            }
+
+            // Get construct allocation for this zone (recycling uses same allocation as construction)
+            const allocations = probeAllocationsByZone[zoneId] || {};
+            let constructAllocation = allocations.construct || 0;
+            if (typeof constructAllocation === 'object' && constructAllocation !== null) {
+                constructAllocation = constructAllocation.probe || constructAllocation.value || 0;
+            }
+            constructAllocation = typeof constructAllocation === 'number' ? constructAllocation : 0;
+
+            if (constructAllocation === 0) {
+                continue; // No probes allocated to construction/recycling
+            }
+
+            // Calculate building probes (probes allocated to structure building/recycling)
+            const structureBuildingProbes = totalProbes * constructAllocation;
+
+            // Calculate build rate for this zone (kg/day) - same as construction
+            const totalBuildRate = this.productionCalculator.calculateBuildingRate(structureBuildingProbes, newState, zoneId, totalProbes);
+            const effectiveBuildRate = totalBuildRate * energyThrottle;
+
+            // Get enabled recycling for this zone
+            const enabledBuildings = enabledRecyclingByZone[zoneId];
+
+            // Count total enabled operations (construction + recycling) to split build power
+            const enabledConstruction = newState.enabled_construction || [];
+            const constructionInZone = enabledConstruction.filter(k => k.startsWith(zoneId + '::')).length;
+            const totalEnabledOperations = enabledBuildings.length + constructionInZone;
+
+            if (totalEnabledOperations === 0) {
+                continue;
+            }
+
+            // Divide build rate among all enabled operations (construction + recycling)
+            const buildRatePerOperation = effectiveBuildRate / totalEnabledOperations;
+
+            // Process each enabled recycling
+            for (const { enabledKey, buildingId } of enabledBuildings) {
+                // Check if there are structures to recycle
+                const zoneStructures = structuresByZone[zoneId] || {};
+                const currentCount = zoneStructures[buildingId] || 0;
+
+                if (currentCount <= 0) {
+                    // No structures to recycle - disable recycling
+                    const enabledIndex = enabledRecycling.indexOf(enabledKey);
+                    if (enabledIndex !== -1) {
+                        enabledRecycling.splice(enabledIndex, 1);
+                    }
+                    delete recyclingProgress[enabledKey];
+                    continue;
+                }
+
+                // Get building definition
+                let building = null;
+                if (buildings) {
+                    if (buildings.buildings && typeof buildings.buildings === 'object') {
+                        building = buildings.buildings[buildingId];
+                    } else if (buildings[buildingId]) {
+                        building = buildings[buildingId];
+                    } else if (Array.isArray(buildings)) {
+                        building = buildings.find(b => b.id === buildingId);
+                    }
+                }
+
+                if (!building) {
+                    continue;
+                }
+
+                // Calculate structure mass (cost to recycle = cost that was paid to build the LAST one)
+                // We use currentCount to get the cost of the structure being recycled
+                const structureMass = this.calculateStructureCostForCount(building, newState, zoneId, buildingId, currentCount);
+
+                // Get current progress
+                const currentProgress = recyclingProgress[enabledKey] || 0.0;
+                const remainingToRecycle = structureMass - currentProgress;
+
+                // Check if recycling is complete
+                if (remainingToRecycle <= 0) {
+                    // Recycling complete - remove structure and add resources
+                    structuresByZone[zoneId][buildingId] = currentCount - 1;
+
+                    // If count reaches 0, clean up
+                    if (structuresByZone[zoneId][buildingId] <= 0) {
+                        delete structuresByZone[zoneId][buildingId];
+                    }
+
+                    // Add metal and slag to zone
+                    const metalRecovered = structureMass * RECYCLING_METAL_EFFICIENCY;
+                    const slagProduced = structureMass * RECYCLING_SLAG_EFFICIENCY;
+
+                    zone.stored_metal = (zone.stored_metal || 0) + metalRecovered;
+                    zone.slag_mass = (zone.slag_mass || 0) + slagProduced;
+
+                    // Update global slag
+                    newState.slag = (newState.slag || 0) + slagProduced;
+
+                    // Update zone's structure mass
+                    zone.structure_mass = Math.max(0, (zone.structure_mass || 0) - structureMass);
+
+                    console.log(`[StructureSystem] Recycled ${buildingId} in ${zoneId}: ` +
+                        `${metalRecovered.toExponential(2)} kg metal, ${slagProduced.toExponential(2)} kg slag`);
+
+                    // Check if more structures to recycle
+                    const newCount = structuresByZone[zoneId]?.[buildingId] || 0;
+                    if (newCount > 0 && enabledRecycling.includes(enabledKey)) {
+                        // Reset progress for next structure
+                        recyclingProgress[enabledKey] = 0.0;
+                    } else {
+                        // No more structures or recycling disabled
+                        const enabledIndex = enabledRecycling.indexOf(enabledKey);
+                        if (enabledIndex !== -1) {
+                            enabledRecycling.splice(enabledIndex, 1);
+                        }
+                        delete recyclingProgress[enabledKey];
+                    }
+                    continue;
+                }
+
+                // Calculate progress this tick
+                const progressThisTick = buildRatePerOperation * deltaTime;
+                const actualProgress = Math.min(progressThisTick, remainingToRecycle);
+
+                // Update progress
+                recyclingProgress[enabledKey] = currentProgress + actualProgress;
+            }
+        }
+
+        // Clean up disabled recycling with no progress
+        for (const enabledKey in recyclingProgress) {
+            if (!enabledRecycling.includes(enabledKey)) {
+                const progress = recyclingProgress[enabledKey];
+                if (progress <= 0) {
+                    delete recyclingProgress[enabledKey];
+                }
+            }
+        }
+
+        // Update state
+        newState.enabled_recycling = enabledRecycling;
+        newState.structure_recycling_progress = recyclingProgress;
+        newState.structures_by_zone = structuresByZone;
+        newState.zones = zones;
+
+        return newState;
+    }
+
+    /**
+     * Get base cost (mass) for a building before scaling
+     * @param {Object} building - Building definition
+     * @returns {number} Base cost in kg
+     */
+    getBaseCost(building) {
+        if (!building) return 0;
+
+        // Check for mass_multiplier first (preferred format)
+        if (building.mass_multiplier) {
+            const baseProbeMass = Config.PROBE_MASS || 100;
+            return baseProbeMass * building.mass_multiplier;
+        }
+
+        // Fallback to mass_kg (direct mass specification)
+        if (building.mass_kg) {
+            return building.mass_kg;
+        }
+
+        // Fallback to old base_cost_metal if available
+        return building.base_cost_metal || 0;
+    }
+
+    /**
+     * Calculate structure cost for a specific count (used for recycling)
+     * Returns the cost that was paid to build the Nth structure
+     */
+    calculateStructureCostForCount(building, state, zoneId, buildingId, count) {
+        if (count <= 0) return 0;
+
+        const baseCostKg = this.getBaseCost(building);
+        const exponent = building.geometric_scaling_exponent ?? this.GEOMETRIC_SCALING_EXPONENT;
+
+        // Cost of building N = baseCost * N^exponent
+        const scalingFactor = Math.pow(count, exponent);
+        return baseCostKg * scalingFactor;
+    }
+
     /**
      * Add structure to zone (called when user purchases structure)
      * @param {Object} state - Game state

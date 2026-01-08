@@ -9,7 +9,7 @@
       "power_output_mw": 100000,
       "uses_solar": true,
       "energy_cost_multiplier": 0,
-      "geometric_scaling_exponent": 4.0,
+      "geometric_scaling_exponent": 0.5,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
       "research_skills": {
         "power_output": ["solar_pv", "energy_converter", "radiator"],
@@ -25,7 +25,7 @@
       "power_output_mw": 10000,
       "uses_solar": true,
       "base_power_consumption_mw": 10000,
-      "geometric_scaling_exponent": 4.0,
+      "geometric_scaling_exponent": 0.5,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt"],
       "research_skills": {
         "compute": ["cpu", "gpu", "interconnect", "io_bandwidth"],
@@ -45,6 +45,7 @@
       "power_draw_mw": 100,
       "energy_efficiency": 0.4,
       "base_muzzle_velocity_km_s": 8.5,
+      "max_muzzle_velocity_km_s": 45,
       "allowed_orbital_zones": ["mercury", "venus", "earth", "mars", "asteroid_belt", "jupiter", "saturn", "uranus", "neptune", "kuiper"],
       "orbital_efficiency": {
         "mercury": 1.0,

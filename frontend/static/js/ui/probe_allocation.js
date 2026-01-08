@@ -141,7 +141,7 @@ class ProbeAllocationPanel {
             await gameEngine.allocateProbes(allocations);
         } catch (error) {
             console.error('Allocation failed:', error);
-            alert(error.message || 'Allocation failed');
+            window.toast?.error(error.message || 'Allocation failed');
         }
     }
 

@@ -35,30 +35,73 @@ class TransferSystem {
     }
     
     /**
-     * Get probe mass in kg from economic rules
+     * Get probe mass in kg, reduced by materials skill
+     * Scales from base_mass_kg (100) down to min_mass_kg (30) as materials skill increases
+     * @param {Object} skills - Current skills (optional)
      * @returns {number} Probe mass in kg
      */
-    getProbeMass() {
-        return this.economicRules?.probe?.mass_kg || 100;
+    getProbeMass(skills = null) {
+        const probeConfig = this.economicRules?.probe_upgrades || {};
+        const baseMass = probeConfig.base_mass_kg || this.economicRules?.probe?.mass_kg || 100;
+        const minMass = probeConfig.min_mass_kg || 30;
+
+        if (!skills) {
+            return baseMass;
+        }
+
+        // Materials skill reduces mass: higher skill = lower mass
+        const materialsSkill = skills?.materials || 1.0;
+
+        // Calculate max skill for normalization (assume ~6.5x max from full research)
+        const maxSkill = 6.5;
+
+        // Normalize skill progress (0 at skill=1, 1 at skill=maxSkill)
+        const skillProgress = Math.min(1, Math.max(0, (materialsSkill - 1) / (maxSkill - 1)));
+
+        // Interpolate between base and min mass
+        const effectiveMass = baseMass - (baseMass - minMass) * skillProgress;
+
+        return Math.max(minMass, effectiveMass);
     }
-    
+
     /**
      * Get base specific impulse (ISP) in seconds
      * @returns {number} Base ISP in seconds
      */
     getBaseIsp() {
-        return this.economicRules?.propulsion?.base_isp_seconds || 500;
+        return this.economicRules?.propulsion?.base_isp_seconds || 300;
     }
-    
+
+    /**
+     * Get max specific impulse (ISP) in seconds
+     * @returns {number} Max ISP in seconds
+     */
+    getMaxIsp() {
+        return this.economicRules?.propulsion?.max_isp_seconds || 4500;
+    }
+
     /**
      * Get effective specific impulse with propulsion skill applied
+     * Scales from base_isp (300s) to max_isp (4500s) as propulsion skill increases
      * @param {Object} skills - Current skills
      * @param {number} ispBonus - Optional ISP bonus from starting skill points (seconds)
      * @returns {number} Effective ISP in seconds
      */
     getEffectiveIsp(skills, ispBonus = 0) {
+        const baseIsp = this.getBaseIsp();
+        const maxIsp = this.getMaxIsp();
         const propulsionSkill = skills?.propulsion || 1.0;
-        return (this.getBaseIsp() + ispBonus) * propulsionSkill;
+
+        // Calculate max skill for normalization (assume ~6.5x max from full research)
+        const maxSkill = 6.5;
+
+        // Normalize skill progress (0 at skill=1, 1 at skill=maxSkill)
+        const skillProgress = Math.min(1, Math.max(0, (propulsionSkill - 1) / (maxSkill - 1)));
+
+        // Interpolate between base and max ISP
+        const effectiveIsp = baseIsp + (maxIsp - baseIsp) * skillProgress + ispBonus;
+
+        return Math.min(maxIsp, effectiveIsp);
     }
     
     /**
@@ -1020,6 +1063,7 @@ class TransferSystem {
     
     /**
      * Get mass driver muzzle velocity (delta-v capacity) with upgrades
+     * Scales from base_muzzle_velocity (8.5 km/s) to max_muzzle_velocity (45 km/s) based on skills
      * @param {Object} state - Game state
      * @param {string} zoneId - Zone identifier
      * @param {Object} buildingsData - Optional buildings data
@@ -1028,23 +1072,30 @@ class TransferSystem {
     getMassDriverMuzzleVelocity(state, zoneId, buildingsData = null) {
         // Use passed buildingsData or fall back to stored buildingsData
         const buildings = buildingsData || this.buildingsData;
-        
-        // Get base muzzle velocity from buildings data
-        let baseMuzzleVelocityKmS = 3.0; // Default: 3 km/s (enough for Venus but not Mars)
-        if (buildings && buildings.mass_driver) {
-            baseMuzzleVelocityKmS = buildings.mass_driver.base_muzzle_velocity_km_s || baseMuzzleVelocityKmS;
+
+        // Get base and max muzzle velocity from economic rules, falling back to buildings data
+        const massDriverConfig = this.economicRules?.mass_driver || {};
+        let baseMuzzleVelocityKmS = massDriverConfig.base_muzzle_velocity_km_s || 8.5;
+        const maxMuzzleVelocityKmS = massDriverConfig.max_muzzle_velocity_km_s || 45;
+
+        // Override base from buildings if available
+        if (buildings && buildings.mass_driver && buildings.mass_driver.base_muzzle_velocity_km_s) {
+            baseMuzzleVelocityKmS = buildings.mass_driver.base_muzzle_velocity_km_s;
         }
-        
+
         // Apply mass driver delta-v bonus from starting skill points
         const massDriverBonus = state.skill_bonuses?.mass_driver_dv_bonus || 0;
         baseMuzzleVelocityKmS += massDriverBonus;
-        
-        // Apply upgrade factors
+
+        // Apply upgrade factors using weighted sum formula
         const skills = state.skills || {};
         const velocityUpgradeFactor = this.calculateUpgradeFactorFromCoefficients('mass_driver_muzzle_velocity', skills);
-        
-        // Muzzle velocity increases with upgrades
-        return baseMuzzleVelocityKmS * velocityUpgradeFactor;
+
+        // Calculate raw muzzle velocity
+        let muzzleVelocity = baseMuzzleVelocityKmS * velocityUpgradeFactor;
+
+        // Cap at max velocity
+        return Math.min(maxMuzzleVelocityKmS, muzzleVelocity);
     }
     
     /**

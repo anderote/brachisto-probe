@@ -1,0 +1,440 @@
+{
+  "tree_id": "thermal",
+  "name": "Thermal Management",
+  "category": "energy",
+  "description": "Heat rejection systems. Critical bottleneck for all high-power operations in space where convection is impossible.",
+
+  "physics_model": {
+    "primary_effect": "heat_rejection_rate",
+    "formula": "Q = ε × σ × A × T⁴ (Stefan-Boltzmann)",
+    "constants": {
+      "stefan_boltzmann": 5.67e-8,
+      "stefan_boltzmann_unit": "W/(m²·K⁴)"
+    }
+  },
+
+  "display_format": {
+    "primary": "{power_density_kw_m2} kW/m²",
+    "secondary": "({mass_penalty_kg_kw} kg/kW)",
+    "effect": "[{max_continuous_power_factor}× power capacity]",
+    "example": "30 kW/m² (0.3 kg/kW) [10× power capacity]"
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "id": "passive_thermal",
+      "name": "Passive Thermal Control",
+      "description": "Paint coatings, multi-layer insulation, and thermal mass. Simple but limited.",
+      "physics": {
+        "power_density_w_m2": 400,
+        "power_density_kw_m2": 0.4,
+        "mass_penalty_kg_kw": 5.0,
+        "operating_temp_k": 300,
+        "emissivity": 0.85
+      },
+      "derived_effects": {
+        "power_capacity_factor": 1.0,
+        "ntr_temp_boost": 1.0,
+        "description": "Baseline thermal management"
+      },
+      "research": {
+        "base_cost_eflop_days": 5,
+        "tranches": 5,
+        "cost_per_tranche": 1
+      },
+      "historical_reference": "Apollo, Voyager, all spacecraft",
+      "unlocks": ["deployable_radiators"]
+    },
+    {
+      "tier": 2,
+      "id": "deployable_radiators",
+      "name": "Deployable Radiator Panels",
+      "description": "Articulated panels that deploy after launch. More area, better angles to deep space.",
+      "physics": {
+        "power_density_w_m2": 1000,
+        "power_density_kw_m2": 1.0,
+        "mass_penalty_kg_kw": 3.0,
+        "operating_temp_k": 350,
+        "emissivity": 0.90
+      },
+      "derived_effects": {
+        "power_capacity_factor": 1.5,
+        "ntr_temp_boost": 1.05,
+        "description": "Standard spacecraft radiators"
+      },
+      "research": {
+        "base_cost_eflop_days": 15,
+        "tranches": 6,
+        "cost_per_tranche": 2.5
+      },
+      "historical_reference": "ISS radiators, Space Shuttle payload bay doors",
+      "unlocks": ["heat_pipe_radiators"]
+    },
+    {
+      "tier": 3,
+      "id": "heat_pipe_radiators",
+      "name": "Heat Pipe Radiators",
+      "description": "Self-contained two-phase heat transfer. Ammonia or sodium working fluid.",
+      "physics": {
+        "power_density_w_m2": 5000,
+        "power_density_kw_m2": 5.0,
+        "mass_penalty_kg_kw": 1.5,
+        "operating_temp_k": 500,
+        "working_fluid": "Na, K, NH₃"
+      },
+      "derived_effects": {
+        "power_capacity_factor": 2.5,
+        "ntr_temp_boost": 1.1,
+        "description": "Efficient passive heat transport"
+      },
+      "research": {
+        "base_cost_eflop_days": 50,
+        "tranches": 8,
+        "cost_per_tranche": 6.25
+      },
+      "historical_reference": "SNAP reactors, modern high-power satellites",
+      "unlocks": ["pumped_loop"]
+    },
+    {
+      "tier": 4,
+      "id": "pumped_loop",
+      "name": "Pumped Liquid Loop Radiators",
+      "description": "Actively pumped high-temperature liquid metal coolant loops.",
+      "physics": {
+        "power_density_w_m2": 20000,
+        "power_density_kw_m2": 20.0,
+        "mass_penalty_kg_kw": 0.8,
+        "operating_temp_k": 800,
+        "working_fluid": "NaK, Li, Pb-Bi"
+      },
+      "derived_effects": {
+        "power_capacity_factor": 5.0,
+        "ntr_temp_boost": 1.2,
+        "description": "Nuclear reactor class cooling"
+      },
+      "research": {
+        "base_cost_eflop_days": 150,
+        "tranches": 8,
+        "cost_per_tranche": 18.75
+      },
+      "historical_reference": "TOPAZ reactor, SP-100, Kilopower",
+      "unlocks": ["liquid_droplet"]
+    },
+    {
+      "tier": 5,
+      "id": "liquid_droplet",
+      "name": "Liquid Droplet Radiators",
+      "description": "Spray liquid droplets into vacuum, let them radiate, collect at receiver. No solid radiator structure needed.",
+      "physics": {
+        "power_density_w_m2": 80000,
+        "power_density_kw_m2": 80.0,
+        "mass_penalty_kg_kw": 0.3,
+        "operating_temp_k": 800,
+        "droplet_material": "Sn, silicone oil",
+        "collection_efficiency": 0.95
+      },
+      "derived_effects": {
+        "power_capacity_factor": 12.0,
+        "ntr_temp_boost": 1.25,
+        "description": "Dramatically reduced radiator mass"
+      },
+      "research": {
+        "base_cost_eflop_days": 500,
+        "tranches": 10,
+        "cost_per_tranche": 50
+      },
+      "historical_reference": "NASA LDRS studies 1980s, never flown",
+      "unlocks": ["mhd_radiators"]
+    },
+    {
+      "tier": 6,
+      "id": "mhd_radiators",
+      "name": "Liquid Metal MHD Radiators",
+      "description": "Electromagnetic pumping of liquid lithium through radiating channels. No moving parts.",
+      "physics": {
+        "power_density_w_m2": 200000,
+        "power_density_kw_m2": 200.0,
+        "mass_penalty_kg_kw": 0.15,
+        "operating_temp_k": 1200,
+        "working_fluid": "Li"
+      },
+      "derived_effects": {
+        "power_capacity_factor": 25.0,
+        "ntr_temp_boost": 1.35,
+        "description": "Fusion-class heat rejection"
+      },
+      "research": {
+        "base_cost_eflop_days": 1500,
+        "tranches": 10,
+        "cost_per_tranche": 150
+      },
+      "historical_reference": "Fusion reactor studies, MHD generator concepts",
+      "unlocks": ["dust_radiators"]
+    },
+    {
+      "tier": 7,
+      "id": "dust_radiators",
+      "name": "Dust/Particle Radiators",
+      "description": "Eject hot particles, use electromagnetic fields to recapture after cooling.",
+      "physics": {
+        "power_density_w_m2": 400000,
+        "power_density_kw_m2": 400.0,
+        "mass_penalty_kg_kw": 0.08,
+        "operating_temp_k": 1500,
+        "particle_material": "Fe, graphite",
+        "recapture_efficiency": 0.99
+      },
+      "derived_effects": {
+        "power_capacity_factor": 50.0,
+        "ntr_temp_boost": 1.45,
+        "description": "Very high temperature operation"
+      },
+      "research": {
+        "base_cost_eflop_days": 5000,
+        "tranches": 10,
+        "cost_per_tranche": 500
+      },
+      "historical_reference": "Theoretical - requires EM tier 6+",
+      "unlocks": ["phase_change"]
+    },
+    {
+      "tier": 8,
+      "id": "phase_change",
+      "name": "Phase-Change Material Buffers",
+      "description": "Absorb heat pulses in melting/freezing cycles. Enables pulsed high-power operation.",
+      "physics": {
+        "power_density_w_m2": 800000,
+        "power_density_kw_m2": 800.0,
+        "mass_penalty_kg_kw": 0.05,
+        "operating_temp_k": 1000,
+        "latent_heat_mj_kg": 0.5,
+        "cycle_time_minutes": 10
+      },
+      "derived_effects": {
+        "power_capacity_factor": 80.0,
+        "ntr_temp_boost": 1.5,
+        "pulsed_power_boost": 10.0,
+        "description": "Handle extreme power transients"
+      },
+      "research": {
+        "base_cost_eflop_days": 15000,
+        "tranches": 10,
+        "cost_per_tranche": 1500
+      },
+      "historical_reference": "Thermal storage for solar power, battery thermal management",
+      "unlocks": ["laser_ablation"]
+    },
+    {
+      "tier": 9,
+      "id": "laser_ablation",
+      "name": "Laser Ablation Cooling",
+      "description": "Vaporize sacrificial mass with lasers, ejecting heat at high velocity. Emergency/burst cooling.",
+      "physics": {
+        "power_density_w_m2": 3000000,
+        "power_density_kw_m2": 3000.0,
+        "mass_penalty_kg_kw": 0.02,
+        "mechanism": "ablative_mass_ejection",
+        "mass_consumption_kg_gj": 0.1
+      },
+      "derived_effects": {
+        "power_capacity_factor": 150.0,
+        "ntr_temp_boost": 1.6,
+        "description": "Extreme burst cooling capacity"
+      },
+      "research": {
+        "base_cost_eflop_days": 40000,
+        "tranches": 10,
+        "cost_per_tranche": 4000
+      },
+      "historical_reference": "Spacecraft ablative heat shields, laser machining",
+      "unlocks": ["sco2_brayton"]
+    },
+    {
+      "tier": 10,
+      "id": "sco2_brayton",
+      "name": "Supercritical CO₂ Brayton Radiators",
+      "description": "sCO₂ power cycle with compact heat exchangers. Extremely efficient energy conversion.",
+      "physics": {
+        "power_density_w_m2": 2000000,
+        "power_density_kw_m2": 2000.0,
+        "mass_penalty_kg_kw": 0.01,
+        "operating_temp_k": 900,
+        "brayton_efficiency": 0.50
+      },
+      "derived_effects": {
+        "power_capacity_factor": 200.0,
+        "ntr_temp_boost": 1.7,
+        "power_conversion_bonus": 1.5,
+        "description": "Highest practical thermal efficiency"
+      },
+      "research": {
+        "base_cost_eflop_days": 100000,
+        "tranches": 10,
+        "cost_per_tranche": 10000
+      },
+      "historical_reference": "Sandia sCO₂ research, advanced nuclear concepts",
+      "unlocks": ["plasma_radiators"]
+    },
+    {
+      "tier": 11,
+      "id": "plasma_radiators",
+      "name": "Magnetically-Confined Plasma Radiators",
+      "description": "Suspend radiating plasma in magnetic fields. 10,000K+ emission temperature.",
+      "physics": {
+        "power_density_w_m2": 30000000,
+        "power_density_kw_m2": 30000.0,
+        "mass_penalty_kg_kw": 0.005,
+        "operating_temp_k": 15000,
+        "requires": "em_tier_8"
+      },
+      "derived_effects": {
+        "power_capacity_factor": 500.0,
+        "ntr_temp_boost": 2.0,
+        "description": "Extreme temperature radiation"
+      },
+      "research": {
+        "base_cost_eflop_days": 300000,
+        "tranches": 10,
+        "cost_per_tranche": 30000
+      },
+      "historical_reference": "Fusion divertor concepts, plasma physics",
+      "unlocks": ["quantum_tunneling"]
+    },
+    {
+      "tier": 12,
+      "id": "quantum_tunneling",
+      "name": "Quantum Tunneling Heat Transfer",
+      "description": "Near-field radiative transfer through quantum tunneling. Beats blackbody limit.",
+      "physics": {
+        "power_density_w_m2": 100000000,
+        "power_density_kw_m2": 100000.0,
+        "mass_penalty_kg_kw": 0.002,
+        "mechanism": "phonon_tunneling",
+        "super_planckian": true
+      },
+      "derived_effects": {
+        "power_capacity_factor": 1000.0,
+        "ntr_temp_boost": 2.5,
+        "description": "Beyond classical thermodynamic limits"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000000,
+        "tranches": 10,
+        "cost_per_tranche": 100000
+      },
+      "historical_reference": "MIT near-field radiation research, nanoscale heat transfer",
+      "unlocks": ["hawking_sink"]
+    },
+    {
+      "tier": 13,
+      "id": "hawking_sink",
+      "name": "Hawking Radiation Heat Sink",
+      "description": "Micro black hole absorbs heat, radiates via Hawking process. Converts thermal energy to mass loss.",
+      "physics": {
+        "power_density_w_m2": 1e12,
+        "mass_penalty_kg_kw": -0.001,
+        "mass_penalty_note": "Negative - converts heat to mass loss",
+        "mechanism": "micro_black_hole",
+        "requires": "exotic_matter"
+      },
+      "derived_effects": {
+        "power_capacity_factor": 10000.0,
+        "ntr_temp_boost": 5.0,
+        "description": "Near-unlimited heat rejection via black hole"
+      },
+      "research": {
+        "base_cost_eflop_days": 10000000,
+        "tranches": 10,
+        "cost_per_tranche": 1000000
+      },
+      "historical_reference": "Hawking (1974), Penrose process, black hole thermodynamics",
+      "requires": ["exotic_matter_materials_tier_13"],
+      "unlocks": ["dimensional_shunt"]
+    },
+    {
+      "tier": 14,
+      "id": "dimensional_shunt",
+      "name": "Extra-Dimensional Heat Shunt",
+      "description": "Dumps waste heat into adjacent brane dimensions where thermodynamic laws differ. Heat simply vanishes from our universe.",
+      "physics": {
+        "power_density_w_m2": 1e15,
+        "mass_penalty_kg_kw": 0,
+        "mechanism": "brane_thermal_coupling",
+        "dimensions_accessed": 1,
+        "entropy_export": true
+      },
+      "derived_effects": {
+        "power_capacity_factor": 100000.0,
+        "ntr_temp_boost": 10.0,
+        "description": "Export entropy to other dimensions"
+      },
+      "research": {
+        "base_cost_eflop_days": 100000000,
+        "tranches": 10,
+        "cost_per_tranche": 10000000
+      },
+      "historical_reference": "Randall-Sundrum models, DIA AAWSAP dimensional thermal signatures",
+      "unlocks": ["thermodynamic_reversal"]
+    },
+    {
+      "tier": 15,
+      "id": "thermodynamic_reversal",
+      "name": "Thermodynamic Reversal Engine",
+      "description": "Local reversal of entropy arrow. Heat spontaneously flows from cold to hot. Maxwell's Demon realized at macroscopic scale.",
+      "physics": {
+        "power_density_w_m2": 1e18,
+        "mass_penalty_kg_kw": -1,
+        "mechanism": "entropy_manipulation",
+        "second_law": "locally_violated",
+        "causality_note": "Requires exotic physics"
+      },
+      "derived_effects": {
+        "power_capacity_factor": 1000000.0,
+        "ntr_temp_boost": 100.0,
+        "perpetual_motion": true,
+        "description": "Local reversal of thermodynamic arrow"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000000000,
+        "tranches": 10,
+        "cost_per_tranche": 100000000
+      },
+      "historical_reference": "Maxwell's Demon, Szilard engine, fluctuation theorems, time-symmetric physics",
+      "unlocks": []
+    }
+  ],
+
+  "cross_effects": {
+    "power_systems": {
+      "description": "All power generation limited by heat rejection",
+      "formula": "max_power = thermal_capacity × power_density",
+      "effect": "Higher thermal tier = more power per kg"
+    },
+    "propulsion_ntr": {
+      "description": "Nuclear thermal rockets limited by core temperature",
+      "formula": "isp_boost = sqrt(temp_factor)",
+      "effect": "Better cooling allows higher exhaust temps"
+    },
+    "mass_driver": {
+      "description": "Coil heating limits fire rate",
+      "formula": "max_fire_rate = thermal_capacity / energy_per_shot"
+    },
+    "computing": {
+      "description": "Processors limited by thermal density",
+      "formula": "compute_density = base × thermal_factor"
+    },
+    "manufacturing": {
+      "description": "Smelting and refining produce heat",
+      "formula": "production_rate = base × sqrt(thermal_factor)"
+    }
+  },
+
+  "skill_integration": {
+    "legacy_skill_names": ["conversion"],
+    "calculation": {
+      "description": "Thermal tier maps to legacy multiplier",
+      "formula": "multiplier = power_capacity_factor"
+    }
+  }
+}

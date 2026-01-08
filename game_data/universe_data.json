@@ -1,0 +1,278 @@
+{
+  "description": "Observable universe cosmic web structure for Phase 3 visualization",
+  "unlock_condition": {
+    "type": "galaxy_completion",
+    "threshold": 0.99,
+    "description": "99% galaxy colonization required"
+  },
+
+  "scale": {
+    "unit": "Mpc",
+    "observable_radius_mpc": 4400,
+    "visualization_radius": 800,
+    "laniakea_radius_mpc": 80,
+    "mpc_to_ly": 3261566
+  },
+
+  "superclusters": [
+    {
+      "id": "laniakea",
+      "name": "Laniakea Supercluster",
+      "type": "home_supercluster",
+      "position_mpc": { "x": 0, "y": 0, "z": 0 },
+      "radius_mpc": 80,
+      "galaxy_count": 100000,
+      "total_mass_solar": 1e17,
+      "milky_way_position": { "x": 50, "y": 5, "z": -30 },
+      "contains": ["virgo_cluster", "local_group"],
+      "description": "Our home supercluster, named 'Immense Heaven' in Hawaiian. Contains the Milky Way and ~100,000 galaxies.",
+      "colonized": true
+    },
+    {
+      "id": "virgo_cluster",
+      "name": "Virgo Cluster",
+      "type": "galaxy_cluster",
+      "position_mpc": { "x": 16.5, "y": 0, "z": 0 },
+      "radius_mpc": 2.2,
+      "galaxy_count": 2000,
+      "total_mass_solar": 1.2e15,
+      "description": "Nearest large galaxy cluster. Gravitational center of Laniakea, home to M87.",
+      "parent_supercluster": "laniakea"
+    },
+    {
+      "id": "perseus_pisces",
+      "name": "Perseus-Pisces Supercluster",
+      "type": "supercluster",
+      "position_mpc": { "x": -75, "y": 10, "z": 60 },
+      "radius_mpc": 50,
+      "galaxy_count": 50000,
+      "total_mass_solar": 5e16,
+      "description": "Major supercluster connected to Laniakea via cosmic filament. Contains the Perseus Cluster."
+    },
+    {
+      "id": "coma",
+      "name": "Coma Supercluster",
+      "type": "supercluster",
+      "position_mpc": { "x": 90, "y": 30, "z": 20 },
+      "radius_mpc": 35,
+      "galaxy_count": 40000,
+      "total_mass_solar": 4e16,
+      "description": "Dense supercluster with prominent galaxy cluster at center. Part of the Great Wall."
+    },
+    {
+      "id": "shapley",
+      "name": "Shapley Supercluster",
+      "type": "supercluster",
+      "position_mpc": { "x": 200, "y": -50, "z": -100 },
+      "radius_mpc": 60,
+      "galaxy_count": 80000,
+      "total_mass_solar": 8e16,
+      "description": "Most massive supercluster in the nearby universe. Major gravitational attractor pulling galaxies toward it."
+    },
+    {
+      "id": "great_attractor",
+      "name": "Great Attractor",
+      "type": "gravitational_anomaly",
+      "position_mpc": { "x": 75, "y": -10, "z": -50 },
+      "radius_mpc": 30,
+      "galaxy_count": 30000,
+      "total_mass_solar": 3e16,
+      "description": "Massive gravitational anomaly behind the Zone of Avoidance. Draws Laniakea and surrounding superclusters."
+    },
+    {
+      "id": "sloan_great_wall",
+      "name": "Sloan Great Wall",
+      "type": "cosmic_structure",
+      "position_mpc": { "x": 300, "y": 100, "z": 50 },
+      "radius_mpc": 100,
+      "length_mpc": 420,
+      "galaxy_count": 120000,
+      "total_mass_solar": 1.2e17,
+      "description": "One of the largest known structures in the observable universe. A vast cosmic filament."
+    },
+    {
+      "id": "hydra_centaurus",
+      "name": "Hydra-Centaurus Supercluster",
+      "type": "supercluster",
+      "position_mpc": { "x": 55, "y": -20, "z": -35 },
+      "radius_mpc": 40,
+      "galaxy_count": 35000,
+      "total_mass_solar": 3.5e16,
+      "description": "Supercluster between Laniakea and the Great Attractor. Contains the Centaurus Cluster."
+    },
+    {
+      "id": "hercules",
+      "name": "Hercules Supercluster",
+      "type": "supercluster",
+      "position_mpc": { "x": -150, "y": 80, "z": 120 },
+      "radius_mpc": 45,
+      "galaxy_count": 45000,
+      "total_mass_solar": 4.5e16,
+      "description": "Distant supercluster in the Hercules constellation region."
+    },
+    {
+      "id": "bootes_void",
+      "name": "Bootes Void",
+      "type": "cosmic_void",
+      "position_mpc": { "x": -250, "y": 150, "z": 0 },
+      "radius_mpc": 110,
+      "galaxy_count": 60,
+      "total_mass_solar": 1e13,
+      "description": "One of the largest known voids in the universe. Nearly 330 million light-years across with almost no galaxies."
+    }
+  ],
+
+  "voronoi_generation": {
+    "seed_count": 800,
+    "seed_distribution": "poisson_sphere",
+    "min_seed_separation_mpc": 30,
+    "universe_radius_mpc": 800,
+    "galaxy_distribution": {
+      "nodes": 0.40,
+      "filaments": 0.45,
+      "walls": 0.12,
+      "voids": 0.03
+    }
+  },
+
+  "nfw_profile": {
+    "description": "Navarro-Frenk-White density profile for cluster halos",
+    "concentration": 4,
+    "scale_radius_factor": 0.2,
+    "cutoff_radius_factor": 3
+  },
+
+  "filament_params": {
+    "width_mpc_min": 2,
+    "width_mpc_max": 8,
+    "galaxy_density_per_mpc3": 0.01,
+    "curvature_noise": 0.3,
+    "max_length_mpc": 80
+  },
+
+  "visual_params": {
+    "total_galaxies": 400000,
+    "point_size_base": 0.3,
+    "colors": {
+      "laniakea_highlight": "#00ff88",
+      "node": "#ffaa44",
+      "filament": "#6688cc",
+      "wall": "#445566",
+      "void": "#222233",
+      "milky_way_marker": "#ffffff",
+      "milky_way_glow": "#00ff88"
+    },
+    "supercluster_colors": {
+      "home_supercluster": "#00ff88",
+      "supercluster": "#ffaa44",
+      "galaxy_cluster": "#88aaff",
+      "gravitational_anomaly": "#ff4488",
+      "cosmic_structure": "#aaaaff",
+      "cosmic_void": "#333355"
+    }
+  },
+
+  "lod_levels": [
+    { "distance": 50, "point_size": 0.5, "opacity": 1.0 },
+    { "distance": 200, "point_size": 0.4, "opacity": 0.9 },
+    { "distance": 500, "point_size": 0.3, "opacity": 0.7 },
+    { "distance": 1000, "point_size": 0.2, "opacity": 0.5 }
+  ],
+
+  "intergalactic_drives": [
+    {
+      "tier": 19,
+      "id": "void_skipper",
+      "name": "Void Skipper",
+      "description": "Exploits the lower energy density of cosmic voids for faster-than-light travel.",
+      "max_velocity_c": 100,
+      "acceleration_g": 0.001,
+      "compute_cost": 1e18,
+      "energy_cost_per_mpc": 1e30,
+      "research_requirements": ["tier_18_complete", "void_mapping"],
+      "physics": {
+        "principle": "vacuum_energy_manipulation",
+        "time_dilation_percent": 0,
+        "max_range_mpc": 50
+      }
+    },
+    {
+      "tier": 20,
+      "id": "cosmic_string_drive",
+      "name": "Cosmic String Drive",
+      "description": "Harnesses residual cosmic strings from the early universe for propulsion.",
+      "max_velocity_c": 10000,
+      "acceleration_g": 0.01,
+      "compute_cost": 1e21,
+      "energy_cost_per_mpc": 1e28,
+      "research_requirements": ["void_skipper", "string_theory"],
+      "physics": {
+        "principle": "topological_defect_surfing",
+        "time_dilation_percent": 0,
+        "max_range_mpc": 500
+      }
+    },
+    {
+      "tier": 21,
+      "id": "inflation_drive",
+      "name": "Inflation Drive",
+      "description": "Recreates a pocket of inflationary expansion around the vessel.",
+      "max_velocity_c": 1000000,
+      "acceleration_g": 0.1,
+      "compute_cost": 1e24,
+      "energy_cost_per_mpc": 1e26,
+      "research_requirements": ["cosmic_string_drive", "inflation_physics"],
+      "physics": {
+        "principle": "controlled_inflation",
+        "time_dilation_percent": 0,
+        "max_range_mpc": null
+      }
+    },
+    {
+      "tier": 22,
+      "id": "big_rip_engine",
+      "name": "Big Rip Engine",
+      "description": "Exploits dark energy to tunnel through spacetime instantaneously.",
+      "max_velocity_c": null,
+      "acceleration_g": null,
+      "compute_cost": 1e27,
+      "energy_cost_per_mpc": 1e24,
+      "research_requirements": ["inflation_drive", "dark_energy_mastery"],
+      "physics": {
+        "principle": "quantum_spacetime_tunneling",
+        "time_dilation_percent": 0,
+        "instantaneous": true,
+        "max_range_mpc": null
+      }
+    }
+  ],
+
+  "gameplay": {
+    "base_colony_cost": {
+      "probes": 1e15,
+      "energy": 1e30,
+      "compute": 1e24
+    },
+    "supercluster_generation": {
+      "stars_per_supercluster": 1000,
+      "generation_seed_offset": 1000000
+    },
+    "kardashev_scale": {
+      "K2": { "description": "Type II - Harness entire star's energy", "power_watts": 4e26 },
+      "K2.5": { "description": "Type II.5 - Multiple stars", "power_watts": 4e30 },
+      "K3": { "description": "Type III - Galaxy-wide energy", "power_watts": 4e36 },
+      "K3.5": { "description": "Type III.5 - Supercluster-wide", "power_watts": 4e42 },
+      "K4": { "description": "Type IV - Universe-wide", "power_watts": 4e48 }
+    }
+  },
+
+  "universe_stats_template": {
+    "superclusters_colonized": 1,
+    "superclusters_discovered": 10,
+    "galaxies_colonized": 1,
+    "total_galaxies_visible": 400000,
+    "total_dyson_power_watts": 0,
+    "kardashev_level": "K2.5",
+    "intergalactic_transfers_active": 0
+  }
+}

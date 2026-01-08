@@ -5,6 +5,10 @@ class Starfield {
         this.layers = [];
         this.cameraPosition = { x: 0, y: 0, z: 0 };
         this.time = 0;
+        if (!this.scene) {
+            console.warn('[Starfield] Scene not provided to constructor');
+            return;
+        }
         this.init();
     }
 
@@ -109,7 +113,11 @@ class Starfield {
         };
 
         this.layers.push(points);
-        this.scene.add(points);
+        if (this.scene) {
+            this.scene.add(points);
+        } else {
+            console.warn('[Starfield] Scene not available, cannot add layer');
+        }
     }
 
     update(cameraPosition, deltaTime) {

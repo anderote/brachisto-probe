@@ -1,0 +1,430 @@
+{
+  "tree_id": "electromagnetics",
+  "name": "Electromagnetics",
+  "category": "dexterity",
+  "description": "Magnetic field generation and control. Affects mass drivers, mining efficiency, power systems, and fusion containment.",
+
+  "physics_model": {
+    "primary_effect": "mass_driver_muzzle_velocity",
+    "secondary_effects": ["mining_efficiency", "generator_efficiency", "fusion_containment"],
+    "formulas": {
+      "magnetic_pressure": "P = B² / (2μ₀)",
+      "muzzle_velocity": "v = √(2 × η × E / m)",
+      "force": "F = B² × A / (2μ₀)"
+    },
+    "constants": {
+      "mu_0": 1.2566370614e-6,
+      "mu_0_description": "Permeability of free space (H/m)"
+    }
+  },
+
+  "display_format": {
+    "primary": "{b_max_tesla}T max field",
+    "secondary": "({efficiency_percent}% efficiency)",
+    "effect": "[{muzzle_velocity_km_s} km/s mass driver]",
+    "example": "25T max field (75% efficiency) [25 km/s mass driver]"
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "id": "permanent_magnets",
+      "name": "Permanent Magnets (NdFeB)",
+      "description": "Neodymium-iron-boron rare earth magnets. No power required but limited field strength.",
+      "physics": {
+        "b_max_tesla": 1.5,
+        "critical_current_a_mm2": null,
+        "critical_temp_k": null,
+        "efficiency": 0.35,
+        "power_required": false,
+        "operating_temp_k": 300
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 0.8,
+        "mining_bonus": 1.0,
+        "description": "Basic electromagnetic capability"
+      },
+      "research": {
+        "base_cost_eflop_days": 5,
+        "tranches": 5,
+        "cost_per_tranche": 1
+      },
+      "historical_reference": "Commercial rare earth magnets, MRI machines",
+      "unlocks": ["copper_electromagnets"]
+    },
+    {
+      "tier": 2,
+      "id": "copper_electromagnets",
+      "name": "Copper Electromagnets",
+      "description": "Resistive electromagnets with water cooling. High power consumption but controllable fields.",
+      "physics": {
+        "b_max_tesla": 2.5,
+        "critical_current_a_mm2": null,
+        "critical_temp_k": null,
+        "efficiency": 0.43,
+        "resistive_losses_percent": 30,
+        "operating_temp_k": 300
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 1.5,
+        "mining_bonus": 1.2,
+        "description": "Industrial-grade magnetic separation"
+      },
+      "research": {
+        "base_cost_eflop_days": 15,
+        "tranches": 6,
+        "cost_per_tranche": 2.5
+      },
+      "historical_reference": "Industrial electromagnets, particle accelerators",
+      "unlocks": ["lts_nbti"]
+    },
+    {
+      "tier": 3,
+      "id": "lts_nbti",
+      "name": "Low-Temperature Superconductor (NbTi)",
+      "description": "Niobium-titanium superconducting wire. Requires liquid helium (4.2K) but zero resistive losses.",
+      "physics": {
+        "b_max_tesla": 10,
+        "critical_current_a_mm2": 3000,
+        "critical_temp_k": 9.2,
+        "efficiency": 0.55,
+        "cooling_power_w_per_w": 300,
+        "operating_temp_k": 4.2
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 6,
+        "mining_bonus": 1.8,
+        "description": "First practical superconducting systems"
+      },
+      "research": {
+        "base_cost_eflop_days": 50,
+        "tranches": 8,
+        "cost_per_tranche": 6.25
+      },
+      "historical_reference": "MRI magnets, LHC dipoles, ITER TF coils",
+      "unlocks": ["lts_nb3sn"]
+    },
+    {
+      "tier": 4,
+      "id": "lts_nb3sn",
+      "name": "High-Field LTS (Nb₃Sn)",
+      "description": "Niobium-tin intermetallic compound. Higher field than NbTi but brittle and harder to manufacture.",
+      "physics": {
+        "b_max_tesla": 20,
+        "critical_current_a_mm2": 2500,
+        "critical_temp_k": 18,
+        "efficiency": 0.62,
+        "cooling_power_w_per_w": 250,
+        "operating_temp_k": 4.2
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 12,
+        "mining_bonus": 2.5,
+        "fusion_capable": true,
+        "description": "Enables magnetic confinement fusion research"
+      },
+      "research": {
+        "base_cost_eflop_days": 150,
+        "tranches": 8,
+        "cost_per_tranche": 18.75
+      },
+      "historical_reference": "ITER central solenoid, high-field research magnets",
+      "unlocks": ["mgb2"]
+    },
+    {
+      "tier": 5,
+      "id": "mgb2",
+      "name": "Magnesium Diboride (MgB₂)",
+      "description": "Higher critical temperature allows cheaper cooling with liquid hydrogen or closed-cycle refrigerators.",
+      "physics": {
+        "b_max_tesla": 15,
+        "critical_current_a_mm2": 1000,
+        "critical_temp_k": 39,
+        "efficiency": 0.68,
+        "cooling_power_w_per_w": 50,
+        "operating_temp_k": 20
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 15,
+        "mining_bonus": 3.0,
+        "description": "More practical cooling requirements"
+      },
+      "research": {
+        "base_cost_eflop_days": 400,
+        "tranches": 10,
+        "cost_per_tranche": 40
+      },
+      "historical_reference": "Discovered 2001, MRI prototypes, fault current limiters",
+      "unlocks": ["hts_ybco"]
+    },
+    {
+      "tier": 6,
+      "id": "hts_ybco",
+      "name": "First-Gen HTS (YBCO)",
+      "description": "Yttrium barium copper oxide. Superconducts above liquid nitrogen temperature - revolutionary cost reduction.",
+      "physics": {
+        "b_max_tesla": 25,
+        "critical_current_a_mm2": 500,
+        "critical_temp_k": 93,
+        "efficiency": 0.75,
+        "cooling_power_w_per_w": 15,
+        "operating_temp_k": 77
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 25,
+        "mining_bonus": 4.0,
+        "description": "LN2 cooling is cheap and practical anywhere"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000,
+        "tranches": 10,
+        "cost_per_tranche": 100
+      },
+      "historical_reference": "1987 Nobel Prize, SuperPower Inc., Bruker HTS",
+      "unlocks": ["hts_rebco"]
+    },
+    {
+      "tier": 7,
+      "id": "hts_rebco",
+      "name": "Second-Gen HTS (REBCO Tape)",
+      "description": "Rare-earth barium copper oxide in coated conductor architecture. Higher current density, better performance.",
+      "physics": {
+        "b_max_tesla": 30,
+        "critical_current_a_mm2": 800,
+        "critical_temp_k": 93,
+        "efficiency": 0.80,
+        "cooling_power_w_per_w": 12,
+        "operating_temp_k": 77
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 38,
+        "mining_bonus": 5.0,
+        "fusion_capable": true,
+        "description": "Enables compact fusion devices"
+      },
+      "research": {
+        "base_cost_eflop_days": 2500,
+        "tranches": 10,
+        "cost_per_tranche": 250
+      },
+      "historical_reference": "SPARC tokamak, Commonwealth Fusion Systems",
+      "unlocks": ["iter_class"]
+    },
+    {
+      "tier": 8,
+      "id": "iter_class",
+      "name": "ITER-Class Fusion Magnets",
+      "description": "Massive hybrid Nb₃Sn + HTS magnet systems for fusion-scale confinement. 13T sustained over huge volumes.",
+      "physics": {
+        "b_max_tesla": 13,
+        "b_max_note": "Lower peak but massive scale",
+        "stored_energy_GJ": 50,
+        "critical_current_a_mm2": 2000,
+        "efficiency": 0.82,
+        "operating_temp_k": 4.5
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 50,
+        "mining_bonus": 6.0,
+        "fusion_gain_Q": 10,
+        "description": "D-T fusion power plants become viable"
+      },
+      "research": {
+        "base_cost_eflop_days": 8000,
+        "tranches": 10,
+        "cost_per_tranche": 800
+      },
+      "historical_reference": "ITER project, 35 nations, first fusion gain >1",
+      "unlocks": ["compact_stellarator"]
+    },
+    {
+      "tier": 9,
+      "id": "compact_stellarator",
+      "name": "Compact Stellarator Magnets",
+      "description": "Complex 3D-optimized coil geometries for steady-state fusion. No plasma disruptions.",
+      "physics": {
+        "b_max_tesla": 40,
+        "critical_current_a_mm2": 3000,
+        "efficiency": 0.85,
+        "coil_complexity": "3D_optimized",
+        "operating_temp_k": 20
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 70,
+        "mining_bonus": 8.0,
+        "fusion_steady_state": true,
+        "description": "Continuous fusion operation without disruptions"
+      },
+      "research": {
+        "base_cost_eflop_days": 25000,
+        "tranches": 10,
+        "cost_per_tranche": 2500
+      },
+      "historical_reference": "Wendelstein 7-X, HSX, optimized stellarator theory",
+      "unlocks": ["room_temp_sc"]
+    },
+    {
+      "tier": 10,
+      "id": "room_temp_sc",
+      "name": "Room-Temperature Superconductor",
+      "description": "Superconductivity at ambient conditions. No cooling required - ubiquitous applications.",
+      "physics": {
+        "b_max_tesla": 50,
+        "critical_current_a_mm2": 5000,
+        "critical_temp_k": 300,
+        "efficiency": 0.90,
+        "cooling_power_w_per_w": 0,
+        "operating_temp_k": 300
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 100,
+        "mining_bonus": 12.0,
+        "description": "Revolutionary - superconductors everywhere"
+      },
+      "research": {
+        "base_cost_eflop_days": 80000,
+        "tranches": 10,
+        "cost_per_tranche": 8000
+      },
+      "historical_reference": "LK-99 claims (unverified), metallic hydrogen theory, Dias controversy",
+      "unlocks": ["flux_compression"]
+    },
+    {
+      "tier": 11,
+      "id": "flux_compression",
+      "name": "Flux Compression Generators",
+      "description": "Magnetic field amplification through rapid compression. Achieves extreme fields for microseconds.",
+      "physics": {
+        "b_max_tesla": 500,
+        "b_max_note": "Pulsed, not sustained",
+        "pulse_duration_us": 10,
+        "efficiency": 0.70,
+        "mechanism": "explosive_or_em_compression"
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 200,
+        "mining_bonus": 20.0,
+        "description": "Extreme pulsed fields for specialized applications"
+      },
+      "research": {
+        "base_cost_eflop_days": 200000,
+        "tranches": 10,
+        "cost_per_tranche": 20000
+      },
+      "historical_reference": "LANL ATLAS, Russian MC-1 generators, Z-pinch facilities",
+      "unlocks": ["exotic_confinement"]
+    },
+    {
+      "tier": 12,
+      "id": "exotic_confinement",
+      "name": "Exotic Matter Magnetic Confinement",
+      "description": "Negative mass matter stabilizes extreme magnetic configurations. Sustained kiloTesla fields.",
+      "physics": {
+        "b_max_tesla": 2000,
+        "b_max_note": "Sustained via exotic matter stabilization",
+        "efficiency": 0.92,
+        "requires": "negative_mass_exotic_matter",
+        "mechanism": "topological_field_stabilization"
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 400,
+        "mining_bonus": 50.0,
+        "antimatter_containment": true,
+        "description": "Practical antimatter storage and handling"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000000,
+        "tranches": 10,
+        "cost_per_tranche": 100000
+      },
+      "historical_reference": "Theoretical - requires exotic matter from materials tree",
+      "requires": ["exotic_matter_materials_tier_13"],
+      "unlocks": ["terahertz_pais"]
+    },
+    {
+      "tier": 13,
+      "id": "terahertz_pais",
+      "name": "Terahertz Pais Field Generator",
+      "description": "High-frequency rotating EM fields at terahertz frequencies create coherent spacetime manipulation effects. Direct implementation of the Pais patents.",
+      "physics": {
+        "b_max_tesla": 10000,
+        "frequency_thz": 100,
+        "rotation_coherence": 0.999,
+        "efficiency": 0.95,
+        "mechanism": "coherent_em_spacetime_coupling"
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 1000,
+        "mining_bonus": 100.0,
+        "gravity_manipulation": true,
+        "description": "Direct gravitational field manipulation"
+      },
+      "research": {
+        "base_cost_eflop_days": 10000000,
+        "tranches": 10,
+        "cost_per_tranche": 1000000
+      },
+      "historical_reference": "US Patents 10,144,532 and 10,322,827 (Salvatore Pais, NAWCAD)",
+      "unlocks": ["unified_field"]
+    },
+    {
+      "tier": 14,
+      "id": "unified_field",
+      "name": "Unified Field Manipulation",
+      "description": "Complete control over all fundamental forces through EM field geometry. Gravity, electromagnetism, and nuclear forces become programmable.",
+      "physics": {
+        "b_max_tesla": 100000,
+        "force_unification": true,
+        "efficiency": 0.999,
+        "mechanism": "kaluza_klein_field_engineering",
+        "spacetime_curvature": "controllable"
+      },
+      "derived_effects": {
+        "muzzle_velocity_km_s": 5000,
+        "mining_bonus": 1000.0,
+        "force_control": true,
+        "description": "All forces unified and controllable"
+      },
+      "research": {
+        "base_cost_eflop_days": 100000000,
+        "tranches": 10,
+        "cost_per_tranche": 10000000
+      },
+      "historical_reference": "Einstein's unified field theory, Kaluza-Klein theory, M-theory compactification",
+      "unlocks": []
+    }
+  ],
+
+  "cross_effects": {
+    "mass_driver": {
+      "description": "Primary effect - muzzle velocity scales with B² and efficiency",
+      "formula": "v = √(2 × η × (B²A/2μ₀) × L / m)",
+      "simplified": "v ≈ k × B × √η where k depends on geometry"
+    },
+    "mining": {
+      "description": "Magnetic separation of ferrous metals from slag",
+      "formula": "mining_bonus = 1 + 0.25 × ln(B_max)"
+    },
+    "power_generation": {
+      "description": "Better magnets improve generators and motors",
+      "formula": "generator_eff = base_eff × (1 + 0.03 × tier)"
+    },
+    "fusion": {
+      "description": "Magnetic confinement requires high B-fields",
+      "threshold_tesla": 10,
+      "formula": "confinement_time ∝ B²"
+    },
+    "propulsion": {
+      "description": "MPD and ion thrusters benefit from better magnets",
+      "formula": "electric_prop_eff = base × (1 + 0.05 × tier)"
+    }
+  },
+
+  "skill_integration": {
+    "legacy_skill_names": ["transmission", "conversion"],
+    "calculation": {
+      "description": "EM tier maps to legacy multiplier via B-field ratio",
+      "formula": "multiplier = B_current / B_reference where B_reference = 2T"
+    }
+  }
+}

@@ -1,0 +1,480 @@
+{
+  "tree_id": "power",
+  "name": "Power Systems",
+  "category": "energy",
+  "description": "Energy generation and storage technologies. Determines available power for all operations.",
+
+  "physics_model": {
+    "primary_effect": "power_density_w_kg",
+    "secondary_effects": ["solar_independence", "energy_storage"],
+    "solar_flux": {
+      "formula": "I = 1361 × (1/r²) W/m²",
+      "earth": 1361,
+      "mars": 590,
+      "jupiter": 50,
+      "saturn": 15
+    }
+  },
+
+  "display_format": {
+    "primary": "{power_density_w_kg} W/kg",
+    "secondary": "({efficiency_percent}% efficient)",
+    "effect": "[{solar_limit} solar limit]",
+    "example": "500 W/kg (45% efficient) [Jupiter solar limit]"
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "id": "silicon_pv",
+      "name": "Silicon Photovoltaics",
+      "description": "Single-crystal silicon solar cells. Proven technology, mass-produced.",
+      "physics": {
+        "efficiency_percent": 22,
+        "power_density_w_kg": 50,
+        "degradation_percent_year": 2.0,
+        "operating_temp_max_k": 400,
+        "solar_dependent": true
+      },
+      "derived_effects": {
+        "power_factor": 1.0,
+        "solar_limit_au": 1.5,
+        "solar_limit_zone": "Mars",
+        "description": "Baseline solar power"
+      },
+      "research": {
+        "base_cost_eflop_days": 5,
+        "tranches": 5,
+        "cost_per_tranche": 1
+      },
+      "historical_reference": "ISS, most satellites, terrestrial solar",
+      "unlocks": ["multijunction_gaas"]
+    },
+    {
+      "tier": 2,
+      "id": "multijunction_gaas",
+      "name": "Multi-Junction III-V (GaAs)",
+      "description": "Gallium arsenide triple-junction cells. Higher efficiency, radiation resistant.",
+      "physics": {
+        "efficiency_percent": 32,
+        "power_density_w_kg": 150,
+        "degradation_percent_year": 0.5,
+        "radiation_resistant": true,
+        "solar_dependent": true
+      },
+      "derived_effects": {
+        "power_factor": 3.0,
+        "solar_limit_au": 2.5,
+        "solar_limit_zone": "Asteroid Belt",
+        "description": "High-performance space solar"
+      },
+      "research": {
+        "base_cost_eflop_days": 20,
+        "tranches": 6,
+        "cost_per_tranche": 3.33
+      },
+      "historical_reference": "Mars rovers, high-power satellites, Juno",
+      "unlocks": ["concentrated_solar"]
+    },
+    {
+      "tier": 3,
+      "id": "concentrated_solar",
+      "name": "Concentrated Solar Power",
+      "description": "Mirrors or lenses focus sunlight on small high-efficiency cells or thermal receivers.",
+      "physics": {
+        "efficiency_percent": 40,
+        "power_density_w_kg": 300,
+        "concentration_ratio": 500,
+        "requires_tracking": true,
+        "solar_dependent": true
+      },
+      "derived_effects": {
+        "power_factor": 6.0,
+        "solar_limit_au": 5.0,
+        "solar_limit_zone": "Jupiter",
+        "description": "Extended solar range via concentration"
+      },
+      "research": {
+        "base_cost_eflop_days": 60,
+        "tranches": 8,
+        "cost_per_tranche": 7.5
+      },
+      "historical_reference": "Solar thermal power plants, Stirling engines",
+      "unlocks": ["perovskite_tandem"]
+    },
+    {
+      "tier": 4,
+      "id": "perovskite_tandem",
+      "name": "Perovskite Tandem Cells",
+      "description": "Perovskite + silicon tandem architecture. Cheap, flexible, high efficiency.",
+      "physics": {
+        "efficiency_percent": 45,
+        "power_density_w_kg": 500,
+        "manufacturing_cost": "low",
+        "flexible": true,
+        "solar_dependent": true
+      },
+      "derived_effects": {
+        "power_factor": 10.0,
+        "solar_limit_au": 3.0,
+        "solar_limit_zone": "Asteroid Belt",
+        "description": "Revolutionary cost reduction"
+      },
+      "research": {
+        "base_cost_eflop_days": 150,
+        "tranches": 8,
+        "cost_per_tranche": 18.75
+      },
+      "historical_reference": "Rapid efficiency gains 2012-present, Oxford PV",
+      "unlocks": ["rtg"]
+    },
+    {
+      "tier": 5,
+      "id": "rtg",
+      "name": "Radioisotope Thermoelectric (RTG)",
+      "description": "Plutonium-238 decay heat converted to electricity. Works anywhere, lasts decades.",
+      "physics": {
+        "efficiency_percent": 7,
+        "power_density_w_kg": 5,
+        "half_life_years": 87.7,
+        "fuel": "Pu-238",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 0.1,
+        "power_factor_note": "Low but unlimited range",
+        "solar_limit_au": "unlimited",
+        "description": "Solar-independent power"
+      },
+      "research": {
+        "base_cost_eflop_days": 400,
+        "tranches": 10,
+        "cost_per_tranche": 40
+      },
+      "historical_reference": "Voyager, Cassini, New Horizons, Curiosity",
+      "unlocks": ["kilopower"]
+    },
+    {
+      "tier": 6,
+      "id": "kilopower",
+      "name": "Kilopower Fission Reactor",
+      "description": "Compact uranium fission reactor with Stirling conversion. 1-10 kW class.",
+      "physics": {
+        "efficiency_percent": 25,
+        "power_density_w_kg": 40,
+        "power_range_kw": [1, 10],
+        "fuel": "U-235",
+        "operating_life_years": 15,
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 0.8,
+        "solar_limit_au": "unlimited",
+        "description": "Compact nuclear for bases and spacecraft"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000,
+        "tranches": 10,
+        "cost_per_tranche": 100
+      },
+      "historical_reference": "NASA KRUSTY test 2018, Kilopower program",
+      "unlocks": ["fission_surface"]
+    },
+    {
+      "tier": 7,
+      "id": "fission_surface",
+      "name": "Fission Surface Power",
+      "description": "Megawatt-class fission reactors for surface operations and high-power spacecraft.",
+      "physics": {
+        "efficiency_percent": 30,
+        "power_density_w_kg": 100,
+        "power_range_kw": [40, 1000],
+        "fuel": "U-235, U-233",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 2.0,
+        "solar_limit_au": "unlimited",
+        "description": "Industrial-scale space nuclear"
+      },
+      "research": {
+        "base_cost_eflop_days": 3000,
+        "tranches": 10,
+        "cost_per_tranche": 300
+      },
+      "historical_reference": "SAFE-400, Prometheus (cancelled), Russian TOPAZ",
+      "unlocks": ["fission_fragment"]
+    },
+    {
+      "tier": 8,
+      "id": "fission_fragment",
+      "name": "Fission Fragment Reactor",
+      "description": "Direct conversion of fission fragment kinetic energy. Ultra-high efficiency.",
+      "physics": {
+        "efficiency_percent": 85,
+        "power_density_w_kg": 1000,
+        "mechanism": "direct_fragment_conversion",
+        "fuel": "Am-242m, Cf-252",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 20.0,
+        "solar_limit_au": "unlimited",
+        "description": "Revolutionary fission efficiency"
+      },
+      "research": {
+        "base_cost_eflop_days": 10000,
+        "tranches": 10,
+        "cost_per_tranche": 1000
+      },
+      "historical_reference": "Theoretical - dusty plasma fission concepts",
+      "unlocks": ["fusion_dt"]
+    },
+    {
+      "tier": 9,
+      "id": "fusion_dt",
+      "name": "D-T Fusion Power",
+      "description": "Deuterium-tritium magnetic confinement fusion. Net energy gain achieved.",
+      "physics": {
+        "efficiency_percent": 40,
+        "power_density_w_kg": 500,
+        "fuel": "D-T",
+        "neutron_fraction": 0.80,
+        "tritium_breeding": true,
+        "requires": "em_tier_8",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 10.0,
+        "solar_limit_au": "unlimited",
+        "description": "First generation fusion power"
+      },
+      "research": {
+        "base_cost_eflop_days": 30000,
+        "tranches": 10,
+        "cost_per_tranche": 3000
+      },
+      "historical_reference": "ITER, SPARC, JET record 2022",
+      "unlocks": ["fusion_dhe3"]
+    },
+    {
+      "tier": 10,
+      "id": "fusion_dhe3",
+      "name": "D-He³ Aneutronic Fusion",
+      "description": "Deuterium-helium-3 fusion. Minimal neutrons, direct energy conversion possible.",
+      "physics": {
+        "efficiency_percent": 70,
+        "power_density_w_kg": 2000,
+        "fuel": "D-He³",
+        "neutron_fraction": 0.05,
+        "direct_conversion": true,
+        "he3_source": "lunar_regolith, gas_giants",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 40.0,
+        "solar_limit_au": "unlimited",
+        "description": "Clean fusion with direct conversion"
+      },
+      "research": {
+        "base_cost_eflop_days": 80000,
+        "tranches": 10,
+        "cost_per_tranche": 8000
+      },
+      "historical_reference": "Theoretical - requires higher temps than D-T",
+      "unlocks": ["fusion_pb11"]
+    },
+    {
+      "tier": 11,
+      "id": "fusion_pb11",
+      "name": "Proton-Boron-11 Fusion",
+      "description": "Truly aneutronic fusion with abundant fuel. Highest ignition temperature.",
+      "physics": {
+        "efficiency_percent": 75,
+        "power_density_w_kg": 5000,
+        "fuel": "p-B11",
+        "neutron_fraction": 0.001,
+        "fuel_abundance": "high",
+        "ignition_temp_kev": 300,
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 100.0,
+        "solar_limit_au": "unlimited",
+        "description": "Ideal fusion - abundant clean fuel"
+      },
+      "research": {
+        "base_cost_eflop_days": 250000,
+        "tranches": 10,
+        "cost_per_tranche": 25000
+      },
+      "historical_reference": "HB11 Energy, TAE Technologies research",
+      "unlocks": ["antimatter_power"]
+    },
+    {
+      "tier": 12,
+      "id": "antimatter_power",
+      "name": "Antimatter Annihilation Power",
+      "description": "Matter-antimatter annihilation. E=mc² energy release.",
+      "physics": {
+        "efficiency_percent": 50,
+        "efficiency_note": "Pair production losses",
+        "power_density_w_kg": 10000,
+        "energy_density_j_kg": 9e16,
+        "fuel": "positrons, antiprotons",
+        "requires": "em_tier_12",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 200.0,
+        "solar_limit_au": "unlimited",
+        "description": "Ultimate chemical energy density"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000000,
+        "tranches": 10,
+        "cost_per_tranche": 100000
+      },
+      "historical_reference": "CERN antihydrogen, Fermilab antiproton storage",
+      "unlocks": ["zpe"]
+    },
+    {
+      "tier": 13,
+      "id": "zpe",
+      "name": "Zero-Point Energy Extraction",
+      "description": "Harvest quantum vacuum fluctuations. Theoretically unlimited energy from empty space.",
+      "physics": {
+        "efficiency_percent": "N/A",
+        "power_density_w_kg": 100000,
+        "mechanism": "casimir_cavity_arrays",
+        "vacuum_energy_density_j_m3": 1e113,
+        "extraction_fraction": 1e-100,
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 2000.0,
+        "solar_limit_au": "unlimited",
+        "description": "Energy from the quantum vacuum"
+      },
+      "research": {
+        "base_cost_eflop_days": 5000000,
+        "tranches": 10,
+        "cost_per_tranche": 500000
+      },
+      "historical_reference": "Casimir effect, dynamic Casimir effect, vacuum fluctuations",
+      "unlocks": ["kugelblitz"]
+    },
+    {
+      "tier": 14,
+      "id": "kugelblitz",
+      "name": "Kugelblitz Black Hole Power",
+      "description": "Micro black hole fed with matter, radiates via Hawking process. 90%+ mass-to-energy.",
+      "physics": {
+        "efficiency_percent": 90,
+        "power_density_w_kg": 1000000,
+        "mechanism": "hawking_radiation",
+        "black_hole_mass_kg": 1e9,
+        "lifetime_years": 100,
+        "requires": "exotic_matter",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 20000.0,
+        "solar_limit_au": "unlimited",
+        "description": "Near-total mass-energy conversion"
+      },
+      "research": {
+        "base_cost_eflop_days": 50000000,
+        "tranches": 10,
+        "cost_per_tranche": 5000000
+      },
+      "historical_reference": "Hawking (1974), Crane & Westmoreland kugelblitz paper",
+      "requires": ["exotic_matter_materials_tier_13"],
+      "unlocks": ["pais_high_energy"]
+    },
+    {
+      "tier": 15,
+      "id": "pais_high_energy",
+      "name": "Pais High-Energy EM Field Generator",
+      "description": "Rotating high-frequency electromagnetic fields create localized spacetime distortions, extracting energy from the quantum vacuum at unprecedented rates.",
+      "physics": {
+        "efficiency_percent": 95,
+        "power_density_w_kg": 10000000,
+        "mechanism": "spacetime_metric_fluctuation",
+        "em_field_frequency_ghz": 1000,
+        "field_rotation_rpm": 50000,
+        "vacuum_polarization": true,
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 200000.0,
+        "solar_limit_au": "unlimited",
+        "description": "Direct spacetime energy extraction"
+      },
+      "research": {
+        "base_cost_eflop_days": 500000000,
+        "tranches": 10,
+        "cost_per_tranche": 50000000
+      },
+      "historical_reference": "US Patent 10,322,827 (Pais/Navy 2019) - Craft using an inertial mass reduction device",
+      "unlocks": ["dimensional_tap"]
+    },
+    {
+      "tier": 16,
+      "id": "dimensional_tap",
+      "name": "Trans-Dimensional Energy Tap",
+      "description": "Draws immense power from adjacent brane universes through controlled membrane intersection. Energy from parallel dimensions flows into our spacetime.",
+      "physics": {
+        "efficiency_percent": 99.9,
+        "power_density_w_kg": 1000000000000,
+        "mechanism": "brane_intersection",
+        "dimensions_accessed": 2,
+        "membrane_stability": "controlled",
+        "solar_independent": true
+      },
+      "derived_effects": {
+        "power_factor": 2000000.0,
+        "solar_limit_au": 1000000,
+        "description": "Near-limitless power from parallel universes (10^12 W/kg)"
+      },
+      "research": {
+        "base_cost_eflop_days": 5000000000,
+        "tranches": 10,
+        "cost_per_tranche": 500000000
+      },
+      "historical_reference": "Randall-Sundrum braneworld models, DIA AAWSAP reports on trans-dimensional phenomena",
+      "unlocks": []
+    }
+  ],
+
+  "cross_effects": {
+    "all_systems": {
+      "description": "Power limits all energy-consuming operations",
+      "formula": "max_operation_rate = available_power / power_per_operation"
+    },
+    "propulsion": {
+      "description": "Electric propulsion thrust limited by power",
+      "formula": "thrust = 2 × power × efficiency / exhaust_velocity"
+    },
+    "mass_driver": {
+      "description": "Launch rate limited by power recharge",
+      "formula": "shots_per_day = power × efficiency × 86400 / energy_per_shot"
+    },
+    "computing": {
+      "description": "Compute capacity scales with power",
+      "formula": "flops = power / watts_per_flop"
+    },
+    "thermal": {
+      "description": "Power generation creates waste heat",
+      "formula": "waste_heat = power × (1 - efficiency)"
+    }
+  },
+
+  "skill_integration": {
+    "legacy_skill_names": ["generation", "storage_density"],
+    "calculation": {
+      "description": "Power tier maps to legacy multiplier",
+      "formula": "multiplier = power_factor"
+    }
+  }
+}

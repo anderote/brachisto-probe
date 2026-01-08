@@ -73,15 +73,26 @@ class CommandPanel {
 
         // Create layout - standalone panel window with side-by-side layout
         let html = '<div class="command-panel-panel">';
-        
+
         html += '<div class="probe-summary-title">Zone Controls</div>';
-        
-        // Zone selection indicator
+
+        // Zone selection indicator with default policy button
+        html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); position: relative;">';
         html += '<div class="command-zone-indicator" id="command-zone-indicator">No zone selected</div>';
-        
+        html += '<div style="position: relative;">';
+        html += '<button id="default-policy-btn" class="command-policy-btn" title="Apply policy to all zones">Apply to All</button>';
+        // Default policy dropdown (hidden by default)
+        html += '<div id="default-policy-dropdown" class="command-policy-dropdown" style="display: none;">';
+        html += '<div class="command-policy-option" id="policy-apply-current">Apply current zone settings to all zones</div>';
+        html += '<div class="command-policy-option" id="policy-set-idle">Set all zones to Idle (no activity)</div>';
+        html += '<div class="command-policy-option" id="policy-set-mining">Set all zones to Mining only</div>';
+        html += '</div>';
+        html += '</div>'; // End button wrapper
+        html += '</div>';
+
         // Main content area: sliders on left, buildings on right
         html += '<div class="command-panel-main-content">';
-        
+
         // Left column: Sliders and allocations
         html += '<div class="command-panel-left-column">';
         html += '<div class="command-sliders-container" id="command-sliders-container">';
@@ -90,7 +101,7 @@ class CommandPanel {
         html += '<div class="command-allocations-container" id="command-allocations-container">';
         html += '</div>';
         html += '</div>'; // End left column
-        
+
         // Right column: Buildings (only shown if zone has buildings)
         html += '<div class="command-buildings-section" id="command-buildings-panel" style="display: none;">';
         html += '<div class="probe-summary-title">Buildings</div>';
@@ -98,18 +109,198 @@ class CommandPanel {
         html += '<div class="command-no-zone-message">Select an orbital zone to view buildings</div>';
         html += '</div>';
         html += '</div>'; // End buildings section
-        
+
         html += '</div>'; // End main content
         html += '</div>'; // End command-panel-panel
 
         this.container.innerHTML = html;
-        
+
         // Set up event listeners
         this.setupEventListeners();
+        this.setupPolicyListeners();
     }
 
     setupEventListeners() {
         // Event listeners will be set up when sliders are rendered
+    }
+
+    setupPolicyListeners() {
+        const policyBtn = document.getElementById('default-policy-btn');
+        const dropdown = document.getElementById('default-policy-dropdown');
+
+        if (policyBtn && dropdown) {
+            // Toggle dropdown on button click
+            policyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!dropdown.contains(e.target) && e.target !== policyBtn) {
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            // Apply current zone settings to all zones
+            const applyCurrentBtn = document.getElementById('policy-apply-current');
+            if (applyCurrentBtn) {
+                applyCurrentBtn.addEventListener('click', () => {
+                    this.applyPolicyToAllZones('current');
+                    dropdown.style.display = 'none';
+                });
+            }
+
+            // Set all zones to idle
+            const setIdleBtn = document.getElementById('policy-set-idle');
+            if (setIdleBtn) {
+                setIdleBtn.addEventListener('click', () => {
+                    this.applyPolicyToAllZones('idle');
+                    dropdown.style.display = 'none';
+                });
+            }
+
+            // Set all zones to mining only
+            const setMiningBtn = document.getElementById('policy-set-mining');
+            if (setMiningBtn) {
+                setMiningBtn.addEventListener('click', () => {
+                    this.applyPolicyToAllZones('mining');
+                    dropdown.style.display = 'none';
+                });
+            }
+        }
+    }
+
+    /**
+     * Apply a policy to all zones
+     * @param {string} policyType - 'current', 'idle', or 'mining'
+     */
+    async applyPolicyToAllZones(policyType) {
+        // Get all zones
+        const zones = window.orbitalZoneSelector?.orbitalZones || [];
+        if (zones.length === 0) {
+            console.warn('No zones available to apply policy');
+            return;
+        }
+
+        let allocations;
+
+        if (policyType === 'current') {
+            // Use current zone's slider values
+            if (!this.selectedZone) {
+                if (window.toast) {
+                    window.toast.error('Select a zone first to copy its settings');
+                }
+                return;
+            }
+            const policy = this.zonePolicies[this.selectedZone] || {};
+            // Convert cached slider values back to allocations
+            const zones = window.orbitalZoneSelector?.orbitalZones || [];
+            const zone = zones.find(z => z.id === this.selectedZone);
+            const isDysonZone = zone && zone.is_dyson_zone;
+
+            // Get slider values (0-100), convert to 0-1
+            let v1 = (policy[isDysonZone ? 'dyson_priority' : 'mine_priority'] || 0) / 100;
+            let v2 = (policy.replicate_priority || 0) / 100;
+            let v3 = (policy.construct_priority || 0) / 100;
+            let v4 = (policy.recycle_priority || 0) / 100;
+            let v5 = (policy.recycle_probes_priority || 0) / 100;
+            let v6 = (policy.idle_priority || 0) / 100;
+
+            // Apply deadzone
+            if (v1 <= 0.05) v1 = 0;
+            if (v2 <= 0.05) v2 = 0;
+            if (v3 <= 0.05) v3 = 0;
+            if (v4 <= 0.05) v4 = 0;
+            if (v5 <= 0.05) v5 = 0;
+            if (v6 <= 0.05) v6 = 0;
+
+            // Calculate allocations using v^2 / sum formula
+            const v1Sq = v1 * v1;
+            const v2Sq = v2 * v2;
+            const v3Sq = v3 * v3;
+            const v4Sq = v4 * v4;
+            const v5Sq = v5 * v5;
+            const v6Sq = v6 * v6;
+            const sum = v1 + v2 + v3 + v4 + v5 + v6;
+
+            if (sum > 0) {
+                allocations = {
+                    harvest: isDysonZone ? 0 : v1Sq / sum,
+                    dyson: isDysonZone ? v1Sq / sum : 0,
+                    replicate: v2Sq / sum,
+                    construct: v3Sq / sum,
+                    recycle: v4Sq / sum,
+                    recycle_probes: v5Sq / sum,
+                    idle: v6Sq / sum
+                };
+            } else {
+                allocations = { harvest: 0, dyson: 0, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, idle: 1 };
+            }
+        } else if (policyType === 'idle') {
+            // All probes idle
+            allocations = { harvest: 0, dyson: 0, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, idle: 1 };
+        } else if (policyType === 'mining') {
+            // All probes mining
+            allocations = { harvest: 1, dyson: 0, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, idle: 0 };
+        }
+
+        // Apply to all zones
+        for (const zone of zones) {
+            const zoneId = zone.id;
+
+            // Adjust for Dyson zone (swap harvest/dyson)
+            let zoneAllocations = { ...allocations };
+            if (zone.is_dyson_zone) {
+                if (policyType === 'mining') {
+                    // For Dyson zone, "mining" means Dyson construction
+                    zoneAllocations = { harvest: 0, dyson: 1, replicate: 0, construct: 0, recycle: 0, recycle_probes: 0, idle: 0 };
+                }
+            }
+
+            // Update cached zone policies (for slider sync)
+            this.zonePolicies[zoneId] = {
+                mine_priority: Math.sqrt(zoneAllocations.harvest) * 100,
+                dyson_priority: Math.sqrt(zoneAllocations.dyson) * 100,
+                replicate_priority: Math.sqrt(zoneAllocations.replicate) * 100,
+                construct_priority: Math.sqrt(zoneAllocations.construct) * 100,
+                recycle_priority: Math.sqrt(zoneAllocations.recycle) * 100,
+                recycle_probes_priority: Math.sqrt(zoneAllocations.recycle_probes) * 100,
+                idle_priority: Math.sqrt(zoneAllocations.idle) * 100
+            };
+
+            // Send to game engine
+            try {
+                if (window.gameEngine) {
+                    await window.gameEngine.performAction('allocate_probes', {
+                        zone_id: zoneId,
+                        allocations: zoneAllocations,
+                        mass_limits: {
+                            replicate: Math.sqrt(zoneAllocations.replicate),
+                            construct: Math.sqrt(zoneAllocations.construct),
+                            recycle_probes: Math.sqrt(zoneAllocations.recycle_probes)
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error(`Failed to apply policy to zone ${zoneId}:`, error);
+            }
+        }
+
+        // Update current zone's slider display if selected
+        if (this.selectedZone) {
+            const zone = zones.find(z => z.id === this.selectedZone);
+            if (zone) {
+                this.syncSlidersWithPolicy(this.selectedZone, zone.is_dyson_zone);
+            }
+        }
+
+        // Show success message
+        if (window.toast) {
+            const policyName = policyType === 'current' ? 'current settings' :
+                              policyType === 'idle' ? 'Idle' : 'Mining';
+            window.toast.success(`Applied "${policyName}" policy to all ${zones.length} zones`);
+        }
     }
 
     renderSlidersForZone(zoneId, zone) {

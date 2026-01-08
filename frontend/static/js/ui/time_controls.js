@@ -36,7 +36,7 @@ class TimeControls {
 
     setSpeed(speed) {
         this.timeSpeed = speed;
-        
+
         // Update active button
         this.container.querySelectorAll('.speed-btn').forEach(btn => {
             if (parseInt(btn.dataset.speed) === speed) {
@@ -50,6 +50,13 @@ class TimeControls {
         if (typeof gameEngine !== 'undefined') {
             gameEngine.setTimeSpeed(speed);
         }
+
+        // Also update StarMap time speed if available (galaxy view uses this)
+        if (window.starMapVisualization?.setTimeSpeed) {
+            window.starMapVisualization.setTimeSpeed(speed);
+        }
+
+        console.log('[TimeControls] Speed set to:', speed + 'x');
     }
 
     formatTime(days) {

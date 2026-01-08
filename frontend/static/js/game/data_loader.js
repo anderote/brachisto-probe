@@ -29,15 +29,46 @@ class GameDataLoader {
         if (!this.orbitalZones) {
             const response = await fetch('/game_data/orbital_mechanics.json');
             const data = await response.json();
-            this.orbitalZones = data.orbital_zones;
-            
-            // Calculate metal limits per zone based on metal_stores_kg from JSON
+
+            // Start with planet zones
+            this.orbitalZones = [...data.orbital_zones];
+
+            // Also store reference to parent zones for lookup
+            this.moonZones = [];
+            this.parentZoneMap = {}; // moonId -> parentZoneId
+
+            // Flatten moons into separate zone entries
+            for (const zone of data.orbital_zones) {
+                if (zone.moons && Array.isArray(zone.moons)) {
+                    for (const moon of zone.moons) {
+                        // Create a full zone entry for the moon
+                        const moonZone = {
+                            ...moon,
+                            is_moon: true,
+                            parent_zone: zone.id,
+                            // Inherit parent's radius_au for positioning purposes
+                            radius_au: zone.radius_au,
+                            // Moons don't have AU ranges
+                            radius_au_start: zone.radius_au,
+                            radius_au_end: zone.radius_au
+                        };
+                        this.orbitalZones.push(moonZone);
+                        this.moonZones.push(moonZone);
+                        this.parentZoneMap[moon.id] = zone.id;
+                    }
+                }
+            }
+
+            // Calculate metal limits per zone based on metal_stores_kg or total_mass_kg from JSON
             this.zoneMetalLimits = {};
             for (const zone of this.orbitalZones) {
                 const zoneId = zone.id;
-                // Use metal_stores_kg from JSON if available, otherwise fall back to PLANETARY_MASSES
+                // Use metal_stores_kg from JSON if available
                 if (zone.metal_stores_kg !== undefined) {
                     this.zoneMetalLimits[zoneId] = zone.metal_stores_kg;
+                } else if (zone.total_mass_kg !== undefined) {
+                    // Use total_mass_kg for moons and planets
+                    this.zoneMetalLimits[zoneId] = zone.total_mass_kg;
                 } else if (zoneId in PLANETARY_MASSES) {
                     // Fallback: use total mass if metal_stores_kg not specified
                     this.zoneMetalLimits[zoneId] = PLANETARY_MASSES[zoneId];
@@ -48,6 +79,31 @@ class GameDataLoader {
             }
         }
         return this.orbitalZones;
+    }
+
+    /**
+     * Get moon zones for a specific parent planet
+     */
+    getMoonsForZone(parentZoneId) {
+        if (!this.moonZones) return [];
+        return this.moonZones.filter(m => m.parent_zone === parentZoneId);
+    }
+
+    /**
+     * Get parent zone ID for a moon zone
+     */
+    getParentZone(moonZoneId) {
+        if (!this.parentZoneMap) return null;
+        return this.parentZoneMap[moonZoneId] || null;
+    }
+
+    /**
+     * Check if a zone is a moon
+     */
+    isMoonZone(zoneId) {
+        if (!this.orbitalZones) return false;
+        const zone = this.orbitalZones.find(z => z.id === zoneId);
+        return zone?.is_moon === true;
     }
 
     getZoneMetalLimit(zoneId) {

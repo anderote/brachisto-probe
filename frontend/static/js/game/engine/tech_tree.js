@@ -492,16 +492,20 @@ class TechTree {
         const EFLOPS_TO_FLOPS = 1e18;
         const SECONDS_PER_DAY = 86400; // Used for legacy tranche_cost_intelligence conversion
         
-        // Get tier cost in EFLOPS-days (default: 100 for tier 1, 2x scaling)
-        // If tranche_cost_intelligence exists, convert it (it's per-tranche, so multiply by tranches)
-        // Otherwise use tier_cost_eflops_days if specified, or default to 100 for tier 1
+        // Get tier cost in EFLOPS-days
+        // Check multiple possible property names for backward compatibility:
+        // 1. tier_cost_eflops_days (direct on tier)
+        // 2. research.base_cost_eflop_days (nested in physics tech trees)
+        // 3. tranche_cost_intelligence (legacy)
+        // 4. Default fallback with gentler 3x scaling
         let tierCostEFLOPSDays;
         if (tierDef.tier_cost_eflops_days !== undefined) {
             tierCostEFLOPSDays = tierDef.tier_cost_eflops_days;
+        } else if (tierDef.research?.base_cost_eflop_days !== undefined) {
+            // Physics tech tree format - cost is in research.base_cost_eflop_days
+            tierCostEFLOPSDays = tierDef.research.base_cost_eflop_days;
         } else if (tierDef.tranche_cost_intelligence !== undefined) {
             // Legacy: convert per-tranche cost to total tier cost
-            // Assume it was meant to be total cost, so use as-is
-            // But if it's clearly per-tranche (very small), multiply by tranches
             const legacyCost = tierDef.tranche_cost_intelligence;
             const legacyCostEFLOPSDays = legacyCost / (EFLOPS_TO_FLOPS * SECONDS_PER_DAY);
             // If it's less than 50 EFLOPS-days, it's probably per-tranche
@@ -511,8 +515,8 @@ class TechTree {
                 tierCostEFLOPSDays = legacyCostEFLOPSDays;
             }
         } else {
-            // Default: tier 1 costs 1000 EFLOPS-days, tier 10 costs 1e21x more
-            // Find tier index to determine scaling
+            // Default: tier 1 costs 100 EFLOPS-days, scaling 3x per tier
+            // This is gentler than before (was 1000 base, 150x scaling)
             let tierIndex = 0;
             if (tree && tree.tiers) {
                 const foundIndex = tree.tiers.findIndex(t => t.id === tierId);
@@ -520,9 +524,9 @@ class TechTree {
                     tierIndex = foundIndex;
                 }
             }
-            const baseCostEFLOPSDays = 1000; // Tier 1 base cost: 1000 EFLOPS-days
-            // Each tier costs 150x more than the previous tier
-            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(150, tierIndex);
+            const baseCostEFLOPSDays = 100; // Tier 1 base cost: 100 EFLOPS-days
+            // Each tier costs 3x more than the previous tier (gentler progression)
+            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(3, tierIndex);
         }
         
         // Convert to FLOP-days cost (same units as progress: FLOPS * days)

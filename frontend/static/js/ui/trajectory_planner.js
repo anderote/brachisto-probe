@@ -1125,7 +1125,7 @@ class TrajectoryPlanner {
         
         // Determine if transfer is possible (for color coding)
         const isReachable = this.isTransferPossible();
-        const markerColor = isReachable ? '#00ff00' : '#ff4444'; // Green if possible, red if not
+        const markerColor = isReachable ? '#ffffff' : '#ff4444'; // White if possible, red if not
         
         // Draw source marker at actual planet position
         if (this.fromZone) {

@@ -37,9 +37,11 @@ class SceneManager {
         this.scene.background = new THREE.Color(0x000000);
 
         // Camera - wide FOV for solar system view
-        // Get dimensions from parent container for proper sizing
+        // Get dimensions from parent container for more reliable sizing
         const container = this.canvas.parentElement;
-        const aspect = container.clientWidth / container.clientHeight;
+        const width = container ? container.clientWidth : window.innerWidth;
+        const height = container ? container.clientHeight : window.innerHeight;
+        const aspect = width / height;
         // Parameters: FOV (degrees), aspect ratio, near clipping plane, far clipping plane
         // Increased far clipping plane from 10000 to 50000 to match increased maxZoom
         this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 50000);
@@ -51,7 +53,7 @@ class SceneManager {
                 canvas: this.canvas,
                 antialias: true
             });
-            this.renderer.setSize(container.clientWidth, container.clientHeight);
+            this.renderer.setSize(width, height);
             this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             
             // Enable HDR tone mapping for better bloom
@@ -70,7 +72,7 @@ class SceneManager {
                     canvas: this.canvas,
                     antialias: false
                 });
-                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.renderer.setSize(width, height);
                 this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 
                 // Enable HDR tone mapping for better bloom
@@ -381,14 +383,16 @@ class SceneManager {
         this.composer.addPass(renderPass);
 
         // Bloom pass for glowing sun and stars
-        const container = this.canvas.parentElement;
+        const bloomContainer = this.canvas.parentElement;
         const bloomParams = {
             strength: 0.2,      // Intensity of bloom
             radius: 0.1,        // Blur radius
             threshold: 0.3      // Brightness threshold for bloom
         };
+        const bloomWidth = bloomContainer ? bloomContainer.clientWidth : window.innerWidth;
+        const bloomHeight = bloomContainer ? bloomContainer.clientHeight : window.innerHeight;
         this.bloomPass = new THREE.UnrealBloomPass(
-            new THREE.Vector2(container.clientWidth, container.clientHeight),
+            new THREE.Vector2(bloomWidth, bloomHeight),
             bloomParams.strength,
             bloomParams.radius,
             bloomParams.threshold
@@ -461,10 +465,13 @@ class SceneManager {
     }
 
     onWindowResize() {
-        // Get dimensions from parent container since canvas may have fixed width/height attributes
+        // Get dimensions from parent container for more reliable sizing
         const container = this.canvas.parentElement;
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+        const width = container ? container.clientWidth : window.innerWidth;
+        const height = container ? container.clientHeight : window.innerHeight;
+
+        // Ensure we have valid dimensions
+        if (width <= 0 || height <= 0) return;
 
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
@@ -1534,29 +1541,92 @@ class CameraController {
     constructor(camera) {
         this.camera = camera;
         this.panSpeed = 0.5;
-        this.zoomSpeed = 0.84; // Reduced by 30% from 1.2
+        this.zoomSpeed = 1.5; // Increased for faster zoom
         this.rotationSpeed = 1.0;
-        
+
         // Spherical coordinates for rotation
         this.radius = 15;
         this.theta = 0; // Horizontal angle (azimuth)
         this.phi = Math.PI / 2; // Vertical angle (polar), start at top-down view
-        
+
         // Pan offset from origin
         this.panOffset = new THREE.Vector3(0, 0, 0);
-        
+
         this.targetRadius = 15;
         this.targetPanOffset = new THREE.Vector3(0, 0, 0);
         this.minZoom = 1;
         this.maxZoom = 2000; // Increased from 500 to allow zooming out further
         this.smoothness = 0.1;
-        
+
         // Tracking state
         this.trackingTarget = null; // Function that returns current position to track
         this.isTracking = false;
-        
+
+        // Try to restore saved camera state
+        this.loadState();
+
         // Update initial position
         this.updatePosition();
+    }
+
+    /**
+     * Save camera state to localStorage
+     */
+    saveState() {
+        const state = {
+            radius: this.radius,
+            targetRadius: this.targetRadius,
+            theta: this.theta,
+            phi: this.phi,
+            panOffset: {
+                x: this.panOffset.x,
+                y: this.panOffset.y,
+                z: this.panOffset.z
+            },
+            targetPanOffset: {
+                x: this.targetPanOffset.x,
+                y: this.targetPanOffset.y,
+                z: this.targetPanOffset.z
+            }
+        };
+        try {
+            localStorage.setItem('brachisto-camera-state', JSON.stringify(state));
+        } catch (e) {
+            console.warn('Failed to save camera state:', e);
+        }
+    }
+
+    /**
+     * Load camera state from localStorage
+     */
+    loadState() {
+        try {
+            const saved = localStorage.getItem('brachisto-camera-state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                this.radius = state.radius || 15;
+                this.targetRadius = state.targetRadius || 15;
+                this.theta = state.theta || 0;
+                this.phi = state.phi || Math.PI / 2;
+                if (state.panOffset) {
+                    this.panOffset.set(
+                        state.panOffset.x || 0,
+                        state.panOffset.y || 0,
+                        state.panOffset.z || 0
+                    );
+                }
+                if (state.targetPanOffset) {
+                    this.targetPanOffset.set(
+                        state.targetPanOffset.x || 0,
+                        state.targetPanOffset.y || 0,
+                        state.targetPanOffset.z || 0
+                    );
+                }
+                console.log('Camera state restored');
+            }
+        } catch (e) {
+            console.warn('Failed to load camera state:', e);
+        }
     }
     
     /**
@@ -1698,18 +1768,26 @@ class CameraController {
                 this.targetPanOffset.copy(targetPos);
             }
         }
-        
+
         // Smooth interpolation for radius
         this.radius += (this.targetRadius - this.radius) * this.smoothness;
-        
+
         // Smooth interpolation for pan offset
         this.panOffset.lerp(this.targetPanOffset, this.smoothness);
-        
+
         // Update position
         this.updatePosition();
 
         // Always look at the pan offset (tracked object or origin)
         this.camera.lookAt(this.panOffset);
+
+        // Periodically save camera state (every ~60 frames / 1 second)
+        if (!this._saveCounter) this._saveCounter = 0;
+        this._saveCounter++;
+        if (this._saveCounter >= 60) {
+            this._saveCounter = 0;
+            this.saveState();
+        }
     }
 }
 

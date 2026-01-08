@@ -7,8 +7,18 @@ class ResearchPanel {
         this.gameState = null;
         this.expandedTrees = new Set(); // Track which trees are expanded
         this.collapsedCategories = new Set(['energy', 'dexterity', 'intelligence']); // Start all collapsed
+        this.physicsDisplay = null; // Physics display integration
         this.init();
         this.loadResearch();
+        this.initPhysicsDisplay();
+    }
+
+    async initPhysicsDisplay() {
+        // Initialize physics display when available
+        if (typeof ResearchPhysicsDisplay !== 'undefined') {
+            this.physicsDisplay = new ResearchPhysicsDisplay();
+            await this.physicsDisplay.initialize();
+        }
     }
 
     async loadResearch() {
@@ -504,13 +514,25 @@ class ResearchPanel {
                 html += `<div style="font-size: 10px; color: rgba(255, 255, 255, 0.8); margin-bottom: 6px; font-weight: 600;">
                     Tier ${nextTierIndex + 1}: ${nextTier.name}
                 </div>`;
-                
+
                 // Show tier description from metadata
                 if (tierDescription) {
                     html += `<div class="structure-card-description">${tierDescription}</div>`;
                 }
+
+                // Show physics values if available
+                const physicsHtml = this.physicsDisplay ? this.physicsDisplay.createPhysicsHTML(treeId) : '';
+                if (physicsHtml) {
+                    html += physicsHtml;
+                }
             } else {
                 html += `<div style="font-size: 10px; color: rgba(100, 220, 100, 0.9); margin-bottom: 6px;">All tiers complete!</div>`;
+
+                // Show physics values for completed trees too
+                const physicsHtml = this.physicsDisplay ? this.physicsDisplay.createPhysicsHTML(treeId) : '';
+                if (physicsHtml) {
+                    html += physicsHtml;
+                }
             }
             
             // Add stats HTML
@@ -551,10 +573,11 @@ class ResearchPanel {
                 html += `<div class="structure-action-hint" style="${nextTierEnabled ? 'color: rgba(255, 130, 130, 0.7);' : ''}">${nextTierEnabled ? 'Click to pause research' : 'Click to start research'}</div>`;
             }
         } else {
-            // Collapsed state - show minimal info
+            // Collapsed state - show minimal info with physics badge
+            const physicsBadge = this.physicsDisplay ? this.physicsDisplay.createPhysicsBadge(treeId) : '';
             html += `
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
-                    <span style="font-size: 10px; color: rgba(255, 255, 255, 0.6);">${completedTranches}/${totalTranches} tranches</span>
+                    <span style="font-size: 10px; color: rgba(255, 255, 255, 0.6);">${completedTranches}/${totalTranches} tranches${physicsBadge}</span>
                     <span style="font-size: 9px; color: rgba(74, 158, 255, 0.7);">Click to expand</span>
                 </div>`;
         }
@@ -799,10 +822,11 @@ class ResearchPanel {
                 tierCostEFLOPSDays = legacyCostEFLOPSDays;
             }
         } else {
-            // Default: tier 1 costs 1000 EFLOPS-days, each subsequent tier costs 150x more
-            const baseCostEFLOPSDays = 1000;
-            // Each tier costs 150x more than the previous tier
-            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(150, tierIndex);
+            // Default: tier 1 costs 100 EFLOPS-days, each subsequent tier costs 3x more
+            // Must match tech_tree.js addResearchProgress logic!
+            const baseCostEFLOPSDays = 100;
+            // Each tier costs 3x more than the previous tier (gentler progression)
+            tierCostEFLOPSDays = baseCostEFLOPSDays * Math.pow(3, tierIndex);
         }
         
         // Convert to FLOPS (same units as progress: FLOPS * days)
@@ -954,11 +978,11 @@ class ResearchPanel {
                     }
                 }
                 const errorMsg = response.error || 'Unknown error';
-                alert(`Failed to toggle research: ${errorMsg}`);
+                window.toast?.error(`Failed to toggle research: ${errorMsg}`);
             }
         } catch (error) {
             console.error('Error toggling research:', error);
-            alert('Failed to toggle research: ' + (error.message || 'Unknown error'));
+            window.toast?.error('Failed to toggle research: ' + (error.message || 'Unknown error'));
             
             // Revert card state on error
             const cardId = `research-${treeId}`;
@@ -1050,7 +1074,7 @@ class ResearchPanel {
     async beginResearch(treeId) {
         const currentTier = this.getCurrentTier(treeId, null);
         if (!currentTier) {
-            alert('All research in this tree is complete!');
+            window.toast?.success('All research in this tree is complete!');
             return;
         }
 
@@ -1067,13 +1091,18 @@ class ResearchPanel {
             });
         } catch (error) {
             console.error('Research allocation failed:', error);
-            alert(error.message || 'Research allocation failed');
+            window.toast?.error(error.message || 'Research allocation failed');
         }
     }
 
     update(gameState) {
         const previousGameState = this.gameState;
         this.gameState = gameState;
+
+        // Update physics display from game state
+        if (this.physicsDisplay && gameState) {
+            this.physicsDisplay.updateFromGameState(gameState);
+        }
 
         if (!this.researchData) return;
 

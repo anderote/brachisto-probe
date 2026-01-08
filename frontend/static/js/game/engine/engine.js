@@ -134,14 +134,48 @@ class GameEngine {
         
         // Initialize zones in state if not already done
         this.initializeZones();
-        
+
         // Initialize probes if not already done
         this.initializeProbes();
-        
+
         // Initialize starting structures if configured
         this.initializeStructures();
-        
+
+        // IMPORTANT: Recalculate skills from research state immediately after loading
+        // This ensures skills are up-to-date before the first tick runs
+        // Without this, UI would show stale skills from saved state
+        this.recalculateSkillsFromResearch();
+
         this.initialized = true;
+    }
+
+    /**
+     * Recalculate skills from current research state and update state.skills
+     * Called after loading a saved game to ensure skills are current
+     */
+    recalculateSkillsFromResearch() {
+        let skills;
+        if (this.techTree) {
+            // Use TechTree for skills calculation
+            skills = this.techTree.getLegacySkills();
+        } else if (this.skillsCalculator) {
+            // Fallback to old SkillsCalculator
+            skills = this.skillsCalculator.calculateSkills(this.state.research || {}, this.state.time);
+        } else {
+            // Use default skills if no calculator available
+            skills = this.state.skills || {};
+        }
+
+        // Apply starting skill point bonuses
+        skills = this.applySkillBonuses(skills, this.state.skill_bonuses);
+
+        // Update state with recalculated skills
+        this.state.skills = skills;
+
+        // Also update tech_tree state if available
+        if (this.techTree) {
+            this.state.tech_tree = this.techTree.exportToState();
+        }
     }
     
     /**
@@ -327,6 +361,8 @@ class GameEngine {
                         construct: 0,
                         replicate: 0,
                         recycle: 0,
+                        recycle_probes: 0,
+                        idle: 0,             // Slider 0 - explicit idle allocation
                         dyson: 1.0
                     };
                 } else {
@@ -336,6 +372,7 @@ class GameEngine {
                         construct: 0.01,     // Slider 10 (sqrt(0.01)*100 = 10)
                         recycle: 0.01,       // Slider 10 (sqrt(0.01)*100 = 10)
                         recycle_probes: 0,   // Slider 0
+                        idle: 0,             // Slider 0 - explicit idle allocation
                         dyson: 0
                     };
                 }
@@ -567,13 +604,22 @@ class GameEngine {
         
         // 6. Process structure construction
         this.state = this.structureSystem.processStructureConstruction(
-            this.state, 
-            deltaTime, 
-            skills, 
-            this.buildings, 
+            this.state,
+            deltaTime,
+            skills,
+            this.buildings,
             energyThrottle
         );
-        
+
+        // 6.1. Process structure recycling (uses same probe build power as construction)
+        this.state = this.structureSystem.processStructureRecycling(
+            this.state,
+            deltaTime,
+            skills,
+            this.buildings,
+            energyThrottle
+        );
+
         // 6.5. Process methalox production from refineries
         this.state = this.structureSystem.processMethaloxProduction(
             this.state,
@@ -974,8 +1020,11 @@ class GameEngine {
         // Get global energy throttle
         const energyThrottle = energyBalance.throttle || 1.0;
         
-        // Get all zone IDs from orbitalZones
-        const zoneIds = this.orbitalZones ? this.orbitalZones.map(z => z.id) : Object.keys(probesByZone);
+        // Get all zone IDs from orbitalZones + any zones with structures/probes (includes moon zones)
+        const baseZoneIds = this.orbitalZones ? this.orbitalZones.map(z => z.id) : [];
+        const structureZoneIds = Object.keys(structuresByZone);
+        const probeZoneIds = Object.keys(probesByZone);
+        const zoneIds = [...new Set([...baseZoneIds, ...structureZoneIds, ...probeZoneIds])];
         
         // Calculate per-zone metrics
         for (const zoneId of zoneIds) {
@@ -1038,7 +1087,7 @@ class GameEngine {
             const zoneStructureProduction = this.energyCalculator.calculateStructureEnergyProduction(
                 { [zoneId]: zoneStructures },
                 this.buildings,
-                skills
+                this.state
             );
             // Add Dyson sphere power to the Dyson zone
             const isDysonZone = this.orbitalMechanics.isDysonZone(zoneId);
@@ -1230,6 +1279,14 @@ class GameEngine {
         derived.totals.energy_produced += baseEnergyProduction;
         derived.totals.energy_net = derived.totals.energy_produced - derived.totals.energy_consumed;
         derived.totals.intelligence_produced = this.state.intelligence || 0;
+
+        // Calculate intelligence consumption from research projects
+        // When research projects are enabled, all intelligence production is consumed
+        const enabledProjects = this.techTree ? this.techTree.getEnabledResearchProjects() : [];
+        derived.totals.intelligence_consumed = enabledProjects.length > 0 ? derived.totals.intelligence_produced : 0;
+        derived.totals.intelligence_net = derived.totals.intelligence_produced - derived.totals.intelligence_consumed;
+        derived.totals.active_research_projects = enabledProjects.length;
+
         derived.totals.energy_throttle = energyThrottle;
         
         // Mass drivers are completely offline when net energy is negative
@@ -1354,6 +1411,8 @@ class GameEngine {
             case 'set_time_speed':
                 this.timeManager.setTimeSpeed(actionData.speed || 1.0);
                 return { success: true };
+            case 'recycle_structure':
+                return this.recycleStructure(actionData);
             default:
                 console.warn('Unknown action type:', actionType);
                 return { success: false, error: 'Unknown action type' };
@@ -1403,6 +1462,35 @@ class GameEngine {
                 const allowedZones = building.allowed_orbital_zones || [];
                 if (allowedZones.length > 0 && !allowedZones.includes(zone_id)) {
                     return { success: false, error: `Building ${structureId} is not allowed in zone ${zone_id}` };
+                }
+            }
+
+            // Building restrictions based on zone type
+            const bodyRadius = zone.body_radius_km || 0;
+            const isMoon = zone.parent_zone !== undefined;
+
+            if (bodyRadius > 0 && !isDysonZone) {
+                if (isMoon) {
+                    // Moons are treated as orbital zones - allow orbital structures
+                    // Can build: power_station, data_center, mass_driver, factories, etc.
+                    // Cannot build: space_elevator (requires planetary surface with atmosphere/proper anchoring)
+                    if (structureId === 'space_elevator') {
+                        return {
+                            success: false,
+                            error: `Space elevators require planetary surfaces. Build on the parent planet instead.`
+                        };
+                    }
+                } else {
+                    // Planets - only surface infrastructure allowed
+                    // Can build: mass_driver, space_elevator
+                    // Other structures must be built in orbital zones (moons)
+                    const planetSurfaceBuildings = ['mass_driver', 'space_elevator'];
+                    if (!planetSurfaceBuildings.includes(structureId)) {
+                        return {
+                            success: false,
+                            error: `${building.name || structureId} must be built in orbit. Use a moon or orbital zone instead.`
+                        };
+                    }
                 }
             }
         }
@@ -1501,7 +1589,86 @@ class GameEngine {
         }
         return 'structures';
     }
-    
+
+    /**
+     * Toggle structure recycling (continuous operation using probe build power)
+     * When enabled, structures are gradually dismantled and return 75% metal, 25% slag
+     * @param {Object} actionData - { building_id, zone_id, enabled? }
+     * @returns {Object} Result with success status and enabled state
+     */
+    recycleStructure(actionData) {
+        const { building_id, zone_id, enabled } = actionData;
+
+        if (!building_id || !zone_id) {
+            return { success: false, error: 'building_id and zone_id required' };
+        }
+
+        const building = this.buildings && this.findBuilding(building_id);
+        if (!building) {
+            return { success: false, error: `Building not found: ${building_id}` };
+        }
+
+        // Check if zone has this structure
+        const structuresByZone = this.state.structures_by_zone || {};
+        const zoneStructures = structuresByZone[zone_id] || {};
+        const currentCount = zoneStructures[building_id] || 0;
+
+        if (currentCount <= 0) {
+            return { success: false, error: 'No structures to recycle in this zone' };
+        }
+
+        // Initialize state if needed
+        if (!this.state.enabled_recycling) {
+            this.state.enabled_recycling = [];
+        }
+        if (!this.state.structure_recycling_progress) {
+            this.state.structure_recycling_progress = {};
+        }
+
+        // Create the enabled key (zone::building format)
+        const enabledKey = `${zone_id}::${building_id}`;
+
+        // Toggle enabled state
+        if (enabled === undefined || enabled === null) {
+            // Toggle if not specified
+            const isEnabled = this.state.enabled_recycling.includes(enabledKey);
+            if (isEnabled) {
+                // Disable recycling
+                this.state.enabled_recycling = this.state.enabled_recycling.filter(k => k !== enabledKey);
+                // Keep progress so it can be resumed
+            } else {
+                // Enable recycling
+                this.state.enabled_recycling.push(enabledKey);
+                // Initialize progress if not already started
+                if (!(enabledKey in this.state.structure_recycling_progress)) {
+                    this.state.structure_recycling_progress[enabledKey] = 0.0;
+                }
+            }
+        } else if (enabled) {
+            // Enable recycling
+            if (!this.state.enabled_recycling.includes(enabledKey)) {
+                this.state.enabled_recycling.push(enabledKey);
+            }
+            // Initialize progress if not already started
+            if (!(enabledKey in this.state.structure_recycling_progress)) {
+                this.state.structure_recycling_progress[enabledKey] = 0.0;
+            }
+        } else {
+            // Disable recycling
+            this.state.enabled_recycling = this.state.enabled_recycling.filter(k => k !== enabledKey);
+        }
+
+        const finalEnabled = this.state.enabled_recycling.includes(enabledKey);
+        console.log('[Engine] ✓ Recycling toggle complete:', { enabledKey, enabled: finalEnabled });
+
+        return {
+            success: true,
+            building_id,
+            zone_id,
+            enabled: finalEnabled
+        };
+    }
+
     /**
      * Purchase probe (instant)
      * Uses zone's stored_metal for construction

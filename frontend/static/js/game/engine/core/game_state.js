@@ -130,7 +130,15 @@ function createInitialGameState(config = {}) {
         // Structure construction start times (for minimum build time tracking)
         // Format: { "zoneId::buildingId": start_time_days }
         structure_construction_start_times: {},
-        
+
+        // Structure recycling queue (enabled recycling per zone)
+        // Format: ["zoneId::buildingId", ...]
+        enabled_recycling: [],
+
+        // Structure recycling progress (kg recycled so far)
+        // Format: { "zoneId::buildingId": progress_kg }
+        structure_recycling_progress: {},
+
         // Zone resources
         // zones[zoneId] = {
         //   mass_remaining: number,    // Un-mined mass (decreases as mining happens)

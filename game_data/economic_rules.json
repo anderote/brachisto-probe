@@ -24,7 +24,7 @@
   
   "structures": {
     "base_probe_mass_kg": 100,
-    "geometric_scaling_exponent": 3.2,
+    "geometric_scaling_exponent": 0.5,
     "base_energy_cost_w": 250000
   },
   
@@ -284,7 +284,22 @@
   },
   
   "propulsion": {
-    "base_isp_seconds": 300
+    "base_isp_seconds": 300,
+    "max_isp_seconds": 4500,
+    "description": "ISP scales from 300s (base) to 4500s (fully upgraded) via propulsion skill"
+  },
+
+  "probe_upgrades": {
+    "base_mass_kg": 100,
+    "min_mass_kg": 30,
+    "mass_reduction_skill": "materials",
+    "description": "Probe mass scales from 100kg (base) down to 30kg (fully upgraded) via materials skill"
+  },
+
+  "mass_driver": {
+    "base_muzzle_velocity_km_s": 8.5,
+    "max_muzzle_velocity_km_s": 45,
+    "description": "Muzzle velocity scales from 8.5 km/s (base) to 45 km/s (fully upgraded) via skill coefficients"
   },
 
   "particle_visualization": {

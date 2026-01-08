@@ -70,6 +70,26 @@ class TrajectorySolver:
         if zone_id in self.orbital_zones:
             return self.orbital_zones[zone_id].get('total_mass_kg', 0)
         return 0
+
+    def is_moon_zone(self, zone_id: str) -> bool:
+        """Check if a zone is a moon."""
+        if zone_id in self.orbital_zones:
+            return self.orbital_zones[zone_id].get('is_moon', False)
+        return False
+
+    def get_moon_delta_v(self, zone_id: str) -> float:
+        """Get delta-v to enter/exit a moon's orbit from its parent planet."""
+        if zone_id in self.orbital_zones:
+            zone = self.orbital_zones[zone_id]
+            # delta_v_to_parent_km_s includes both capture and escape
+            return zone.get('delta_v_to_parent_km_s', 0)
+        return 0
+
+    def get_parent_zone(self, zone_id: str) -> Optional[str]:
+        """Get parent zone ID for a moon zone."""
+        if zone_id in self.orbital_zones:
+            return self.orbital_zones[zone_id].get('parent_zone')
+        return None
     
     def get_planet_position(self, radius_au: float, game_time_days: float, 
                            initial_angle: float = 0) -> Tuple[float, float]:
@@ -394,7 +414,27 @@ class TrajectorySolver:
         trajectory_points = self.generate_trajectory_points(
             r1_pos, r2_pos, tof_days, num_points
         )
-        
+
+        # Calculate base interplanetary delta-v
+        base_dv = lambert_result['total_dv_km_s'] if lambert_result else None
+
+        # Calculate additional moon delta-v requirements
+        departure_moon_dv = 0.0
+        arrival_moon_dv = 0.0
+
+        if self.is_moon_zone(from_zone):
+            # Departing from a moon - need to escape moon's gravity first
+            departure_moon_dv = self.get_moon_delta_v(from_zone)
+
+        if self.is_moon_zone(to_zone):
+            # Arriving at a moon - need additional delta-v to capture into moon orbit
+            arrival_moon_dv = self.get_moon_delta_v(to_zone)
+
+        # Total delta-v includes interplanetary + moon escape/capture
+        total_dv = base_dv
+        if total_dv is not None:
+            total_dv = total_dv + departure_moon_dv + arrival_moon_dv
+
         return {
             'from_zone': from_zone,
             'to_zone': to_zone,
@@ -405,8 +445,13 @@ class TrajectorySolver:
             'arrival_position_au': list(r2_pos),
             'trajectory_points_au': trajectory_points,
             'lambert_solution': lambert_result,
-            'delta_v_km_s': lambert_result['total_dv_km_s'] if lambert_result else None,
-            'used_actual_positions': planet_positions is not None
+            'base_delta_v_km_s': base_dv,
+            'departure_moon_delta_v_km_s': departure_moon_dv,
+            'arrival_moon_delta_v_km_s': arrival_moon_dv,
+            'delta_v_km_s': total_dv,
+            'used_actual_positions': planet_positions is not None,
+            'from_is_moon': self.is_moon_zone(from_zone),
+            'to_is_moon': self.is_moon_zone(to_zone)
         }
     
     def compute_gravity_assist_transfer(self, from_zone: str, to_zone: str,

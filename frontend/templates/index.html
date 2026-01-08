@@ -3,17 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brachisto-Probe - Dyson Sphere Construction Game</title>
+    <title>KARDASHEV - Dyson Sphere Construction</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div id="app">
-        <!-- Loading Screen -->
-        <div id="loading-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a0a; display: flex; align-items: center; justify-content: center; z-index: 10000; color: #4a9eff;">
-            <div style="text-align: center;">
-                <h1 style="font-size: 32px; margin-bottom: 20px;">Brachisto-Probe</h1>
-                <div class="loading" style="margin: 0 auto;"></div>
-                <p style="margin-top: 20px;">Loading game...</p>
+        <!-- Loading Screen with Galaxy Animation -->
+        <div id="loading-screen" class="loading-screen-styled">
+            <canvas id="loading-galaxy-canvas"></canvas>
+            <div class="loading-content">
+                <h1 class="loading-title">KARDASHEV</h1>
+                <div class="loading-subtitle">INITIALIZING SIMULATION</div>
+                <div class="loading-bar-container">
+                    <div class="loading-bar"></div>
+                </div>
+                <p class="loading-status">Loading...</p>
             </div>
         </div>
         
@@ -25,7 +32,7 @@
             <canvas id="game-canvas"></canvas>
             <div id="game-overlay">
                 <div class="game-title">
-                    <h1>Brachisto-Probe</h1>
+                    <h1>KARDASHEV</h1>
                 </div>
             </div>
             <!-- Left Side Metrics Panel -->
@@ -82,6 +89,31 @@
         
         <!-- Bottom Left: Time Display and Speed Controls -->
         <div id="time-controls" class="time-controls"></div>
+
+        <!-- Bottom Left: Game Menu Button -->
+        <div id="game-menu-button" class="game-menu-button">
+            <button id="game-menu-trigger" class="game-menu-trigger" title="Game Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+                </svg>
+            </button>
+            <div id="game-menu-dropdown" class="game-menu-dropdown" style="display: none;">
+                <div class="game-menu-option" id="menu-save-game">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    Save Game
+                </div>
+                <div class="game-menu-option" id="menu-new-game">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    New Game
+                </div>
+            </div>
+        </div>
         
         <!-- Performance Panel (toggleable with F key) -->
         <div id="performance-panel" class="performance-panel-container"></div>
@@ -91,6 +123,9 @@
         
         <!-- Summary Plot Panel (toggleable with H key) -->
         <div id="summary-plot-panel" class="summary-plot-panel-container"></div>
+
+        <!-- Interstellar Navigation Panel (NGE-style 3D star map) -->
+        <div id="interstellar-nav-panel" class="interstellar-nav-container" style="display: none;"></div>
         
         <!-- Bottom: Scripting Window (collapsible, collapsed by default) - Hidden for now -->
         <div id="scripting-window" class="scripting-window collapsed" style="display: none;">
@@ -114,7 +149,7 @@
         <!-- Login/Register Modal (Hidden for now) -->
         <div id="auth-modal" class="modal" style="display: none;">
             <div class="modal-content">
-                <h2>Brachisto-Probe</h2>
+                <h2>KARDASHEV</h2>
                 <div id="auth-forms">
                     <div id="login-form">
                         <h3>Login</h3>
@@ -146,32 +181,48 @@
         
         <!-- Game Menu Modal -->
         <div id="game-menu-modal" class="modal" style="display: flex;">
-            <div class="modal-content" style="max-width: 600px;">
-                <h2 style="text-align: center; margin-bottom: 30px;">Brachisto-Probe</h2>
+            <div class="modal-content game-menu-styled" style="max-width: 680px; position: relative;">
+                <button id="game-menu-close-btn" class="game-menu-close-btn" title="Close">×</button>
+                <div class="game-menu-header">
+                    <h2>KARDASHEV</h2>
+                    <div class="game-menu-subtitle">DYSON SPHERE SIMULATOR</div>
+                </div>
                 <div id="game-menu-content">
-                    <h3 style="margin-bottom: 15px; color: #4a9eff; text-align: center;">New Game</h3>
-                    <div class="difficulty-buttons" style="display: flex; gap: 15px; margin-bottom: 25px;">
-                        <button id="endgame-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
-                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Endgame</div>
-                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">1000 Probes<br>10 Power Stations<br>10 Data Centers<br>2 Mass Drivers<br>50% Dyson Complete</div>
+                    <div class="game-menu-section-header">
+                        <span class="section-line"></span>
+                        <span class="section-title">SELECT STARTING CONDITIONS</span>
+                        <span class="section-line"></span>
+                    </div>
+                    <div class="difficulty-buttons">
+                        <button id="interstellar-game-btn" class="menu-btn difficulty-btn difficulty-interstellar">
+                            <div class="difficulty-icon">✦</div>
+                            <div class="difficulty-name">Interstellar</div>
+                            <div class="difficulty-desc">1g Torch Drive<br>Complete Dyson Sphere<br>Ready for the Stars</div>
                         </button>
-                        <button id="easy-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
-                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Easy</div>
-                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">100 Probes<br>10 Power Stations<br>10 Data Centers<br>1 Mass Driver</div>
+                        <button id="easy-game-btn" class="menu-btn difficulty-btn difficulty-easy">
+                            <div class="difficulty-icon">◐</div>
+                            <div class="difficulty-name">Easy</div>
+                            <div class="difficulty-desc">100 Probes<br>10 Power Stations<br>10 Data Centers<br>1 Mass Driver</div>
                         </button>
-                        <button id="medium-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
-                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Medium</div>
-                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">10 Probes<br>2 Power Stations<br>2 Data Centers</div>
+                        <button id="medium-game-btn" class="menu-btn difficulty-btn difficulty-medium">
+                            <div class="difficulty-icon">◑</div>
+                            <div class="difficulty-name">Medium</div>
+                            <div class="difficulty-desc">10 Probes<br>2 Power Stations<br>2 Data Centers</div>
                         </button>
-                        <button id="hard-game-btn" class="menu-btn difficulty-btn" style="flex: 1; padding: 20px 15px; font-size: 16px; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
-                            <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Hard</div>
-                            <div style="font-size: 11px; opacity: 0.9; line-height: 1.4;">1 Probe<br>No Structures</div>
+                        <button id="hard-game-btn" class="menu-btn difficulty-btn difficulty-hard">
+                            <div class="difficulty-icon">●</div>
+                            <div class="difficulty-name">Hard</div>
+                            <div class="difficulty-desc">1 Probe<br>No Structures</div>
                         </button>
                     </div>
-                    <div id="load-game-section" style="margin-top: 20px; border-top: 1px solid rgba(74, 158, 255, 0.3); padding-top: 20px;">
-                        <h3 style="margin-bottom: 15px; color: #4a9eff;">Load Previous Game</h3>
-                        <div id="saved-games-list" style="max-height: 300px; overflow-y: auto;">
-                            <p style="text-align: center; color: #888; padding: 20px;">Loading saved games...</p>
+                    <div id="load-game-section" class="load-game-section">
+                        <div class="game-menu-section-header">
+                            <span class="section-line"></span>
+                            <span class="section-title">CONTINUE SIMULATION</span>
+                            <span class="section-line"></span>
+                        </div>
+                        <div id="saved-games-list" class="saved-games-list">
+                            <p style="text-align: center; color: #666; padding: 20px;">Loading saved games...</p>
                         </div>
                     </div>
                 </div>
@@ -296,6 +347,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/objects/Lensflare.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     
     <!-- Game Scripts -->
     <script src="/static/js/api.js"></script>
@@ -309,6 +361,8 @@
     <script src="/static/js/game/storage.js"></script>
     <!-- Calculation classes for UI (needed for delta-v overlay) -->
     <script src="/static/js/game/engine/calculations/orbital_mechanics.js"></script>
+    <script src="/static/js/game/engine/calculations/tech_physics.js"></script>
+    <script src="/static/js/game/engine/calculations/physics_bridge.js"></script>
     <script src="/static/js/game/engine/systems/transfer_system.js"></script>
     <!-- Worker-based engine architecture -->
     <script src="/static/js/game/client/state_manager.js"></script>
@@ -324,9 +378,12 @@
     <script src="/static/js/visualization/probes.js"></script>
     <script src="/static/js/visualization/dyson_sphere.js"></script>
     <script src="/static/js/visualization/transfers.js"></script>
+    <script src="/static/js/visualization/star_map.js"></script>
     <script src="/static/js/ui/sidebar.js"></script>
+    <script src="/static/js/ui/toast.js"></script>
     <script src="/static/js/ui/purchase_panel.js"></script>
     <script src="/static/js/ui/research_panel.js"></script>
+    <script src="/static/js/ui/research_physics_display.js"></script>
     <script src="/static/js/ui/command_panel.js"></script>
     <script src="/static/js/ui/production_panel.js"></script>
     <script src="/static/js/ui/probe_panel.js"></script>
@@ -339,6 +396,18 @@
     <script src="/static/js/ui/probe_allocation.js"></script>
     <script src="/static/js/ui/orbital_zone_selector.js"></script>
     <script src="/static/js/ui/trajectory_planner.js"></script>
+    <!-- Interstellar Navigation (Galaxy Mode) -->
+    <script src="/static/js/game/engine/relativistic_travel.js"></script>
+    <script src="/static/js/game/engine/galaxy_system.js"></script>
+    <script src="/static/js/game/ui/star_map.js"></script>
+    <script src="/static/js/game/ui/panels/drive_research_panel.js"></script>
+    <script src="/static/js/game/ui/panels/stellar_census_panel.js"></script>
+    <script src="/static/js/game/ui/interstellar_nav.js"></script>
+    <!-- Universe Navigation (Phase 3 - Cosmic Web) -->
+    <script src="/static/js/game/engine/universe_system.js"></script>
+    <script src="/static/js/visualization/cosmic_web_generator.js"></script>
+    <script src="/static/js/visualization/universe_map.js"></script>
+    <script src="/static/js/ui/universe_panel.js"></script>
     <script src="/static/js/ui/energy_display.js"></script>
     <script src="/static/js/ui/scripting_window.js"></script>
     <script src="/static/js/ui/leaderboard.js"></script>
@@ -347,6 +416,7 @@
     <script src="/static/js/ui/visual_effects_panel.js"></script>
     <script src="/static/js/ui/summary_plot_panel.js"></script>
     <script src="/static/js/ui/debug_panel.js"></script>
+    <script src="/static/js/ui/loading_galaxy.js"></script>
     <script src="/static/js/main.js"></script>
 </body>
 </html>

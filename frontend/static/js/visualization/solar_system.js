@@ -72,11 +72,11 @@ class SolarSystem {
         this.resourceLinearMaxDots = 100; // First 100 dots are linear (100,000 kg)
         this.resourceLogMaxMass = 1e24; // Reference mass for max dots - full planet mass scale
         
-        // Resource colors (metal = silver, slag = brown-grey, methalox = pale blue, probe = cyan)
+        // Resource colors (metal = silver, slag = brown-grey, methalox = vibrant blue, probe = cyan)
         this.resourceColors = {
             metal: new THREE.Color(0xC0C0C0),    // Silver
             slag: new THREE.Color(0x5C4033),     // Brown-grey
-            methalox: new THREE.Color(0x7EC8E3), // Pale blue
+            methalox: new THREE.Color(0x00AAFF), // Vibrant blue
             probe: new THREE.Color(0x00FFFF)    // Cyan
         };
         
@@ -197,7 +197,7 @@ class SolarSystem {
         this.resourceColors = {
             metal: new THREE.Color(0xC0C0C0),    // Silver
             slag: new THREE.Color(0x5C4033),     // Brown-grey
-            methalox: new THREE.Color(0x7EC8E3), // Pale blue
+            methalox: new THREE.Color(0x00AAFF), // Vibrant blue
             probe: new THREE.Color(0x00FFFF)     // Cyan
         };
     }
@@ -1488,56 +1488,49 @@ class SolarSystem {
         const moonData = {
             earth: [
                 // Earth's Moon - 0.0123 Earth masses
-                { name: 'Moon', orbit_km: 384400, radius_km: 1737, mass_kg: 7.35e22, color: '#A8A8A0', period_days: 27.32, inclination: 5.14 }
+                { id: 'earth_luna', name: 'Luna', orbit_km: 384400, radius_km: 1737, mass_kg: 7.35e22, color: '#A8A8A0', period_days: 27.32, inclination: 5.14 }
             ],
             mars: [
                 // Mars's tiny captured asteroid moons
-                { name: 'Phobos', orbit_km: 9376, radius_km: 11.3, mass_kg: 1.07e16, color: '#4A4A48', period_days: 0.319, inclination: 1.08 },
-                { name: 'Deimos', orbit_km: 23460, radius_km: 6.2, mass_kg: 1.48e15, color: '#525250', period_days: 1.263, inclination: 1.79 }
+                { id: 'mars_phobos', name: 'Phobos', orbit_km: 9376, radius_km: 11.3, mass_kg: 1.07e16, color: '#4A4A48', period_days: 0.319, inclination: 1.08 },
+                { id: 'mars_deimos', name: 'Deimos', orbit_km: 23460, radius_km: 6.2, mass_kg: 1.48e15, color: '#525250', period_days: 1.263, inclination: 1.79 }
             ],
             jupiter: [
-                // Jupiter's moons - ordered by orbital distance
-                // Inner moons (tiny ring shepherds)
-                { name: 'Metis', orbit_km: 128000, radius_km: 22, mass_kg: 3.6e16, color: '#8B8B83', period_days: 0.29, inclination: 0.02 },
-                { name: 'Adrastea', orbit_km: 129000, radius_km: 8, mass_kg: 2.0e15, color: '#8B8378', period_days: 0.30, inclination: 0.03 },
-                { name: 'Amalthea', orbit_km: 181366, radius_km: 84, mass_kg: 2.1e18, color: '#CD5C5C', period_days: 0.50, inclination: 0.37 },
-                { name: 'Thebe', orbit_km: 221889, radius_km: 50, mass_kg: 4.3e17, color: '#B0B0B0', period_days: 0.67, inclination: 1.08 },
-                // Galilean moons (the big four) - Io and Europa are roughly Moon-mass, Ganymede is larger
-                { name: 'Io', orbit_km: 421700, radius_km: 1822, mass_kg: 8.93e22, color: '#FFCC00', period_days: 1.77, inclination: 0.04 },           // 0.015 Earth masses
-                { name: 'Europa', orbit_km: 671034, radius_km: 1561, mass_kg: 4.80e22, color: '#B8D4E8', period_days: 3.55, inclination: 0.47 },       // 0.008 Earth masses
-                { name: 'Ganymede', orbit_km: 1070412, radius_km: 2634, mass_kg: 1.48e23, color: '#8B8878', period_days: 7.15, inclination: 0.18 },    // 0.025 Earth masses - largest moon!
-                { name: 'Callisto', orbit_km: 1882709, radius_km: 2410, mass_kg: 1.08e23, color: '#5D5D5D', period_days: 16.69, inclination: 0.19 }    // 0.018 Earth masses
+                // Jupiter's Galilean moons (the big four) - mineable orbital zones
+                { id: 'jupiter_io', name: 'Io', orbit_km: 421700, radius_km: 1822, mass_kg: 8.93e22, color: '#FFCC00', period_days: 1.77, inclination: 0.04 },
+                { id: 'jupiter_europa', name: 'Europa', orbit_km: 671034, radius_km: 1561, mass_kg: 4.80e22, color: '#B8D4E8', period_days: 3.55, inclination: 0.47 },
+                { id: 'jupiter_ganymede', name: 'Ganymede', orbit_km: 1070412, radius_km: 2634, mass_kg: 1.48e23, color: '#8B8878', period_days: 7.15, inclination: 0.18 },
+                { id: 'jupiter_callisto', name: 'Callisto', orbit_km: 1882709, radius_km: 2410, mass_kg: 1.08e23, color: '#5D5D5D', period_days: 16.69, inclination: 0.19 }
             ],
             saturn: [
-                // Saturn's major moons
-                { name: 'Mimas', orbit_km: 185520, radius_km: 198, mass_kg: 3.75e19, color: '#C0C0C0', period_days: 0.94, inclination: 1.5 },
-                { name: 'Enceladus', orbit_km: 237948, radius_km: 252, mass_kg: 1.08e20, color: '#F0F8FF', period_days: 1.37, inclination: 0.02 },
-                { name: 'Tethys', orbit_km: 294619, radius_km: 531, mass_kg: 6.17e20, color: '#F5F5F5', period_days: 1.89, inclination: 1.1 },
-                { name: 'Dione', orbit_km: 377396, radius_km: 561, mass_kg: 1.10e21, color: '#E8E8E8', period_days: 2.74, inclination: 0.02 },
-                { name: 'Rhea', orbit_km: 527108, radius_km: 764, mass_kg: 2.31e21, color: '#D3D3D3', period_days: 4.52, inclination: 0.35 },
-                { name: 'Titan', orbit_km: 1221870, radius_km: 2575, mass_kg: 1.35e23, color: '#FFA500', period_days: 15.95, inclination: 0.33 },      // 0.023 Earth masses - 2nd largest moon
-                { name: 'Hyperion', orbit_km: 1481010, radius_km: 135, mass_kg: 5.6e18, color: '#A89078', period_days: 21.28, inclination: 0.43 },
-                { name: 'Iapetus', orbit_km: 3560820, radius_km: 735, mass_kg: 1.81e21, color: '#8B4513', period_days: 79.32, inclination: 15.47 }
+                // Saturn's major moons - mineable orbital zones
+                { id: 'saturn_mimas', name: 'Mimas', orbit_km: 185520, radius_km: 198, mass_kg: 3.75e19, color: '#C0C0C0', period_days: 0.94, inclination: 1.5 },
+                { id: 'saturn_enceladus', name: 'Enceladus', orbit_km: 237948, radius_km: 252, mass_kg: 1.08e20, color: '#F0F8FF', period_days: 1.37, inclination: 0.02 },
+                { id: 'saturn_tethys', name: 'Tethys', orbit_km: 294619, radius_km: 531, mass_kg: 6.17e20, color: '#F5F5F5', period_days: 1.89, inclination: 1.1 },
+                { id: 'saturn_dione', name: 'Dione', orbit_km: 377396, radius_km: 561, mass_kg: 1.10e21, color: '#E8E8E8', period_days: 2.74, inclination: 0.02 },
+                { id: 'saturn_rhea', name: 'Rhea', orbit_km: 527108, radius_km: 764, mass_kg: 2.31e21, color: '#D3D3D3', period_days: 4.52, inclination: 0.35 },
+                { id: 'saturn_titan', name: 'Titan', orbit_km: 1221870, radius_km: 2575, mass_kg: 1.35e23, color: '#FFA500', period_days: 15.95, inclination: 0.33 },
+                { id: 'saturn_iapetus', name: 'Iapetus', orbit_km: 3560820, radius_km: 735, mass_kg: 1.81e21, color: '#8B4513', period_days: 79.32, inclination: 15.47 }
             ],
             uranus: [
                 // Uranus moons - orbit in Uranus's equatorial plane (tilted ~98°)
-                { name: 'Miranda', orbit_km: 129390, radius_km: 236, mass_kg: 6.59e19, color: '#A9A9A9', period_days: 1.41, inclination: 4.2 },
-                { name: 'Ariel', orbit_km: 190900, radius_km: 579, mass_kg: 1.35e21, color: '#D3D3D3', period_days: 2.52, inclination: 0.04 },
-                { name: 'Umbriel', orbit_km: 266000, radius_km: 585, mass_kg: 1.17e21, color: '#696969', period_days: 4.14, inclination: 0.13 },
-                { name: 'Titania', orbit_km: 435910, radius_km: 789, mass_kg: 3.53e21, color: '#B0C4DE', period_days: 8.71, inclination: 0.08 },
-                { name: 'Oberon', orbit_km: 583520, radius_km: 761, mass_kg: 3.01e21, color: '#778899', period_days: 13.46, inclination: 0.07 }
+                { id: 'uranus_miranda', name: 'Miranda', orbit_km: 129390, radius_km: 236, mass_kg: 6.59e19, color: '#A9A9A9', period_days: 1.41, inclination: 4.2 },
+                { id: 'uranus_ariel', name: 'Ariel', orbit_km: 190900, radius_km: 579, mass_kg: 1.35e21, color: '#D3D3D3', period_days: 2.52, inclination: 0.04 },
+                { id: 'uranus_umbriel', name: 'Umbriel', orbit_km: 266000, radius_km: 585, mass_kg: 1.17e21, color: '#696969', period_days: 4.14, inclination: 0.13 },
+                { id: 'uranus_titania', name: 'Titania', orbit_km: 435910, radius_km: 789, mass_kg: 3.53e21, color: '#B0C4DE', period_days: 8.71, inclination: 0.08 },
+                { id: 'uranus_oberon', name: 'Oberon', orbit_km: 583520, radius_km: 761, mass_kg: 3.01e21, color: '#778899', period_days: 13.46, inclination: 0.07 }
             ],
             neptune: [
-                { name: 'Triton', orbit_km: 354760, radius_km: 1353, mass_kg: 2.14e22, color: '#E0E0E0', period_days: 5.88, inclination: 156.9 },      // 0.0036 Earth masses
-                { name: 'Proteus', orbit_km: 117647, radius_km: 210, mass_kg: 4.4e19, color: '#808080', period_days: 1.12, inclination: 0.08 }
+                { id: 'neptune_triton', name: 'Triton', orbit_km: 354760, radius_km: 1353, mass_kg: 2.14e22, color: '#E0E0E0', period_days: 5.88, inclination: 156.9 },
+                { id: 'neptune_proteus', name: 'Proteus', orbit_km: 117647, radius_km: 210, mass_kg: 4.4e19, color: '#808080', period_days: 1.12, inclination: 0.08 }
             ],
             kuiper: [
                 // Pluto's moons
-                { name: 'Charon', orbit_km: 19591, radius_km: 606, mass_kg: 1.59e21, color: '#A0A0A0', period_days: 6.387, inclination: 0.08 },
-                { name: 'Nix', orbit_km: 48694, radius_km: 25, mass_kg: 4.5e16, color: '#C8C8C8', period_days: 24.85, inclination: 0.13 },
-                { name: 'Hydra', orbit_km: 64738, radius_km: 33, mass_kg: 4.8e16, color: '#D0D0D0', period_days: 38.2, inclination: 0.24 },
-                { name: 'Kerberos', orbit_km: 57783, radius_km: 12, mass_kg: 1.65e16, color: '#B8B8B8', period_days: 32.17, inclination: 0.39 },
-                { name: 'Styx', orbit_km: 42656, radius_km: 8, mass_kg: 7.5e15, color: '#C0C0C0', period_days: 20.16, inclination: 0.81 }
+                { id: 'kuiper_charon', name: 'Charon', orbit_km: 19591, radius_km: 606, mass_kg: 1.59e21, color: '#A0A0A0', period_days: 6.387, inclination: 0.08 },
+                { id: 'kuiper_nix', name: 'Nix', orbit_km: 48694, radius_km: 25, mass_kg: 4.5e16, color: '#C8C8C8', period_days: 24.85, inclination: 0.13 },
+                { id: 'kuiper_hydra', name: 'Hydra', orbit_km: 64738, radius_km: 33, mass_kg: 4.8e16, color: '#D0D0D0', period_days: 38.2, inclination: 0.24 },
+                { id: 'kuiper_kerberos', name: 'Kerberos', orbit_km: 57783, radius_km: 12, mass_kg: 1.65e16, color: '#B8B8B8', period_days: 32.17, inclination: 0.39 },
+                { id: 'kuiper_styx', name: 'Styx', orbit_km: 42656, radius_km: 8, mass_kg: 7.5e15, color: '#C0C0C0', period_days: 20.16, inclination: 0.81 }
             ]
         };
         
@@ -1668,6 +1661,7 @@ class SolarSystem {
             
             moonMesh.userData = {
                 planetZoneId: zone.id,
+                moonId: moon.id,  // Full moon ID (e.g., "earth_luna")
                 moonName: moon.name,
                 moonOrbitDistance: moonOrbitDistance,
                 orbitalAngle: initialAngle,
@@ -1685,7 +1679,45 @@ class SolarSystem {
                     color: moon.color
                 }
             };
-            
+
+            // Create orbital ring for this moon around its parent planet
+            const orbitSegments = 64;
+            const orbitGeometry = new THREE.BufferGeometry();
+            const orbitPoints = [];
+
+            for (let i = 0; i <= orbitSegments; i++) {
+                const theta = (i / orbitSegments) * Math.PI * 2;
+                const ox = Math.cos(theta) * moonOrbitDistance;
+                const oz = Math.sin(theta) * moonOrbitDistance;
+                // Apply inclination
+                const oy = Math.sin(theta) * moonOrbitDistance * Math.sin(moonInclination) * 0.1;
+                orbitPoints.push(new THREE.Vector3(ox, oy, oz));
+            }
+
+            orbitGeometry.setFromPoints(orbitPoints);
+
+            const orbitMaterial = new THREE.LineBasicMaterial({
+                color: new THREE.Color(moon.color).multiplyScalar(0.4),
+                transparent: true,
+                opacity: 0.3,
+                depthWrite: false
+            });
+
+            const moonOrbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+            moonOrbitLine.userData = {
+                planetZoneId: zone.id,
+                moonId: moon.id,
+                planetTilt: planetTilt,
+                orbitInEquatorialPlane: moonMesh.userData.orbitInEquatorialPlane
+            };
+
+            // Store reference for updates
+            if (!this.moonOrbits) this.moonOrbits = {};
+            if (!this.moonOrbits[zone.id]) this.moonOrbits[zone.id] = [];
+            this.moonOrbits[zone.id].push(moonOrbitLine);
+
+            this.scene.add(moonOrbitLine);
+
             this.moons[zone.id].push(moonMesh);
             this.scene.add(moonMesh);
         });
@@ -2225,10 +2257,17 @@ class SolarSystem {
      * All zones form a continuous flat accretion disc
      */
     initResourceParticles() {
+        // Safety check - ensure scene exists
+        if (!this.scene) {
+            console.warn('SolarSystem: initResourceParticles called before scene initialized');
+            return;
+        }
+
         // All zones that can have mined resources (exclude dyson_sphere)
-        const miningZones = ['mercury', 'venus', 'earth', 'mars', 'asteroid_belt', 
+        // Now dynamically includes moon zones
+        const miningZones = ['mercury', 'venus', 'earth', 'mars', 'asteroid_belt',
                             'jupiter', 'saturn', 'uranus', 'neptune', 'kuiper', 'oort_cloud'];
-        
+
         // Build zone bounds from orbital data config
         const zoneBounds = {};
         if (this.orbitalData && this.orbitalData.orbital_zones) {
@@ -2241,6 +2280,22 @@ class SolarSystem {
                         outerAU: zone.radius_au_end
                     };
                 }
+                // Add moon zones to miningZones
+                if (zone.moons && Array.isArray(zone.moons)) {
+                    zone.moons.forEach(moon => {
+                        const moonId = moon.id;
+                        if (!miningZones.includes(moonId)) {
+                            miningZones.push(moonId);
+                        }
+                        // Set moon zone bounds to parent's bounds
+                        zoneBounds[moonId] = {
+                            inner: this.scaleAUToVisual(zone.radius_au_start || zone.radius_au),
+                            outer: this.scaleAUToVisual(zone.radius_au_end || zone.radius_au),
+                            innerAU: zone.radius_au_start || zone.radius_au,
+                            outerAU: zone.radius_au_end || zone.radius_au
+                        };
+                    });
+                }
             });
         }
         
@@ -2248,20 +2303,49 @@ class SolarSystem {
         this.zoneBounds = zoneBounds;
         
         miningZones.forEach(zoneId => {
-            // Get zone config from orbital data
-            const zoneConfig = this.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+            // Get zone config from orbital data (check both top-level and moon zones)
+            let zoneConfig = this.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+            let parentZoneConfig = null;
+
+            // If not found at top level, search in moon arrays
+            if (!zoneConfig) {
+                for (const pZone of (this.orbitalData?.orbital_zones || [])) {
+                    if (pZone.moons && Array.isArray(pZone.moons)) {
+                        const moonConfig = pZone.moons.find(m => m.id === zoneId);
+                        if (moonConfig) {
+                            zoneConfig = moonConfig;
+                            parentZoneConfig = pZone;
+                            break;
+                        }
+                    }
+                }
+            }
             if (!zoneConfig) return;
-            
-            // Get planet/body for this zone (may not exist for belts)
+
+            // Check if this is a moon zone
+            const isMoonZone = !!parentZoneConfig;
+
+            // Get planet/body for this zone (may not exist for belts or moons)
             const planet = this.planets[zoneId];
             const planetInfo = this.planetData[zoneId];
-            
+
             // Calculate orbit radius based on zone type
             const isRocky = this.rockyPlanets?.includes(zoneId);
             let orbitRadius;
             let planetRadius;
-            
-            if (planetInfo && planetInfo.orbit_km) {
+
+            if (isMoonZone && parentZoneConfig) {
+                // For moon zones, use parent planet's orbit radius
+                const parentPlanetInfo = this.planetData[parentZoneConfig.id];
+                if (parentPlanetInfo && parentPlanetInfo.orbit_km) {
+                    const orbitAU = parentPlanetInfo.orbit_km / this.AU_KM;
+                    orbitRadius = this.scaleAUToVisual(orbitAU);
+                } else {
+                    orbitRadius = this.scaleAUToVisual(parentZoneConfig.radius_au);
+                }
+                // Use a small radius for moon resource particles
+                planetRadius = 0.03;
+            } else if (planetInfo && planetInfo.orbit_km) {
                 // Use unified scaling (converts km to AU first)
                 const orbitAU = planetInfo.orbit_km / this.AU_KM;
                 orbitRadius = this.scaleAUToVisual(orbitAU);
@@ -2303,13 +2387,425 @@ class SolarSystem {
                 probe: 0
             };
             
-            // Add to scene
-            this.scene.add(particleSystem);
+            // Add to scene (with safety check)
+            if (this.scene) {
+                this.scene.add(particleSystem);
+            } else {
+                console.warn('SolarSystem: Scene not initialized, cannot add particle system for zone', zoneId);
+            }
         });
-        
+
         console.log(`SolarSystem: Created resource particles for ${Object.keys(this.resourceParticles).length} zones`);
     }
-    
+
+    /**
+     * Populate initial particles from existing game state
+     * Called when loading a saved game to show existing resources visually
+     * Particles appear distributed throughout the orbital rings (not drifting from planet)
+     * @param {Object} gameState - Game state with zones containing resources
+     */
+    populateInitialParticles(gameState) {
+        if (!gameState || !gameState.zones) {
+            console.log('SolarSystem: No zones in game state to populate particles');
+            return;
+        }
+
+        // Ensure resource particles are initialized
+        if (!this.resourceParticles || Object.keys(this.resourceParticles).length === 0) {
+            console.log('SolarSystem: Resource particles not initialized, initializing now...');
+            this.initResourceParticles();
+        }
+
+        // Set game time for particle spawn timing
+        this.gameTime = gameState.time || 0;
+
+        console.log('SolarSystem: Populating initial particles from game state...');
+        console.log('SolarSystem: Game time:', this.gameTime);
+        console.log('SolarSystem: Available zones:', Object.keys(this.resourceParticles));
+        console.log('SolarSystem: Game state zones:', Object.keys(gameState.zones));
+
+        // Get particle visualization config from multiple sources
+        const economicRules = window.orbitalZoneSelector?.economicRules ||
+                             window.gameEngine?.economicRules ||
+                             window.gameEngine?.dataLoader?.economicRules;
+        const particleConfig = economicRules?.particle_visualization || {};
+        const massDistribution = particleConfig.mass_distribution || {};
+
+        // Pareto distribution parameters for realistic mass distribution
+        const minMass = massDistribution.min_mass_kg || 1e9;  // 1 Gkg minimum
+        const maxMass = massDistribution.max_mass_kg || 1e22;
+        const shapeParam = massDistribution.shape_parameter || 1.15;
+
+        // Visual size parameters
+        const visualConfig = particleConfig.visual_size || {};
+        const minSize = visualConfig.min_size || 0.05;
+        const maxSize = visualConfig.max_size || 0.5;
+
+        // Probe visualization is handled separately by zoneClouds
+
+        let totalParticlesSpawned = 0;
+
+        // Iterate through all zones with resources
+        for (const [zoneId, zoneData] of Object.entries(gameState.zones)) {
+            if (!this.resourceParticles[zoneId]) {
+                // Zone might not have particle system initialized yet - skip it
+                console.log(`SolarSystem: Skipping zone ${zoneId} - no particle system`);
+                continue;
+            }
+
+            // Ensure particle data arrays exist
+            if (!this.resourceParticleData[zoneId]) {
+                this.resourceParticleData[zoneId] = {
+                    metal: [],
+                    slag: [],
+                    methalox: [],
+                    probe: []
+                };
+            }
+
+            // Ensure previousResources tracking exists
+            if (!this.previousResources[zoneId]) {
+                this.previousResources[zoneId] = {
+                    metal: 0,
+                    slag: 0,
+                    methalox: 0,
+                    probe: 0
+                };
+            }
+
+            // Get resource amounts
+            const storedMetal = zoneData.stored_metal || 0;
+            const slagMass = zoneData.slag_mass || 0;
+            const methalox = zoneData.methalox || 0;
+            const probeMass = zoneData.probe_mass || 0;
+
+            // Get probe count from probes_by_zone
+            const probesByZone = gameState.probes_by_zone || {};
+            let probeCount = 0;
+            if (probesByZone[zoneId]) {
+                for (const probeType of Object.keys(probesByZone[zoneId])) {
+                    probeCount += probesByZone[zoneId][probeType] || 0;
+                }
+            }
+
+            // Helper to calculate visual size from mass
+            const massToSize = (mass) => {
+                if (mass <= 0) return minSize;
+                const logMass = Math.log10(mass);
+                const logMin = Math.log10(minMass);
+                const logMax = Math.log10(maxMass);
+                const t = Math.max(0, Math.min(1, (logMass - logMin) / (logMax - logMin)));
+                return minSize + (maxSize - minSize) * t;
+            };
+
+            // Spawn particles for a resource type using Pareto distribution
+            const spawnParticlesForResource = (resourceType, totalMass) => {
+                if (totalMass <= minMass) return 0;
+
+                let spawned = 0;
+                let remainingMass = totalMass;
+
+                // Limit particles per resource type to prevent lag
+                const maxParticles = 300;
+
+                while (remainingMass > minMass && spawned < maxParticles) {
+                    // Sample particle mass using Pareto distribution (power law)
+                    // Many small particles, few large ones
+                    const u = Math.random();
+                    let particleMass = minMass / Math.pow(u, 1.0 / shapeParam);
+
+                    // Cap at remaining mass and max mass
+                    particleMass = Math.min(particleMass, remainingMass, maxMass);
+
+                    // Skip if too small
+                    if (particleMass < minMass * 0.5) {
+                        remainingMass -= particleMass;
+                        continue;
+                    }
+
+                    // Get visual size
+                    const visualSize = massToSize(particleMass);
+
+                    // Spawn particle already distributed in orbit (no drift animation)
+                    const particle = this.spawnInitialParticle(zoneId, resourceType, particleMass, visualSize);
+
+                    if (particle) {
+                        spawned++;
+                        remainingMass -= particleMass;
+                    } else {
+                        break;
+                    }
+                }
+
+                return spawned;
+            };
+
+            // Spawn particles for each resource type
+            const metalSpawned = spawnParticlesForResource('metal', storedMetal);
+            const slagSpawned = spawnParticlesForResource('slag', slagMass);
+            const methaloxSpawned = spawnParticlesForResource('methalox', methalox);
+
+            // Spawn probe particles (individual probes + mass particles for large counts)
+            let probesSpawned = 0;
+            if (probeCount > 0 || probeMass > 0) {
+                // Initialize probe tracking arrays
+                if (!this.individualProbes[zoneId]) {
+                    this.individualProbes[zoneId] = [];
+                }
+                if (!this.probeParticles[zoneId]) {
+                    this.probeParticles[zoneId] = [];
+                }
+
+                const config = this.probeParticleConfig;
+                const maxIndividual = config.maxIndividualProbes || 100;
+
+                // Show individual probes up to max
+                const individualCount = Math.min(probeCount, maxIndividual);
+                for (let i = 0; i < individualCount; i++) {
+                    const probe = this.spawnIndividualProbeInitial(zoneId, i);
+                    if (probe) {
+                        this.individualProbes[zoneId].push(probe);
+                        probesSpawned++;
+                    }
+                }
+
+                // Show excess probes as mass particles
+                const excessProbes = Math.max(0, probeCount - maxIndividual);
+                const excessMass = excessProbes * (config.probeMassKg || 100);
+                if (excessMass > minMass) {
+                    let remainingMass = excessMass;
+                    const maxProbeParticles = 200;
+                    let spawned = 0;
+
+                    while (remainingMass > minMass && spawned < maxProbeParticles) {
+                        const u = Math.random();
+                        let particleMass = minMass / Math.pow(u, 1.0 / shapeParam);
+                        particleMass = Math.min(particleMass, remainingMass, maxMass);
+
+                        if (particleMass < minMass * 0.5) {
+                            remainingMass -= particleMass;
+                            continue;
+                        }
+
+                        const visualSize = massToSize(particleMass);
+                        const particle = this.spawnProbeParticleInitial(zoneId, particleMass, visualSize);
+                        if (particle) {
+                            this.probeParticles[zoneId].push(particle);
+                            spawned++;
+                            probesSpawned++;
+                        }
+                        remainingMass -= particleMass;
+                    }
+                }
+
+                // Update previous probe count
+                this.previousProbeCount[zoneId] = probeCount;
+            }
+
+            const zoneTotal = metalSpawned + slagSpawned + methaloxSpawned + probesSpawned;
+
+            // Update previous resources to match current (so delta calculation works correctly)
+            if (this.previousResources[zoneId]) {
+                this.previousResources[zoneId].metal = storedMetal;
+                this.previousResources[zoneId].slag = slagMass;
+                this.previousResources[zoneId].methalox = methalox;
+            }
+
+            // Rebuild particle buffer after spawning
+            if (zoneTotal > 0) {
+                this.rebuildResourceParticleBuffer(zoneId);
+                totalParticlesSpawned += zoneTotal;
+
+                console.log(`SolarSystem: Zone ${zoneId}: ${metalSpawned} metal, ${slagSpawned} slag, ${methaloxSpawned} methalox`);
+            }
+        }
+
+        console.log(`SolarSystem: Populated ${totalParticlesSpawned} initial resource particles across all zones`);
+    }
+
+    /**
+     * Spawn an initial particle that starts already in orbit (no drift animation)
+     * Used for populating existing resources on game load
+     * @param {string} zoneId - Zone ID
+     * @param {string} type - Resource type: 'metal', 'slag', 'methalox'
+     * @param {number} mass - Mass in kg
+     * @param {number} visualSize - Visual size for rendering
+     * @returns {Object} New particle data
+     */
+    spawnInitialParticle(zoneId, type, mass, visualSize) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) {
+            console.log(`SolarSystem: No particle system for zone ${zoneId}`);
+            return null;
+        }
+
+        const userData = particleSystem.userData;
+        const particles = this.resourceParticleData[zoneId]?.[type];
+        if (!particles) {
+            console.log(`SolarSystem: No particle data array for ${zoneId}/${type}`);
+            return null;
+        }
+
+        // Get zone orbital properties
+        const orbitRadius = userData.orbitRadius;
+        const ringInner = userData.ringInner || (orbitRadius * 0.8);
+        const ringOuter = userData.ringOuter || (orbitRadius * 1.2);
+
+        // Random position already in orbit (not drifting)
+        const angle = Math.random() * Math.PI * 2;
+        const distance = ringInner + Math.random() * (ringOuter - ringInner);
+
+        // Small y offset for disc thickness
+        const yOffset = (Math.random() - 0.5) * 0.03;
+
+        // Calculate orbital speed (80% of Kepler for trailing effect)
+        const baseOrbitalSpeed = this.calculateOrbitalSpeed(distance);
+        const orbitalSpeed = baseOrbitalSpeed * 0.8;
+
+        // Create particle in final position (no drifting)
+        // Use current game time as spawn time and drift end time so orbits are correctly calculated
+        const particle = {
+            type,
+            mass,
+            visualSize,
+            sizeClass: this.getSizeClassFromMass(mass),
+            // Already at target position
+            spawnAngle: angle,
+            spawnDistance: distance,
+            targetAngle: angle,
+            targetDistance: distance,
+            // Store final orbit position
+            orbitAngle: angle,
+            orbitDistance: distance,
+            yOffset,
+            orbitalSpeed,
+            // Not drifting - already in orbit
+            drifting: false,
+            driftDuration: 0,
+            spawnTime: this.gameTime,
+            driftEndTime: this.gameTime  // Important: so orbital motion starts from now
+        };
+
+        particles.push(particle);
+        return particle;
+    }
+
+    /**
+     * Spawn an individual probe that starts already in orbit (no drift animation)
+     * Used for populating existing probes on game load
+     * @param {string} zoneId - Zone ID
+     * @param {number} index - Probe index (for consistent positioning)
+     * @returns {Object} New probe data
+     */
+    spawnIndividualProbeInitial(zoneId, index) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) return null;
+
+        const userData = particleSystem.userData;
+        const config = this.probeParticleConfig;
+
+        // Get zone orbital properties
+        const orbitRadius = userData.orbitRadius;
+        const ringInner = userData.ringInner || (orbitRadius * 0.9);
+        const ringOuter = userData.ringOuter || (orbitRadius * 1.1);
+
+        // Distribute probes evenly around the orbit
+        const angle = (index / 100) * Math.PI * 2 + Math.random() * 0.1;
+        const distance = ringInner + Math.random() * (ringOuter - ringInner);
+        const yOffset = (Math.random() - 0.5) * 0.02;
+
+        const baseOrbitalSpeed = this.calculateOrbitalSpeed(distance);
+        const orbitalSpeed = baseOrbitalSpeed * 0.8;
+
+        return {
+            type: 'individual_probe',
+            mass: config.probeMassKg || 100,
+            visualSize: config.individualSize || 0.08,
+            spawnAngle: angle,
+            spawnDistance: distance,
+            targetAngle: angle,
+            targetDistance: distance,
+            orbitAngle: angle,
+            orbitDistance: distance,
+            yOffset,
+            orbitalSpeed,
+            drifting: false,
+            driftDuration: 0,
+            spawnTime: this.gameTime,
+            driftEndTime: this.gameTime
+        };
+    }
+
+    /**
+     * Spawn a probe mass particle that starts already in orbit (no drift animation)
+     * Used for populating excess probe mass on game load
+     * @param {string} zoneId - Zone ID
+     * @param {number} mass - Mass in kg
+     * @param {number} visualSize - Visual size for rendering
+     * @returns {Object} New particle data
+     */
+    spawnProbeParticleInitial(zoneId, mass, visualSize) {
+        const particleSystem = this.resourceParticles[zoneId];
+        if (!particleSystem) return null;
+
+        const userData = particleSystem.userData;
+
+        // Get zone orbital properties
+        const orbitRadius = userData.orbitRadius;
+        const ringInner = userData.ringInner || (orbitRadius * 0.85);
+        const ringOuter = userData.ringOuter || (orbitRadius * 1.15);
+
+        const angle = Math.random() * Math.PI * 2;
+        const distance = ringInner + Math.random() * (ringOuter - ringInner);
+        const yOffset = (Math.random() - 0.5) * 0.03;
+
+        const baseOrbitalSpeed = this.calculateOrbitalSpeed(distance);
+        const orbitalSpeed = baseOrbitalSpeed * 0.8;
+
+        return {
+            type: 'probe_particle',
+            mass,
+            visualSize,
+            sizeClass: this.getSizeClassFromMass(mass),
+            spawnAngle: angle,
+            spawnDistance: distance,
+            targetAngle: angle,
+            targetDistance: distance,
+            orbitAngle: angle,
+            orbitDistance: distance,
+            yOffset,
+            orbitalSpeed,
+            drifting: false,
+            driftDuration: 0,
+            spawnTime: this.gameTime,
+            driftEndTime: this.gameTime
+        };
+    }
+
+    /**
+     * Get size class from mass (for compatibility)
+     * @param {number} mass - Mass in kg
+     * @returns {string} Size class
+     */
+    getSizeClassFromMass(mass) {
+        if (mass >= 2.5e21) return 'huge';
+        if (mass >= 1e18) return 'xlarge';
+        if (mass >= 1e15) return 'large';
+        if (mass >= 1e12) return 'medium';
+        return 'small';
+    }
+
+    /**
+     * Calculate orbital speed based on distance from star
+     * Uses simplified Kepler's law: v ∝ 1/√r
+     */
+    calculateOrbitalSpeed(orbitalRadius) {
+        // Base speed for particles at 1 unit distance
+        const baseSpeed = 0.5; // radians per second (adjust for visual appeal)
+        // Inverse square root relationship
+        return baseSpeed / Math.sqrt(orbitalRadius);
+    }
+
     /**
      * Create resource particle system for a planet
      * All zones use accretion disc mode (flat disc orbiting sun) - unified appearance for all planet types
@@ -3766,49 +4262,79 @@ class SolarSystem {
             }
         });
 
-        // Update moon positions - moons orbit around their planets
+        // Update moon positions - moons orbit around their planets (or sun if independent)
         Object.entries(this.moons).forEach(([zoneId, moonList]) => {
             const planet = this.planets[zoneId];
             if (!planet) return;
-            
+
             moonList.forEach(moon => {
                 if (moon.userData) {
+                    // Check if this moon has become independent (parent planet depleted)
+                    const isIndependent = moon.userData.independent || false;
+
                     // Update moon's orbital angle
                     moon.userData.orbitalAngle += moon.userData.orbitalSpeed * deltaTime;
-                    
-                    const orbitDist = moon.userData.moonOrbitDistance;
-                    const angle = moon.userData.orbitalAngle;
-                    const planetTilt = moon.userData.planetTilt || 0;
-                    const moonInclination = moon.userData.moonInclination || 0;
-                    
-                    // Calculate position in the moon's orbital plane (before tilt)
-                    // x-z plane is the orbital plane
-                    let localX = Math.cos(angle) * orbitDist;
-                    let localY = Math.sin(angle) * orbitDist * Math.sin(moonInclination);
-                    let localZ = Math.sin(angle) * orbitDist * Math.cos(moonInclination);
-                    
-                    // For planets with tilted equatorial planes (Saturn, Uranus),
-                    // rotate the moon's orbit to match the planet's equatorial tilt
-                    if (moon.userData.orbitInEquatorialPlane && planetTilt !== 0) {
-                        // Rotate around X axis by planet's axial tilt
-                        const cosTilt = Math.cos(planetTilt);
-                        const sinTilt = Math.sin(planetTilt);
-                        
-                        const rotatedY = localY * cosTilt - localZ * sinTilt;
-                        const rotatedZ = localY * sinTilt + localZ * cosTilt;
-                        
-                        localY = rotatedY;
-                        localZ = rotatedZ;
+
+                    if (isIndependent) {
+                        // Moon orbits the sun at the planet's former orbital distance
+                        const sunOrbitDist = moon.userData.sunOrbitDistance || planet.userData.orbitDistance || 10;
+                        const angle = moon.userData.orbitalAngle;
+
+                        // Simple heliocentric orbit
+                        moon.position.x = Math.cos(angle) * sunOrbitDist;
+                        moon.position.z = Math.sin(angle) * sunOrbitDist;
+                        moon.position.y = Math.sin(angle) * sunOrbitDist * 0.02; // Slight vertical oscillation
+                    } else {
+                        // Normal planetary orbit
+                        const orbitDist = moon.userData.moonOrbitDistance;
+                        const angle = moon.userData.orbitalAngle;
+                        const planetTilt = moon.userData.planetTilt || 0;
+                        const moonInclination = moon.userData.moonInclination || 0;
+
+                        // Calculate position in the moon's orbital plane (before tilt)
+                        // x-z plane is the orbital plane
+                        let localX = Math.cos(angle) * orbitDist;
+                        let localY = Math.sin(angle) * orbitDist * Math.sin(moonInclination);
+                        let localZ = Math.sin(angle) * orbitDist * Math.cos(moonInclination);
+
+                        // For planets with tilted equatorial planes (Saturn, Uranus),
+                        // rotate the moon's orbit to match the planet's equatorial tilt
+                        if (moon.userData.orbitInEquatorialPlane && planetTilt !== 0) {
+                            // Rotate around X axis by planet's axial tilt
+                            const cosTilt = Math.cos(planetTilt);
+                            const sinTilt = Math.sin(planetTilt);
+
+                            const rotatedY = localY * cosTilt - localZ * sinTilt;
+                            const rotatedZ = localY * sinTilt + localZ * cosTilt;
+
+                            localY = rotatedY;
+                            localZ = rotatedZ;
+                        }
+
+                        // Position moon relative to planet's current position
+                        moon.position.x = planet.position.x + localX;
+                        moon.position.y = planet.position.y + localY;
+                        moon.position.z = planet.position.z + localZ;
                     }
-                    
-                    // Position moon relative to planet's current position
-                    moon.position.x = planet.position.x + localX;
-                    moon.position.y = planet.position.y + localY;
-                    moon.position.z = planet.position.z + localZ;
                 }
             });
+
+            // Update moon orbital rings to follow the planet
+            if (this.moonOrbits && this.moonOrbits[zoneId]) {
+                this.moonOrbits[zoneId].forEach(orbitLine => {
+                    if (orbitLine.userData) {
+                        // Position orbit ring at planet's current location
+                        orbitLine.position.copy(planet.position);
+
+                        // Apply planet tilt for moons that orbit in equatorial plane
+                        if (orbitLine.userData.orbitInEquatorialPlane && orbitLine.userData.planetTilt) {
+                            orbitLine.rotation.x = orbitLine.userData.planetTilt;
+                        }
+                    }
+                });
+            }
         });
-        
+
         // Update asteroid belt orbital motion
         if (this.asteroidBelt && this.asteroidBelt.userData && this.asteroidBelt.userData.asteroidData) {
             const asteroidData = this.asteroidBelt.userData.asteroidData;
@@ -3951,22 +4477,50 @@ class SolarSystem {
         if (zoneId === 'dyson_sphere' || zoneId === 'dyson') {
             return new THREE.Vector3(0, 0, 0);
         }
-        
+
         // Asteroid belt focuses on Ceres as the de facto center (home planet)
         if (zoneId === 'asteroid_belt' && this.ceres) {
             return this.ceres.position.clone();
         }
-        
+
         // Kuiper belt uses Pluto as its home planet (stored as 'kuiper' in planets)
         // This handles both 'kuiper' and 'kuiper_belt' zone IDs
         if ((zoneId === 'kuiper' || zoneId === 'kuiper_belt') && this.planets['kuiper']) {
             return this.planets['kuiper'].position.clone();
         }
-        
+
+        // Check for planet
         const planet = this.planets[zoneId];
         if (planet) {
             return planet.position.clone();
         }
+
+        // Check for moon (format: parentZoneId_moonName, e.g., earth_luna, jupiter_io)
+        // Parse the zoneId to find parent and moon name
+        const underscoreIndex = zoneId.indexOf('_');
+        if (underscoreIndex > 0) {
+            const parentZoneId = zoneId.substring(0, underscoreIndex);
+            const moonList = this.moons[parentZoneId];
+            if (moonList) {
+                // Find the moon by matching userData.moonId (the full ID like "earth_luna")
+                const moon = moonList.find(m => {
+                    return m.userData?.moonId === zoneId;
+                });
+                if (moon) {
+                    return moon.position.clone();
+                }
+            }
+        }
+
+        // Also check all moon lists in case the zoneId format is different
+        for (const parentId of Object.keys(this.moons)) {
+            const moonList = this.moons[parentId];
+            const moon = moonList?.find(m => m.userData?.moonId === zoneId);
+            if (moon) {
+                return moon.position.clone();
+            }
+        }
+
         return null;
     }
     
@@ -4013,191 +4567,150 @@ class SolarSystem {
         this.updateProbeParticles(gameState);
 
         // Update visual appearance based on mass remaining
+        // Uses LOGARITHMIC scaling so planet shrinks gradually even as mining accelerates
         Object.keys(this.planets).forEach(zoneId => {
             const planet = this.planets[zoneId];
             const orbit = this.orbits[zoneId];
             const zone = zones[zoneId];
-            
+
             if (!planet || !zone) return;
-            
+
             const initialMass = this.initialZoneMasses[zoneId];
             const massRemaining = zone.mass_remaining || 0;
-            const isDepleted = zone.depleted || false;
-            
-            if (!initialMass || initialMass <= 0) {
-                // No mass data, use simple depleted flag
-                if (isDepleted) {
-                    if (planet.material) {
-                        if (planet.material.color) {
-                            planet.material.color.setHex(0x333333);
-                        }
-                        if (planet.material.emissive) {
-                            planet.material.emissive.setHex(0x000000);
-                        }
-                    }
-                    if (orbit && orbit.material) {
-                        orbit.material.opacity = 0.1;
-                        if (orbit.material.color) {
-                            orbit.material.color.setHex(0x333333);
-                        }
-                    }
+            const isDepleted = zone.depleted || massRemaining <= 0;
+
+            // Store original radius if not already stored
+            if (!planet.userData) planet.userData = {};
+            if (!planet.userData.originalRadius) {
+                const planetInfo = this.planetData[zoneId];
+                if (planetInfo) {
+                    planet.userData.originalRadius = this.logScaleRadius(planetInfo.radius_km);
                 }
+            }
+
+            // Fully depleted: planet disappears completely, moons become independent
+            if (isDepleted || massRemaining <= 0) {
+                planet.visible = false;
+                if (orbit) orbit.visible = false;
+
+                // Moons become independent - they orbit the sun instead of disappearing
+                const moonList = this.moons[zoneId] || [];
+                moonList.forEach(moon => {
+                    if (moon.userData) {
+                        // Check if moon zone is marked independent in game state
+                        const moonZoneId = moon.userData.moonId;
+                        const moonZone = zones[moonZoneId];
+
+                        if (moonZone && moonZone.independent) {
+                            // Moon is now independent - visible and orbits the sun
+                            moon.visible = true;
+                            moon.userData.independent = true;
+
+                            // Set sun orbit distance based on planet's orbit (if not already set)
+                            if (!moon.userData.sunOrbitDistance && planet.userData) {
+                                moon.userData.sunOrbitDistance = planet.userData.orbitDistance || 10;
+                                // Slightly vary the orbit distance for each moon so they don't overlap
+                                const moonIndex = moonList.indexOf(moon);
+                                moon.userData.sunOrbitDistance *= (1 + moonIndex * 0.03);
+                            }
+
+                            // Make moon more visible when independent
+                            if (moon.material) {
+                                moon.material.opacity = 1.0;
+                            }
+                        } else {
+                            // Moon zone not yet marked independent in game state - hide for now
+                            moon.visible = false;
+                        }
+                    } else {
+                        moon.visible = false;
+                    }
+                });
+
+                // Mark zone as visually depleted for structure handling
+                if (!this.depletedZones) this.depletedZones = new Set();
+                this.depletedZones.add(zoneId);
                 return;
             }
-            
-            const massPercentage = massRemaining / initialMass;
-            
-            // Phase 1: Moons disappear (75%-100% mass remaining)
-            if (massPercentage > 0.75 && massPercentage <= 1.0) {
-                const moonFadeStart = 0.75;
-                const moonFadeEnd = 1.0;
-                const moonFadeProgress = (massPercentage - moonFadeStart) / (moonFadeEnd - moonFadeStart);
-                
-                const moonList = this.moons[zoneId] || [];
-                if (moonList.length > 0) {
-                    // Sort moons by size (smallest first)
+
+            // Remove from depleted set if has mass
+            if (this.depletedZones) this.depletedZones.delete(zoneId);
+
+            if (!initialMass || initialMass <= 0) {
+                return;
+            }
+
+            // LOGARITHMIC SCALING for planet size
+            // This ensures gradual visual shrinking even as mining rate increases exponentially
+            // Scale = log(M + 1) / log(M0 + 1) where M is current mass, M0 is initial mass
+            // Using log10 for easier reasoning
+            const logInitial = Math.log10(initialMass + 1);
+            const logCurrent = Math.log10(massRemaining + 1);
+            const logScale = logCurrent / logInitial;
+
+            // Apply minimum scale of 0.1 (10% of original size) before disappearing
+            const minVisibleScale = 0.1;
+            const scale = Math.max(minVisibleScale, logScale);
+
+            // Update planet scale
+            planet.scale.set(scale, scale, scale);
+            planet.visible = true;
+
+            // Color desaturation based on log scale (starts desaturating below 50% log scale)
+            if (planet.material && planet.material.color && this.orbitalData) {
+                const zoneData = this.orbitalData.orbital_zones.find(z => z.id === zoneId);
+                if (zoneData) {
+                    const originalColor = new THREE.Color(zoneData.color || '#888888');
+                    const greyColor = new THREE.Color(0x444444);
+                    // Desaturate more as scale decreases
+                    const desaturationAmount = Math.max(0, 1 - scale);
+                    const finalColor = originalColor.clone().lerp(greyColor, desaturationAmount);
+                    planet.material.color.copy(finalColor);
+                    planet.material.opacity = Math.max(0.3, scale);
+                }
+            }
+
+            // Orbit line fades with planet
+            if (orbit && orbit.material) {
+                orbit.visible = true;
+                orbit.material.opacity = Math.max(0.05, 0.3 * scale);
+            }
+
+            // MOON HANDLING: Moons disappear based on mass remaining (log scale)
+            // Moons start disappearing below 90% log scale
+            const moonList = this.moons[zoneId] || [];
+            if (moonList.length > 0) {
+                const moonThreshold = 0.9; // Start hiding moons below this log scale
+                if (logScale < moonThreshold) {
+                    // Sort moons by size (smallest first to disappear)
                     const sortedMoons = [...moonList].sort((a, b) => {
                         const aRadius = a.geometry?.parameters?.radius || 0;
                         const bRadius = b.geometry?.parameters?.radius || 0;
                         return aRadius - bRadius;
                     });
-                    
-                    // Fade out moons starting with smallest
-                    const moonsToHide = Math.floor((1 - moonFadeProgress) * sortedMoons.length);
+
+                    // Calculate how many moons to hide
+                    const moonFadeProgress = logScale / moonThreshold;
+                    const moonsToShow = Math.ceil(moonFadeProgress * sortedMoons.length);
+
                     sortedMoons.forEach((moon, index) => {
-                        if (index < moonsToHide) {
+                        if (index < sortedMoons.length - moonsToShow) {
                             moon.visible = false;
                         } else {
-                            const fadeAmount = Math.max(0, 1 - (moonsToHide + 1 - index));
                             moon.visible = true;
                             if (moon.material) {
-                                moon.material.opacity = fadeAmount;
+                                moon.material.opacity = moonFadeProgress;
                             }
                         }
                     });
-                }
-            } else if (massPercentage <= 0.75) {
-                // Hide all moons below 75%
-                const moonList = this.moons[zoneId] || [];
-                moonList.forEach(moon => {
-                    moon.visible = false;
-                });
-            } else {
-                // Show all moons above 100% (shouldn't happen, but handle it)
-                const moonList = this.moons[zoneId] || [];
-                moonList.forEach(moon => {
-                    moon.visible = true;
-                    if (moon.material) {
-                        moon.material.opacity = 1.0;
-                    }
-                });
-            }
-            
-            // Phase 2: Planet shrinks and desaturates (25%-75% mass remaining)
-            if (massPercentage > 0.25 && massPercentage <= 0.75) {
-                const shrinkStart = 0.25;
-                const shrinkEnd = 0.75;
-                const shrinkProgress = (massPercentage - shrinkStart) / (shrinkEnd - shrinkStart);
-                
-                // Scale planet size (from 100% at 75% mass to 30% at 25% mass)
-                const minScale = 0.3;
-                const scale = minScale + (1.0 - minScale) * shrinkProgress;
-                
-                if (planet.userData && planet.userData.originalRadius) {
-                    const originalRadius = planet.userData.originalRadius;
-                    planet.scale.set(scale, scale, scale);
                 } else {
-                    // Store original radius if not stored
-                    const planetInfo = this.planetData[zoneId];
-                    if (planetInfo) {
-                        const originalRadius = this.logScaleRadius(planetInfo.radius_km);
-                        planet.userData.originalRadius = originalRadius;
-                        planet.scale.set(scale, scale, scale);
-                    }
-                }
-                
-                // Desaturate color toward grey
-                if (planet.material && planet.material.color && this.orbitalData) {
-                    const zone = this.orbitalData.orbital_zones.find(z => z.id === zoneId);
-                    if (zone) {
-                        const originalColor = new THREE.Color(zone.color || '#888888');
-                        const greyColor = new THREE.Color(0x666666);
-                        const desaturatedColor = originalColor.clone().lerp(greyColor, 1 - shrinkProgress);
-                        planet.material.color.copy(desaturatedColor);
-                    }
-                }
-                
-                // Keep orbit visible but fade it
-                if (orbit && orbit.material) {
-                    orbit.material.opacity = 0.2 * shrinkProgress;
-                }
-            }
-            
-            // Phase 3: Planet disappears (0%-25% mass remaining)
-            if (massPercentage <= 0.25) {
-                const fadeStart = 0.25;
-                const fadeEnd = 0.0;
-                const fadeProgress = massPercentage > 0 ? (massPercentage - fadeEnd) / (fadeStart - fadeEnd) : 0;
-                
-                // Fade out planet
-                planet.visible = fadeProgress > 0.05; // Hide when very small
-                if (planet.material) {
-                    planet.material.opacity = fadeProgress;
-                    if (planet.material.color) {
-                        planet.material.color.setHex(0x333333); // Grey when fading
-                    }
-                }
-                
-                // Scale down further
-                const minScale = 0.05;
-                const scale = minScale + (0.3 - minScale) * fadeProgress;
-                if (planet.userData && planet.userData.originalRadius) {
-                    planet.scale.set(scale, scale, scale);
-                }
-                
-                // Fade orbit line
-                if (orbit && orbit.material) {
-                    orbit.material.opacity = 0.1 * fadeProgress;
-                    orbit.material.color.setHex(0x333333);
-                }
-            }
-            
-            // Restore normal appearance if mass is above thresholds
-            if (massPercentage > 0.75) {
-                // Restore planet size and color
-                if (planet.userData && planet.userData.originalRadius) {
-                    planet.scale.set(1, 1, 1);
-                }
-                if (planet.material && this.orbitalData) {
-                    const zone = this.orbitalData.orbital_zones.find(z => z.id === zoneId);
-                    if (zone && planet.userData) {
-                        if (planet.material.color) {
-                            planet.material.color.setStyle(zone.color || '#888888');
+                    // Show all moons at full opacity
+                    moonList.forEach(moon => {
+                        moon.visible = true;
+                        if (moon.material) {
+                            moon.material.opacity = 1.0;
                         }
-                        planet.material.opacity = 1.0;
-                        if (planet.material.emissive) {
-                            planet.material.emissive.setHex(0x000000);
-                        }
-                    }
-                }
-                planet.visible = true;
-                
-                // Restore moons
-                const moonList = this.moons[zoneId] || [];
-                moonList.forEach(moon => {
-                    moon.visible = true;
-                    if (moon.material) {
-                        moon.material.opacity = 1.0;
-                    }
-                });
-                
-                // Restore orbit
-                if (orbit && orbit.material && this.orbitalData) {
-                    const zone = this.orbitalData.orbital_zones.find(z => z.id === zoneId);
-                    if (zone) {
-                        orbit.material.opacity = 0.3;
-                        orbit.material.color.setStyle(zone.color || '#555555');
-                    }
+                    });
                 }
             }
         });

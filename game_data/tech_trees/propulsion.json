@@ -1,0 +1,527 @@
+{
+  "tree_id": "propulsion",
+  "name": "Propulsion Systems",
+  "category": "dexterity",
+  "description": "Rocket and drive technologies that determine probe delta-v capacity through specific impulse (ISP).",
+
+  "physics_model": {
+    "primary_effect": "probe_delta_v_capacity",
+    "formula": "delta_v = isp × g0 × ln(mass_ratio)",
+    "constants": {
+      "g0": 9.81,
+      "base_mass_ratio": 3.0,
+      "g0_description": "Standard gravity (m/s²)",
+      "mass_ratio_description": "Wet/dry mass ratio, improved by materials research"
+    }
+  },
+
+  "display_format": {
+    "primary": "{isp_seconds}s ISP",
+    "secondary": "({exhaust_velocity_km_s} km/s exhaust)",
+    "effect": "[{delta_v_capacity_km_s} km/s probe Δv]",
+    "example": "380s ISP (3.73 km/s exhaust) [10.8 km/s probe Δv]"
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "id": "cold_gas_thrusters",
+      "name": "Cold Gas Thrusters",
+      "description": "Simple pressure-fed nitrogen or helium thrusters. Low performance but extremely reliable.",
+      "physics": {
+        "isp_seconds": 65,
+        "exhaust_velocity_m_s": 638,
+        "exhaust_velocity_km_s": 0.64,
+        "thrust_to_weight": 0.1,
+        "propellant": "N₂, He"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 0.70,
+        "transfer_time_factor": 1.0,
+        "description": "Base capability - attitude control only"
+      },
+      "research": {
+        "base_cost_eflop_days": 50,
+        "tranches": 5,
+        "cost_per_tranche": 10
+      },
+      "historical_reference": "Early spacecraft RCS, Apollo SPS ullage",
+      "unlocks": ["hydrazine_monoprop"]
+    },
+    {
+      "tier": 2,
+      "id": "hydrazine_monoprop",
+      "name": "Hydrazine Monopropellant",
+      "description": "Catalytic decomposition of hydrazine (N₂H₄). Workhorse of satellite propulsion.",
+      "physics": {
+        "isp_seconds": 230,
+        "exhaust_velocity_m_s": 2256,
+        "exhaust_velocity_km_s": 2.26,
+        "thrust_to_weight": 2.0,
+        "propellant": "N₂H₄"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 2.48,
+        "transfer_time_factor": 0.85,
+        "description": "Enables basic orbital maneuvers"
+      },
+      "research": {
+        "base_cost_eflop_days": 200,
+        "tranches": 6,
+        "cost_per_tranche": 33
+      },
+      "historical_reference": "Voyager, Cassini, most satellites",
+      "unlocks": ["bipropellant_hypergolic"]
+    },
+    {
+      "tier": 3,
+      "id": "bipropellant_hypergolic",
+      "name": "Bipropellant Hypergolic",
+      "description": "N₂O₄/UDMH or MMH hypergolic engines. Ignite on contact, highly reliable.",
+      "physics": {
+        "isp_seconds": 310,
+        "exhaust_velocity_m_s": 3041,
+        "exhaust_velocity_km_s": 3.04,
+        "thrust_to_weight": 40,
+        "propellant": "N₂O₄/UDMH"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 3.34,
+        "transfer_time_factor": 0.75,
+        "description": "Standard interplanetary capability"
+      },
+      "research": {
+        "base_cost_eflop_days": 800,
+        "tranches": 7,
+        "cost_per_tranche": 114
+      },
+      "historical_reference": "Apollo Service Module, Proton upper stages",
+      "unlocks": ["methalox_staged_combustion"]
+    },
+    {
+      "tier": 4,
+      "id": "methalox_staged_combustion",
+      "name": "Methalox Full-Flow Staged Combustion",
+      "description": "CH₄/LOX engines with dual preburners. ISRU-compatible (produce fuel on Mars).",
+      "physics": {
+        "isp_seconds": 380,
+        "exhaust_velocity_m_s": 3728,
+        "exhaust_velocity_km_s": 3.73,
+        "thrust_to_weight": 107,
+        "chamber_pressure_bar": 330,
+        "propellant": "CH₄/LOX"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 4.10,
+        "transfer_time_factor": 0.65,
+        "description": "Enables Mars missions with local refueling"
+      },
+      "research": {
+        "base_cost_eflop_days": 3000,
+        "tranches": 8,
+        "cost_per_tranche": 375
+      },
+      "historical_reference": "SpaceX Raptor 2/3",
+      "unlocks": ["hydrolox_expander"]
+    },
+    {
+      "tier": 5,
+      "id": "hydrolox_expander",
+      "name": "Hydrolox Expander Cycle",
+      "description": "H₂/LOX with regenerative cooling driving turbopumps. Highest chemical ISP.",
+      "physics": {
+        "isp_seconds": 465,
+        "exhaust_velocity_m_s": 4562,
+        "exhaust_velocity_km_s": 4.56,
+        "thrust_to_weight": 40,
+        "propellant": "H₂/LOX"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 5.01,
+        "transfer_time_factor": 0.55,
+        "description": "Maximum chemical efficiency"
+      },
+      "research": {
+        "base_cost_eflop_days": 10000,
+        "tranches": 8,
+        "cost_per_tranche": 1250
+      },
+      "historical_reference": "RL-10, Vinci, theoretical limit ~470s",
+      "unlocks": ["nuclear_thermal_solid"]
+    },
+    {
+      "tier": 6,
+      "id": "nuclear_thermal_solid",
+      "name": "Nuclear Thermal (Solid Core)",
+      "description": "NERVA-type fission reactor heats hydrogen propellant. 2× chemical ISP.",
+      "physics": {
+        "isp_seconds": 1500,
+        "exhaust_velocity_m_s": 14715,
+        "exhaust_velocity_km_s": 14.7,
+        "thrust_to_weight": 5,
+        "core_temperature_K": 3200,
+        "propellant": "H₂"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 16.2,
+        "transfer_time_factor": 0.40,
+        "description": "Fast interplanetary transfers"
+      },
+      "research": {
+        "base_cost_eflop_days": 500000,
+        "tranches": 10,
+        "cost_per_tranche": 50000
+      },
+      "historical_reference": "NERVA tested 1960s, DRACO program 2020s",
+      "unlocks": ["nuclear_thermal_liquid"]
+    },
+    {
+      "tier": 7,
+      "id": "nuclear_thermal_liquid",
+      "name": "Nuclear Thermal (Liquid/Gas Core)",
+      "description": "Molten uranium or gas-phase fission core at extreme temperatures. Very high ISP.",
+      "physics": {
+        "isp_seconds": 3500,
+        "exhaust_velocity_m_s": 34335,
+        "exhaust_velocity_km_s": 34.3,
+        "thrust_to_weight": 2,
+        "core_temperature_K": 8000,
+        "propellant": "H₂"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 37.8,
+        "transfer_time_factor": 0.28,
+        "description": "Outer solar system accessible"
+      },
+      "research": {
+        "base_cost_eflop_days": 2000000,
+        "tranches": 10,
+        "cost_per_tranche": 200000
+      },
+      "historical_reference": "Gas core concepts studied at Los Alamos",
+      "unlocks": ["ion_hall_effect"]
+    },
+    {
+      "tier": 8,
+      "id": "ion_hall_effect",
+      "name": "Ion / Hall Effect Thrusters",
+      "description": "Electric propulsion ionizing xenon or krypton. Very high ISP, low thrust.",
+      "physics": {
+        "isp_seconds": 8000,
+        "exhaust_velocity_m_s": 78480,
+        "exhaust_velocity_km_s": 78.5,
+        "thrust_to_weight": 0.001,
+        "power_per_newton_kW": 25,
+        "propellant": "Xe, Kr"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 86.2,
+        "transfer_time_factor": 0.45,
+        "description": "High total Δv, slow acceleration"
+      },
+      "research": {
+        "base_cost_eflop_days": 8000000,
+        "tranches": 10,
+        "cost_per_tranche": 800000
+      },
+      "historical_reference": "Dawn spacecraft, Starlink satellites",
+      "unlocks": ["vasimr"]
+    },
+    {
+      "tier": 9,
+      "id": "vasimr",
+      "name": "VASIMR",
+      "description": "Variable Specific Impulse Magnetoplasma Rocket. Trade ISP for thrust in real-time.",
+      "physics": {
+        "isp_seconds_min": 5000,
+        "isp_seconds_max": 50000,
+        "isp_seconds": 25000,
+        "exhaust_velocity_m_s": 245250,
+        "exhaust_velocity_km_s": 245,
+        "thrust_to_weight_min": 0.0001,
+        "thrust_to_weight_max": 0.01,
+        "power_MW": 0.2,
+        "propellant": "Ar, H₂"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 269,
+        "transfer_time_factor": 0.22,
+        "description": "Adaptable - high thrust or high efficiency"
+      },
+      "research": {
+        "base_cost_eflop_days": 35000000,
+        "tranches": 10,
+        "cost_per_tranche": 3500000
+      },
+      "historical_reference": "Ad Astra Rocket Company, ISS testing",
+      "unlocks": ["mpd_thruster"]
+    },
+    {
+      "tier": 10,
+      "id": "mpd_thruster",
+      "name": "Magnetoplasmadynamic Thruster",
+      "description": "Lorentz force accelerates plasma to extreme velocities. Requires megawatts of power.",
+      "physics": {
+        "isp_seconds": 100000,
+        "exhaust_velocity_m_s": 981000,
+        "exhaust_velocity_km_s": 981,
+        "thrust_to_weight": 0.05,
+        "power_MW": 25,
+        "propellant": "Li, H₂"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 1078,
+        "transfer_time_factor": 0.12,
+        "description": "High-power deep space propulsion"
+      },
+      "research": {
+        "base_cost_eflop_days": 150000000,
+        "tranches": 10,
+        "cost_per_tranche": 15000000
+      },
+      "historical_reference": "Tested at NASA Glenn, Japanese programs",
+      "unlocks": ["nuclear_electric"]
+    },
+    {
+      "tier": 11,
+      "id": "nuclear_electric",
+      "name": "Nuclear Electric Propulsion",
+      "description": "Fission reactor powers high-performance MPD engines. Solar-independent, deep space capable.",
+      "physics": {
+        "isp_seconds": 250000,
+        "exhaust_velocity_m_s": 2452500,
+        "exhaust_velocity_km_s": 2453,
+        "thrust_to_weight": 0.02,
+        "reactor_power_MW": 100,
+        "propellant": "Li"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 2697,
+        "transfer_time_factor": 0.08,
+        "description": "Unlimited range - Kuiper Belt accessible"
+      },
+      "research": {
+        "base_cost_eflop_days": 600000000,
+        "tranches": 10,
+        "cost_per_tranche": 60000000
+      },
+      "historical_reference": "Project Prometheus (cancelled), JIMO concept",
+      "unlocks": ["fusion_mtf"]
+    },
+    {
+      "tier": 12,
+      "id": "fusion_mtf",
+      "name": "Magnetized Target Fusion",
+      "description": "Plasma compression triggers fusion burn. Magnetic nozzle directs exhaust.",
+      "physics": {
+        "isp_seconds": 500000,
+        "exhaust_velocity_m_s": 4905000,
+        "exhaust_velocity_km_s": 4905,
+        "thrust_to_weight": 0.1,
+        "fusion_gain_Q": 10,
+        "propellant": "D-T"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 5390,
+        "transfer_time_factor": 0.05,
+        "description": "Fast outer system travel"
+      },
+      "research": {
+        "base_cost_eflop_days": 3000000000,
+        "tranches": 10,
+        "cost_per_tranche": 300000000
+      },
+      "historical_reference": "General Fusion, Helion concepts",
+      "unlocks": ["direct_fusion_drive"]
+    },
+    {
+      "tier": 13,
+      "id": "direct_fusion_drive",
+      "name": "Direct Fusion Drive",
+      "description": "D-He³ fusion with direct thrust conversion. High ISP AND reasonable thrust.",
+      "physics": {
+        "isp_seconds": 1500000,
+        "exhaust_velocity_m_s": 14715000,
+        "exhaust_velocity_km_s": 14715,
+        "thrust_to_weight": 0.15,
+        "fusion_gain_Q": 50,
+        "aneutronic": true,
+        "propellant": "D-He³"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 16180,
+        "transfer_time_factor": 0.02,
+        "description": "Interstellar precursor capability"
+      },
+      "research": {
+        "base_cost_eflop_days": 15000000000,
+        "tranches": 10,
+        "cost_per_tranche": 1500000000
+      },
+      "historical_reference": "Princeton PFRC, Tau Zero concepts",
+      "unlocks": ["antimatter_catalyzed"]
+    },
+    {
+      "tier": 14,
+      "id": "antimatter_catalyzed",
+      "name": "Antimatter-Catalyzed Fusion",
+      "description": "Antiproton injection triggers p-B11 fusion. Near-aneutronic, very high energy.",
+      "physics": {
+        "isp_seconds": 5000000,
+        "exhaust_velocity_m_s": 49050000,
+        "exhaust_velocity_km_s": 49050,
+        "thrust_to_weight": 0.3,
+        "antimatter_consumption_mg_per_GJ": 0.001,
+        "propellant": "p-B11 + p̄"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 53900,
+        "transfer_time_factor": 0.01,
+        "description": "Practical interstellar probe capability"
+      },
+      "research": {
+        "base_cost_eflop_days": 75000000000,
+        "tranches": 10,
+        "cost_per_tranche": 7500000000
+      },
+      "historical_reference": "CERN antimatter research, Icarus study",
+      "unlocks": ["beam_core_antimatter"]
+    },
+    {
+      "tier": 15,
+      "id": "beam_core_antimatter",
+      "name": "Beam-Core Antimatter",
+      "description": "Direct matter-antimatter annihilation with charged pion exhaust. Near-theoretical limit.",
+      "physics": {
+        "isp_seconds": 10000000,
+        "exhaust_velocity_m_s": 98100000,
+        "exhaust_velocity_km_s": 98100,
+        "thrust_to_weight": 0.5,
+        "exhaust_fraction_c": 0.33,
+        "propellant": "p + p̄"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 107800,
+        "transfer_time_factor": 0.005,
+        "description": "Relativistic velocities accessible"
+      },
+      "research": {
+        "base_cost_eflop_days": 500000000000,
+        "tranches": 10,
+        "cost_per_tranche": 50000000000
+      },
+      "historical_reference": "Forward (1985), Frisbee antimatter studies",
+      "unlocks": ["photon_drive"]
+    },
+    {
+      "tier": 16,
+      "id": "photon_drive",
+      "name": "Photon Rocket",
+      "description": "Pure gamma-ray emission from total annihilation. Maximum possible reaction drive efficiency.",
+      "physics": {
+        "isp_seconds": 30570000,
+        "exhaust_velocity_m_s": 299792458,
+        "exhaust_velocity_km_s": 299792,
+        "exhaust_fraction_c": 1.0,
+        "efficiency": 1.0,
+        "propellant": "e⁺e⁻ annihilation"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 329000,
+        "transfer_time_factor": 0.002,
+        "description": "Theoretical limit of reaction drives (0.1c practical)"
+      },
+      "research": {
+        "base_cost_eflop_days": 5000000000000,
+        "tranches": 10,
+        "cost_per_tranche": 500000000000
+      },
+      "historical_reference": "Sänger photon rocket concept (1956)",
+      "unlocks": ["pais_inertial_reduction"]
+    },
+    {
+      "tier": 17,
+      "id": "pais_inertial_reduction",
+      "name": "Pais Effect Inertial Mass Reduction",
+      "description": "High-frequency rotation of electrically charged matter reduces effective inertial mass. Not a reaction drive - modifies inertia directly.",
+      "physics": {
+        "mechanism": "inertial_mass_reduction",
+        "mass_reduction_factor": 1000,
+        "effective_velocity_c": 0.01,
+        "effective_delta_v_km_s": 3000,
+        "power_density_MW_per_kg": 100,
+        "note": "Reactionless - bypasses rocket equation by modifying mass term"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 3000,
+        "transfer_time_factor": 0.001,
+        "description": "Fast in-system travel (0.01c), interstellar probes possible"
+      },
+      "research": {
+        "base_cost_eflop_days": 50000000000000,
+        "tranches": 10,
+        "cost_per_tranche": 5000000000000
+      },
+      "historical_reference": "US Patent 10,144,532 (Pais, 2018), Navy NAWCAD",
+      "unlocks": ["alcubierre_warp"]
+    },
+    {
+      "tier": 18,
+      "id": "alcubierre_warp",
+      "name": "Alcubierre-White Warp Field",
+      "description": "Contracts space ahead, expands behind. Spacecraft remains stationary in local frame while space moves.",
+      "physics": {
+        "mechanism": "metric_engineering",
+        "effective_velocity_c": 10,
+        "effective_delta_v_km_s": 3000000,
+        "energy_requirement_kg_exotic": 1000,
+        "note": "Requires exotic matter with negative energy density"
+      },
+      "derived_effects": {
+        "delta_v_capacity_km_s": 3000000,
+        "transfer_time_factor": 0.0001,
+        "description": "Interstellar travel at 10c - Alpha Centauri in ~160 days"
+      },
+      "research": {
+        "base_cost_eflop_days": 1000000000000000,
+        "tranches": 10,
+        "cost_per_tranche": 100000000000000
+      },
+      "historical_reference": "Alcubierre (1994), White (2011) energy reduction",
+      "requires": ["exotic_matter_materials_tier_13"],
+      "unlocks": []
+    }
+  ],
+
+  "skill_integration": {
+    "legacy_skill_name": "propulsion",
+    "calculation": {
+      "description": "Convert tier ISP to equivalent legacy multiplier for backward compatibility",
+      "formula": "multiplier = (current_isp / base_isp) where base_isp = 300",
+      "example": "Tier 6 NTR: 900/300 = 3.0 multiplier"
+    }
+  },
+
+  "cross_effects": {
+    "materials": {
+      "description": "Better materials reduce probe dry mass, improving mass ratio",
+      "formula": "effective_delta_v = isp × g0 × ln(base_mass_ratio / materials_factor)",
+      "effect": "20% mass reduction = ~22% more delta-v"
+    },
+    "thermal": {
+      "description": "Better thermal management allows higher exhaust temperatures",
+      "formula": "isp_boost = sqrt(thermal_factor) for thermal rockets",
+      "effect": "Mainly affects nuclear thermal tiers"
+    },
+    "power": {
+      "description": "Electric propulsion limited by available power",
+      "formula": "thrust = 2 × power × efficiency / exhaust_velocity",
+      "effect": "More power = more thrust for same ISP"
+    },
+    "electromagnetics": {
+      "description": "MPD and ion thrusters improved by better magnets",
+      "formula": "efficiency_boost = 1 + 0.1 × em_tier",
+      "effect": "Reduces power per Newton"
+    }
+  }
+}

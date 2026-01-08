@@ -116,11 +116,43 @@ class TransferVisualization {
         }
         
         // For other zones, use the same scaling as planets
-        const zone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+        // First try direct lookup
+        let zone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === zoneId);
+        let parentZone = null;
+
+        // If not found, check for moon zones inside parent planets
+        if (!zone) {
+            const zones = this.solarSystem?.orbitalData?.orbital_zones || [];
+            for (const pZone of zones) {
+                if (pZone.moons && Array.isArray(pZone.moons)) {
+                    const moon = pZone.moons.find(m => m.id === zoneId);
+                    if (moon) {
+                        zone = moon;
+                        parentZone = pZone;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (!zone) {
             return null;
         }
-        
+
+        // For moon zones, use parent planet's orbit
+        if (parentZone) {
+            const parentPlanetInfo = this.solarSystem.planetData?.[parentZone.id];
+            if (parentPlanetInfo && parentPlanetInfo.orbit_km) {
+                const orbitAU = parentPlanetInfo.orbit_km / this.solarSystem.AU_KM;
+                if (this.solarSystem.scaleAUToVisual) {
+                    return this.solarSystem.scaleAUToVisual(orbitAU);
+                }
+            }
+            if (parentZone.radius_au && this.solarSystem.scaleAUToVisual) {
+                return this.solarSystem.scaleAUToVisual(parentZone.radius_au);
+            }
+        }
+
         const planetInfo = this.solarSystem.planetData?.[zoneId];
         if (planetInfo && planetInfo.orbit_km) {
             // Use unified scaling (converts km to AU first)
@@ -129,7 +161,7 @@ class TransferVisualization {
                 return this.solarSystem.scaleAUToVisual(orbitAU);
             }
         }
-        
+
         // Fallback: use radius_au directly
         if (zone.radius_au && this.solarSystem.scaleAUToVisual) {
             return this.solarSystem.scaleAUToVisual(zone.radius_au);
@@ -542,8 +574,10 @@ class TransferVisualization {
      * @returns {number} Progress from 0.0 to 1.0
      */
     calculateVelocityIntegratedProgress(v0, vEnd, elapsedTime, tripTime, arcLength) {
-        if (tripTime <= 0) {
-            return Math.max(0.0, Math.min(1.0, elapsedTime / tripTime));
+        // Handle edge cases - avoid division by zero or invalid tripTime
+        if (!tripTime || tripTime <= 0 || !isFinite(tripTime)) {
+            // If trip time is invalid, assume completed if elapsed > 0
+            return elapsedTime > 0 ? 1.0 : 0.0;
         }
         
         const t = Math.max(0, Math.min(elapsedTime, tripTime));
@@ -578,13 +612,33 @@ class TransferVisualization {
      * @returns {Object} Ellipse parameters {a, e, rInner, rOuter}
      */
     calculateEllipseParams(fromZoneId, toZoneId) {
-        const fromZone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === fromZoneId);
-        const toZone = this.solarSystem?.orbitalData?.orbital_zones?.find(z => z.id === toZoneId);
-        
+        // Helper to find zone (including moon zones nested in parent planets)
+        const findZone = (zoneId) => {
+            const zones = this.solarSystem?.orbitalData?.orbital_zones || [];
+            // First try direct lookup
+            let zone = zones.find(z => z.id === zoneId);
+            if (zone) return zone;
+
+            // Check for moon zones inside parent planets
+            for (const parentZone of zones) {
+                if (parentZone.moons && Array.isArray(parentZone.moons)) {
+                    const moon = parentZone.moons.find(m => m.id === zoneId);
+                    if (moon) {
+                        // Return moon with parent's radius_au for orbital calculations
+                        return { ...moon, radius_au: parentZone.radius_au };
+                    }
+                }
+            }
+            return null;
+        };
+
+        const fromZone = findZone(fromZoneId);
+        const toZone = findZone(toZoneId);
+
         if (!fromZone || !toZone) {
             return null;
         }
-        
+
         // Get radii in AU
         const r1AU = fromZone.radius_au || 0;
         const r2AU = toZone.radius_au || 0;
@@ -1245,32 +1299,35 @@ class TransferVisualization {
     
     /**
      * Create cargo icon(s) for a transfer
-     * Metal transfers use a single cube sized proportionally to mass
+     * Metal transfers split large masses into multiple Pareto-distributed dots
      * Probes use a single dot (Points) matching the probe particle system
      * @param {string} resourceType - Type of resource being transferred
      * @param {number} massKg - Optional mass in kg for mass-proportional sizing
      */
     createCargoDot(resourceType, massKg = null) {
         const color = this.colors[resourceType] || this.colors.probe;
-        
+
         if (resourceType === 'metal') {
-            // Calculate size from mass using the same distribution as resource particles
-            let size;
+            // For metal, always use Pareto distribution to create realistic-sized particles
+            // This prevents single huge dots and creates natural "many small, few large" distribution
             if (massKg && massKg > 0) {
-                size = this.calculateMassVisualSize(massKg);
+                return this.createParetoDistributedDots(massKg, color);
             } else {
-                // Fallback to minimum visible size if no mass provided
-                size = 0.02;
+                // Fallback to minimum visible point if no mass provided
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+                const material = new THREE.PointsMaterial({
+                    color: color,
+                    size: 0.03,
+                    sizeAttenuation: true,
+                    transparent: true,
+                    opacity: 0.9,
+                    depthWrite: false
+                });
+                const icon = new THREE.Points(geometry, material);
+                icon.userData.massKg = 0;
+                return icon;
             }
-            
-            const geometry = new THREE.BoxGeometry(size, size, size);
-            const material = new THREE.MeshBasicMaterial({
-                color: color
-            });
-            
-            const icon = new THREE.Mesh(geometry, material);
-            icon.userData.massKg = massKg || 0;
-            return icon;
         } else {
             // Create a single dot (Points) for probe transfers
             // Uses same dot style as probe particles in the solar system
@@ -1292,7 +1349,80 @@ class TransferVisualization {
             return icon;
         }
     }
-    
+    /**
+     * Create multiple dots using Pareto distribution to represent a mass transfer
+     * Uses same distribution as mining for visual consistency
+     * DON'T scale masses - use natural Pareto sizes for realism
+     * @param {number} totalMassKg - Total mass to distribute (used for dot count)
+     * @param {THREE.Color} color - Color for the dots
+     * @returns {Array<THREE.Mesh>} Array of dot meshes
+     */
+    createParetoDistributedDots(totalMassKg, color) {
+        const dots = [];
+
+        // Minimum mass threshold for visibility
+        const MIN_MASS_KG = 10000; // 10 tons minimum
+        if (totalMassKg < MIN_MASS_KG) {
+            return dots;
+        }
+
+        // Get Pareto distribution parameters from solarSystem
+        const solarSystem = this.solarSystem;
+        const minMass = solarSystem?.particleDistribution?.minMass || 1e6;
+        const maxMass = solarSystem?.particleDistribution?.maxMass || 1e22;
+        const alpha = solarSystem?.particleDistribution?.shapeParameter || 1.15;
+
+        // Calculate number of dots based on mass magnitude
+        // Use log scale: more mass = more dots, but not proportionally
+        // 1e9 kg = 1 dot, 1e12 kg = 3-4 dots, 1e15 kg = 6-8 dots, 1e18 kg = 10-12 dots
+        const logMass = Math.log10(Math.max(1e6, totalMassKg));
+        const baseLog = 9; // 1e9 as base
+        const numDots = Math.max(1, Math.min(20, Math.ceil((logMass - baseLog + 1) * 2)));
+
+        // Create dots with natural Pareto-sampled masses (NOT scaled to total)
+        // Each dot represents a realistic chunk of mass
+        // Use Points (circles) instead of cubes - same style as mining particles
+        for (let i = 0; i < numDots; i++) {
+            // Sample from Pareto distribution: X = minMass / U^(1/α)
+            const u = Math.random();
+            const clampedU = Math.max(0.0001, u);
+            const sampledMass = Math.min(maxMass, minMass / Math.pow(clampedU, 1 / alpha));
+
+            // Calculate visual size from mass, capped for transfers
+            const rawSize = this.calculateMassVisualSize(sampledMass);
+            // Scale to point size (points are sized differently than geometry)
+            // Mining particles use ~0.02-0.05, so scale accordingly
+            const pointSize = Math.min(0.15, rawSize * 0.1);
+
+            // Create a Point (circle) like mining particles
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+
+            const material = new THREE.PointsMaterial({
+                color: color,
+                size: pointSize,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.9,
+                depthWrite: false
+            });
+
+            const dot = new THREE.Points(geometry, material);
+
+            // Small random offset so dots don't overlap exactly
+            dot.userData.offsetX = (Math.random() - 0.5) * 0.03;
+            dot.userData.offsetY = (Math.random() - 0.5) * 0.03;
+            dot.userData.offsetZ = (Math.random() - 0.5) * 0.03;
+            dot.userData.massKg = sampledMass;
+            dot.userData.dotIndex = i;
+            dot.userData.pointSize = pointSize;
+
+            dots.push(dot);
+        }
+
+        return dots;
+    }
+
     /**
      * Get probe transfer dot size from config
      * Falls back to default if solarSystem config not available
@@ -1353,8 +1483,9 @@ class TransferVisualization {
     }
     
     /**
-     * Create mass dots for a transfer, split by mass driver count.
-     * Multiple mass drivers create multiple dots launched at staggered times within 1 day.
+     * Create mass dots for a transfer using Pareto distribution.
+     * Uses same mass distribution as mining for visual consistency.
+     * Number of streams scales with total mass and mass driver count.
      * @param {number} massKg - Total mass in kg
      * @param {number} arcLength - Arc length of the transfer path
      * @param {number} massDriverCount - Number of mass drivers (1-20, saturates at 20)
@@ -1363,50 +1494,76 @@ class TransferVisualization {
     createMassStream(massKg, arcLength, massDriverCount = 1) {
         const color = this.colors.metal;
         const dots = [];
-        
+
         // Minimum mass threshold for visibility
         const MIN_MASS_KG = 10000; // 10 tons minimum
         if (massKg < MIN_MASS_KG) {
             return dots;
         }
-        
-        // Determine number of dots based on mass driver count
-        // - Saturates at 20 mass drivers
-        // - Only split if mass >= 1e6 kg (1 megatonne)
-        const MAX_DOTS = 20;
-        const MIN_MASS_FOR_SPLIT = 1e6; // 1 megatonne
-        
-        let numDots = 1;
-        if (massKg >= MIN_MASS_FOR_SPLIT && massDriverCount > 1) {
-            numDots = Math.min(massDriverCount, MAX_DOTS);
-        }
-        
-        // Calculate mass per dot
-        const massPerDot = massKg / numDots;
-        const visualSize = this.calculateMassVisualSize(massPerDot);
-        
+
+        // Calculate number of dots based on mass and mass driver count
+        // Base: 1 dot per ~1e9 kg (1 million tonnes), capped by mass driver count
+        // More mass = more streams, but capped at driver count
+        const MAX_DOTS = Math.min(20, massDriverCount);
+        const MASS_PER_STREAM = 1e9; // 1 Gt per stream base
+
+        // Calculate target number of streams proportional to mass
+        const targetStreams = Math.ceil(Math.log10(massKg / MASS_PER_STREAM + 1) * 3);
+        const numDots = Math.max(1, Math.min(MAX_DOTS, targetStreams));
+
+        // Use solarSystem's particle distribution if available
+        const solarSystem = this.solarSystem;
+        const minMass = solarSystem?.particleDistribution?.minMass || 1e6;
+        const maxMass = solarSystem?.particleDistribution?.maxMass || 1e22;
+        const alpha = solarSystem?.particleDistribution?.shapeParameter || 1.15;
+
         // Create dots with staggered launch times
         // All shots happen within 1 game day, evenly spaced
+        // Each dot uses natural Pareto-sampled mass (NOT scaled to total)
+        // Use Points (circles) instead of cubes - same style as mining particles
         for (let i = 0; i < numDots; i++) {
-            const geometry = new THREE.BoxGeometry(visualSize, visualSize, visualSize);
-            const material = new THREE.MeshBasicMaterial({
-                color: color
+            // Sample from Pareto distribution (natural size, not scaled)
+            const u = Math.random();
+            const clampedU = Math.max(0.0001, u);
+            const sampledMass = Math.min(maxMass, minMass / Math.pow(clampedU, 1 / alpha));
+
+            // Calculate visual size from mass, capped for transfers
+            const rawSize = this.calculateMassVisualSize(sampledMass);
+            // Scale to point size (points are sized differently than geometry)
+            const pointSize = Math.min(0.15, rawSize * 0.1);
+
+            // Create a Point (circle) like mining particles
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+
+            const material = new THREE.PointsMaterial({
+                color: color,
+                size: pointSize,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.9,
+                depthWrite: false
             });
-            
-            const dot = new THREE.Mesh(geometry, material);
-            
+
+            const dot = new THREE.Points(geometry, material);
+
             // Launch offset in days (0 to just under 1 day, evenly spaced)
             // First dot launches at t=0, last dot launches at t = (numDots-1)/numDots days
             const launchOffset = numDots > 1 ? (i / numDots) : 0;
-            
+
+            // Small random offset so dots don't overlap exactly
+            dot.userData.offsetX = (Math.random() - 0.5) * 0.02;
+            dot.userData.offsetY = (Math.random() - 0.5) * 0.02;
+            dot.userData.offsetZ = (Math.random() - 0.5) * 0.02;
             dot.userData.launchOffset = launchOffset;
-            dot.userData.massKg = massPerDot;
+            dot.userData.massKg = sampledMass;
             dot.userData.dotIndex = i;
+            dot.userData.pointSize = pointSize;
             dot.visible = false; // Start hidden until launched
-            
+
             dots.push(dot);
         }
-        
+
         return dots;
     }
     
@@ -1418,32 +1575,17 @@ class TransferVisualization {
      */
     updateChunkVisualizationMass(batchViz, newTotalMassKg) {
         if (!batchViz || !batchViz.dot) return;
-        
+
         const oldMass = batchViz.totalMassKg || 0;
         batchViz.totalMassKg = newTotalMassKg;
-        
-        // Update dot(s) - handle both single dot and array of dots
-        if (this.isMultiDot(batchViz.dot)) {
-            // Multi-dot: divide mass among all dots
-            const numDots = batchViz.dot.length;
-            const massPerDot = newTotalMassKg / numDots;
-            const newVisualSize = this.calculateMassVisualSize(massPerDot);
-            
-            for (const d of batchViz.dot) {
-                // Update geometry size
-                if (d.geometry) {
-                    d.geometry.dispose();
-                    d.geometry = new THREE.BoxGeometry(newVisualSize, newVisualSize, newVisualSize);
-                }
-                d.userData.massKg = massPerDot;
-            }
-        } else if (batchViz.dot.geometry) {
-            // Single dot - update its geometry with full mass
-            const newVisualSize = this.calculateMassVisualSize(newTotalMassKg);
-            batchViz.dot.geometry.dispose();
-            batchViz.dot.geometry = new THREE.BoxGeometry(newVisualSize, newVisualSize, newVisualSize);
-            batchViz.dot.userData.massKg = newTotalMassKg;
-        }
+
+        // DON'T resize existing dots based on total mass - they already have natural Pareto sizes
+        // Just update the tracked total mass. The dots were created with capped sizes (max 0.5)
+        // and should stay that size. Adding more mass to the chunk doesn't make individual rocks bigger.
+        //
+        // If we need more visual representation of increased mass, we should add more dots,
+        // not make existing ones larger. But for simplicity, we just track the mass without
+        // changing the visualization (dots are already reasonably sized).
         
         // Log the update for debugging
         if (newTotalMassKg > oldMass * 1.1) { // Only log if significant increase (>10%)
@@ -2276,7 +2418,15 @@ class TransferVisualization {
                     
                     if (dotProgress >= 0 && dotProgress <= 1) {
                         const position = this.calculatePositionOnTrajectory(viz, dotProgress);
-                        dot.position.copy(position);
+                        // Apply small offset so dots don't overlap exactly
+                        const offsetX = dot.userData.offsetX || 0;
+                        const offsetY = dot.userData.offsetY || 0;
+                        const offsetZ = dot.userData.offsetZ || 0;
+                        dot.position.set(
+                            position.x + offsetX,
+                            position.y + offsetY,
+                            position.z + offsetZ
+                        );
                         dot.visible = true;
                     } else {
                         dot.visible = false;
@@ -2285,7 +2435,15 @@ class TransferVisualization {
             } else {
                 if (progress >= 0 && progress <= 1) {
                     const position = this.calculatePositionOnTrajectory(viz, progress);
-                    viz.dot.position.copy(position);
+                    // Apply small offset if present (for Pareto-distributed dots)
+                    const offsetX = viz.dot.userData?.offsetX || 0;
+                    const offsetY = viz.dot.userData?.offsetY || 0;
+                    const offsetZ = viz.dot.userData?.offsetZ || 0;
+                    viz.dot.position.set(
+                        position.x + offsetX,
+                        position.y + offsetY,
+                        position.z + offsetZ
+                    );
                     viz.dot.visible = true;
                 }
             }

@@ -120,22 +120,25 @@ def complete_game():
     session.completed_at = datetime.utcnow()
     session.final_time = elapsed_time
     session.remaining_metal = total_metal_remaining
-    
-    # Create score
-    from backend.models import Score
-    score = Score(
-        user_id=session.user_id,
-        session_id=session.id,
-        completion_time=elapsed_time,
-        remaining_metal=total_metal_remaining
-    )
-    score.calculate_score_value()
-    
-    db.session.add(score)
+
+    score = None
+
+    # Only create score for authenticated users (guests can play but don't appear on leaderboard)
+    if session.user_id:
+        from backend.models import Score
+        score = Score(
+            user_id=session.user_id,
+            session_id=session.id,
+            completion_time=elapsed_time,
+            remaining_metal=total_metal_remaining
+        )
+        score.calculate_score_value()
+        db.session.add(score)
+
     db.session.commit()
-    
+
     return jsonify({
         'session': session.to_dict(),
-        'score': score.to_dict()
+        'score': score.to_dict() if score else None
     })
 

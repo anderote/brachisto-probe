@@ -1,0 +1,256 @@
+{
+  "description": "Local stellar neighborhood for interstellar expansion",
+  "unlock_tier": 17,
+  "unlock_propulsion_id": "pais_inertial_reduction",
+
+  "stars": [
+    {
+      "id": "sol",
+      "name": "Sol",
+      "type": "G2V",
+      "spectral_class": "G",
+      "luminosity_solar": 1.0,
+      "mass_solar": 1.0,
+      "radius_solar": 1.0,
+      "temperature_k": 5778,
+      "distance_ly": 0,
+      "position_ly": { "x": 0, "y": 0, "z": 0 },
+      "habitable_zone_au": [0.95, 1.37],
+      "is_starting_system": true,
+      "planets": ["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"],
+      "description": "Our home star. Yellow dwarf with 8 planets and extensive asteroid belts."
+    },
+    {
+      "id": "alpha_centauri",
+      "name": "Alpha Centauri",
+      "type": "G2V/K1V",
+      "spectral_class": "G",
+      "luminosity_solar": 1.519,
+      "mass_solar": 1.1,
+      "radius_solar": 1.227,
+      "temperature_k": 5790,
+      "distance_ly": 4.37,
+      "position_ly": { "x": -1.64, "y": -1.37, "z": -3.84 },
+      "habitable_zone_au": [1.17, 1.68],
+      "is_binary": true,
+      "companion_stars": ["Alpha Centauri B"],
+      "planets": ["proxima_b"],
+      "description": "Closest star system to Sol. Binary with a sun-like primary. Gateway to the stars."
+    },
+    {
+      "id": "sirius",
+      "name": "Sirius",
+      "type": "A1V",
+      "spectral_class": "A",
+      "luminosity_solar": 25.4,
+      "mass_solar": 2.02,
+      "radius_solar": 1.711,
+      "temperature_k": 9940,
+      "distance_ly": 8.60,
+      "position_ly": { "x": -1.61, "y": 8.07, "z": -2.47 },
+      "habitable_zone_au": [4.8, 6.9],
+      "is_binary": true,
+      "companion_stars": ["Sirius B"],
+      "planets": [],
+      "description": "Brightest star in night sky. Blazing white with 25x Sol's power. A major energy prize."
+    },
+    {
+      "id": "procyon",
+      "name": "Procyon",
+      "type": "F5IV-V",
+      "spectral_class": "F",
+      "luminosity_solar": 6.93,
+      "mass_solar": 1.50,
+      "radius_solar": 2.048,
+      "temperature_k": 6530,
+      "distance_ly": 11.46,
+      "position_ly": { "x": -4.77, "y": 10.31, "z": -0.98 },
+      "habitable_zone_au": [2.5, 3.6],
+      "is_binary": true,
+      "companion_stars": ["Procyon B"],
+      "planets": [],
+      "description": "Bright yellowish-white star. Binary with white dwarf. 7x Sol's luminosity."
+    },
+    {
+      "id": "altair",
+      "name": "Altair",
+      "type": "A7V",
+      "spectral_class": "A",
+      "luminosity_solar": 10.6,
+      "mass_solar": 1.79,
+      "radius_solar": 1.63,
+      "temperature_k": 7670,
+      "distance_ly": 16.73,
+      "position_ly": { "x": 7.68, "y": -14.69, "z": 2.57 },
+      "habitable_zone_au": [3.1, 4.4],
+      "is_rapid_rotator": true,
+      "planets": [],
+      "description": "Fast-spinning white star. Oblate shape from rapid rotation. 10x Sol's output."
+    },
+    {
+      "id": "vega",
+      "name": "Vega",
+      "type": "A0V",
+      "spectral_class": "A",
+      "luminosity_solar": 40.12,
+      "mass_solar": 2.135,
+      "radius_solar": 2.362,
+      "temperature_k": 9602,
+      "distance_ly": 25.04,
+      "position_ly": { "x": 0.54, "y": -6.11, "z": 24.28 },
+      "habitable_zone_au": [6.0, 8.7],
+      "has_debris_disk": true,
+      "planets": [],
+      "description": "Brilliant blue-white beacon. 40x Sol's luminosity! Former pole star. Massive energy potential."
+    },
+    {
+      "id": "fomalhaut",
+      "name": "Fomalhaut",
+      "type": "A3V",
+      "spectral_class": "A",
+      "luminosity_solar": 16.63,
+      "mass_solar": 1.92,
+      "radius_solar": 1.842,
+      "temperature_k": 8590,
+      "distance_ly": 25.13,
+      "position_ly": { "x": -21.22, "y": -12.14, "z": -5.21 },
+      "habitable_zone_au": [3.9, 5.6],
+      "has_debris_disk": true,
+      "planets": ["fomalhaut_b"],
+      "description": "Autumn star with stunning debris disk. 17x Sol's power. Known exoplanet."
+    },
+    {
+      "id": "delta_pavonis",
+      "name": "Delta Pavonis",
+      "type": "G8IV",
+      "spectral_class": "G",
+      "luminosity_solar": 1.22,
+      "mass_solar": 1.051,
+      "radius_solar": 1.22,
+      "temperature_k": 5604,
+      "distance_ly": 19.92,
+      "position_ly": { "x": 6.11, "y": 2.27, "z": -18.82 },
+      "habitable_zone_au": [1.05, 1.51],
+      "planets": [],
+      "description": "Sun-like star in southern sky. Slightly evolved. Earth-like habitable zone potential."
+    },
+    {
+      "id": "beta_hydri",
+      "name": "Beta Hydri",
+      "type": "G2IV",
+      "spectral_class": "G",
+      "luminosity_solar": 3.494,
+      "mass_solar": 1.08,
+      "radius_solar": 1.809,
+      "temperature_k": 5872,
+      "distance_ly": 24.33,
+      "position_ly": { "x": 7.43, "y": 11.51, "z": -20.12 },
+      "habitable_zone_au": [1.78, 2.55],
+      "planets": [],
+      "description": "Evolved sun-like star. 3.5x Sol's output. What our sun will become in 5 billion years."
+    }
+  ],
+
+  "dust_clouds": [
+    {
+      "id": "barnards_nebula",
+      "name": "Barnard's Nebula",
+      "type": "Harvestable Dust Cloud",
+      "spectral_class": "N",
+      "luminosity_solar": 0.1,
+      "distance_ly": 5.96,
+      "position_ly": { "x": -0.01, "y": -5.94, "z": 0.49 },
+      "is_dust_cloud": true,
+      "easy_dyson": true,
+      "description": "Collapsed red dwarf remnant. Dense metal-rich dust cloud. Easy to enclose for harvesting."
+    },
+    {
+      "id": "wolf_cloud",
+      "name": "Wolf Nebula",
+      "type": "Harvestable Dust Cloud",
+      "spectral_class": "N",
+      "luminosity_solar": 0.1,
+      "distance_ly": 7.86,
+      "position_ly": { "x": 1.93, "y": 7.51, "z": -1.09 },
+      "is_dust_cloud": true,
+      "easy_dyson": true,
+      "description": "Former flare star now dormant. Surrounding nebula rich in processed metals."
+    },
+    {
+      "id": "ross_cloud",
+      "name": "Ross Nebula",
+      "type": "Harvestable Dust Cloud",
+      "spectral_class": "N",
+      "luminosity_solar": 0.1,
+      "distance_ly": 9.69,
+      "position_ly": { "x": 1.90, "y": -8.85, "z": -3.56 },
+      "is_dust_cloud": true,
+      "easy_dyson": true,
+      "description": "Dense stellar remnant cloud. Minimal gravity well makes enclosure simple."
+    },
+    {
+      "id": "luyten_cloud",
+      "name": "Luyten Nebula",
+      "type": "Harvestable Dust Cloud",
+      "spectral_class": "N",
+      "luminosity_solar": 0.1,
+      "distance_ly": 8.73,
+      "position_ly": { "x": 5.05, "y": -5.46, "z": -4.36 },
+      "is_dust_cloud": true,
+      "easy_dyson": true,
+      "description": "Binary remnant system. Two overlapping dust shells. Double the harvesting potential."
+    }
+  ],
+
+  "generation_rules": {
+    "zone_scaling": {
+      "description": "How to scale zones for different star types",
+      "formula": "au_scale = sqrt(luminosity_solar)",
+      "zone_count_by_spectral": {
+        "A": 12,
+        "F": 10,
+        "G": 10,
+        "N": 3
+      }
+    },
+    "resource_scaling": {
+      "description": "Resource availability by star type",
+      "formula": "base_resources × mass_solar × age_factor",
+      "notes": "Brighter stars have more resource-rich systems"
+    },
+    "dyson_scaling": {
+      "description": "Dyson sphere potential by star type",
+      "formula": "power_output = luminosity_solar × 3.828e26 W",
+      "notes": "Vega yields 40× Sol's Dyson output"
+    },
+    "dust_cloud_rules": {
+      "description": "Dust clouds are easy Dyson targets",
+      "construction_multiplier": 0.1,
+      "notes": "10x faster to enclose than normal stars"
+    }
+  },
+
+  "travel_times": {
+    "description": "Transfer time calculation",
+    "formula": "time_years = distance_ly / effective_velocity_c",
+    "examples": {
+      "tier_17_0.01c_to_alpha_centauri": "437 years",
+      "tier_18_10c_to_vega": "2.5 years"
+    }
+  },
+
+  "colonization": {
+    "min_probes_per_colony_ship": 10000,
+    "initial_zone": "inner_system",
+    "seed_resources_kg": 1000000,
+    "description": "Colony ships carry probes and resources to bootstrap new system"
+  },
+
+  "total_dyson_potential": {
+    "description": "Sum of all Dyson sphere outputs",
+    "stars_total_luminosity": 106.4,
+    "dust_clouds_total_luminosity": 0.4,
+    "combined_watts": "4.09e28",
+    "kardashev_if_all_complete": "K 2.24"
+  }
+}
