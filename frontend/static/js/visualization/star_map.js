@@ -286,6 +286,7 @@ class StarMapVisualization {
             console.log('[StarMap] Creating galaxy UI...');
             this.createKardashevResourceBar();
             this.createGalaxyStatsPanel();
+            this.createGalacticCoordinatesDisplay();
 
             // Load saved strategy settings
             this.loadStrategySettings();
@@ -3728,7 +3729,6 @@ class StarMapVisualization {
 
         // Update displays
         this.updateTargetQueueDisplay();
-        this.showPOAInfo(poaId);  // Refresh info panel
 
         console.log(`[StarMap] Added ${poa.name} to target queue (position ${queueEntry.queuePosition})`);
 
@@ -7119,6 +7119,61 @@ class StarMapVisualization {
     }
 
     /**
+     * Create the galactic coordinates display (top right)
+     */
+    createGalacticCoordinatesDisplay() {
+        const coordsDiv = document.createElement('div');
+        coordsDiv.id = 'galactic-coordinates';
+        coordsDiv.className = 'galactic-coordinates';
+        coordsDiv.innerHTML = `
+            <div class="coord-label">GALACTIC COORDINATES</div>
+            <div class="coord-value">
+                <span id="coord-x">X: 0</span> ly<br>
+                <span id="coord-y">Y: 0</span> ly<br>
+                <span id="coord-z">Z: 0</span> ly
+            </div>
+        `;
+        this.container.appendChild(coordsDiv);
+    }
+
+    /**
+     * Update galactic coordinates display based on camera target position
+     */
+    updateGalacticCoordinates() {
+        if (!this.controls) return;
+
+        const coordX = document.getElementById('coord-x');
+        const coordY = document.getElementById('coord-y');
+        const coordZ = document.getElementById('coord-z');
+
+        if (!coordX || !coordY || !coordZ) return;
+
+        // Convert from scene units to light-years (1 unit = 326 ly)
+        // Sol is at approximately (50, 0, 50) in scene units
+        const solX = this.solPosition?.x || 50;
+        const solY = this.solPosition?.y || 0;
+        const solZ = this.solPosition?.z || 50;
+
+        const target = this.controls.target;
+        const lyPerUnit = 326;
+
+        // Calculate position relative to galactic center (0,0,0)
+        const x = Math.round(target.x * lyPerUnit);
+        const y = Math.round(target.y * lyPerUnit);
+        const z = Math.round(target.z * lyPerUnit);
+
+        // Format with thousands separators
+        const formatCoord = (val) => {
+            const sign = val >= 0 ? '+' : '';
+            return sign + val.toLocaleString();
+        };
+
+        coordX.textContent = `X: ${formatCoord(x)}`;
+        coordY.textContent = `Y: ${formatCoord(y)}`;
+        coordZ.textContent = `Z: ${formatCoord(z)}`;
+    }
+
+    /**
      * Show scale bar when zooming, then fade it out
      */
     showScaleBarOnZoom() {
@@ -10137,6 +10192,7 @@ class StarMapVisualization {
             this.updateGalaxyStats();
             this.updateColonizationStats();
             this.updateScaleBar();
+            this.updateGalacticCoordinates();
         }
 
         // Render
