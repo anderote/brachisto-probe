@@ -984,23 +984,25 @@ Object.assign(StarMapVisualization.prototype, {
     },
 
     /**
-     * Update POA label positions - fixed to markers like Sol label
+     * Update POA label positions - calculate from POA data directly
      */
     updatePOALabels() {
         if (!this.poaLabels || !this.camera) return;
 
         for (const labelData of this.poaLabels) {
-            const { element, poa } = labelData;
+            const { element, poa, localPosition } = labelData;
 
-            // Get world position directly from marker (like Sol label does)
-            const marker = this.poaMarkers?.find(m => m.userData?.poaId === poa.id);
-            if (!marker) {
+            // Skip hidden POAs (undiscovered franchises)
+            if (poa.hidden) {
                 element.style.display = 'none';
                 continue;
             }
 
-            const worldPos = new THREE.Vector3();
-            marker.getWorldPosition(worldPos);
+            // Calculate world position from local position
+            const worldPos = localPosition.clone();
+            if (this.colonizationGroup) {
+                worldPos.applyMatrix4(this.colonizationGroup.matrixWorld);
+            }
 
             // Project to screen coordinates
             const screenPos = worldPos.clone().project(this.camera);
