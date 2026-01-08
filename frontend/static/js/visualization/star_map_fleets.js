@@ -327,8 +327,7 @@ Object.assign(StarMapVisualization.prototype, {
                 '\n  colonies:', this.colonizedStars?.length,
                 '\n  uncolonized:', uncolonized,
                 '\n  fleets:', this.probeFleets?.length,
-                '\n  timeSpeed:', this.timeSpeedMultiplier,
-                '\n  buildExpandBalance:', this.buildExpandBalance);
+                '\n  timeSpeed:', this.timeSpeedMultiplier);
         } else if (this._expansionCallCount % 120 === 0) {
             const uncolonized = this.colonizationTargets?.filter(t => !t.colonized && t.status !== 'fleet_sent').length || 0;
             console.log('[StarMap] Expansion #' + this._expansionCallCount,
@@ -337,24 +336,6 @@ Object.assign(StarMapVisualization.prototype, {
                 'uncolonized:', uncolonized,
                 'fleets:', this.probeFleets?.length);
         }
-
-        // Get game state if available (optional - we can run without it)
-        const gameState = window.gameEngine?.getGameState?.();
-
-        const dysonProgress = gameState?.dyson_sphere?.progress || 0;
-        const probes = gameState?.derived?.totals?.total_probes || 0;
-
-        // Use expansion allocation slider (0-100)
-        // 0 = all resources to Dyson, 100 = all resources to expansion
-        const expansionRate = Math.max(0.1, this.buildExpandBalance / 100);  // Use buildExpandBalance directly, min 10%
-        const dysonRate = 1 - expansionRate;
-
-        // Base expansion rate - always allow some development even early game
-        let baseRate = 0.01;  // Base rate for early game
-        if (probes > 1e6) baseRate = 0.02;
-        if (probes > 1e9) baseRate = 0.05;
-        if (probes > 1e12) baseRate = 0.12;
-        if (dysonProgress > 0.1) baseRate += dysonProgress * 0.15;
 
         // DEVELOPMENT: Develop ALL incomplete stars each tick
         // Rate: 100% build = 50 years to complete, 50% build = 100 years
@@ -387,76 +368,36 @@ Object.assign(StarMapVisualization.prototype, {
             }
         }
 
-        // EXPANSION: Launch probes from all colonized stars
-        // Simple formula based on star development:
-        // - 100% production (100 units) = 4 probes/year
-        // - 50/50 split = 2 probes/year
-        // - 100% dyson (100 units) = 0.01 probes/year
+        // ========================================================================
+        // EXPANSION: Exponential random probe launches from each star
+        // Each star has a scheduled nextLaunchTime. When time reaches it, launch!
+        // Rate depends on production/dyson split:
+        // - 100% production = 1 probe/year
+        // - 100% dyson = 1 probe/100 years
+        // Sol is special: always 1 probe/year regardless of development
+        // ========================================================================
         if (this.probeFleets.length < 100) {
-            const speedMultiplier = (this.timeSpeedMultiplier || 1);
-            const gameYears = this.time / 365;
+            // Get hop distance from slider (for target selection)
+            const hopDistanceLY = this.getAverageHopDistanceLY();
+            const hopDistanceUnits = hopDistanceLY / 326;
 
-            // simulateExpansion is called every 60 frames (once per real second)
-            // Each frame advances daysPerFrame * speedMultiplier game days
-            // So 60 frames = 60 * daysPerFrame * speedMultiplier = 7 * speedMultiplier days (1 week at 1x)
-            const gameDaysPerCall = 60 * (this.daysPerFrame || 7/60) * speedMultiplier;
-            const gameYearsPerCall = gameDaysPerCall / 365;
+            for (let i = 0; i < this.colonizedStars.length; i++) {
+                const star = this.colonizedStars[i];
+                const isSol = (i === 0);  // First star is always Sol
 
-            // Empire bonuses from conquered POAs
-            const productionBonus = this.empireBonuses?.production || 1.0;
-            const launchBonus = this.empireBonuses?.launch_efficiency || 1.0;
-
-            // Expansion rate from slider (0-100, default 50)
-            const expansionRate = Math.max(0.1, this.buildExpandBalance / 100);
-
-            // DEBUG: Log expansion state periodically
-            if (!this._expansionDebugCount) this._expansionDebugCount = 0;
-            this._expansionDebugCount++;
-            if (this._expansionDebugCount <= 5 || this._expansionDebugCount % 120 === 0) {
-                const availableTargets = this.colonizationTargets?.filter(t => !t.colonized && t.status !== 'fleet_sent').length || 0;
-                console.log('[EXPANSION] year=' + gameYears.toFixed(2) +
-                    ' speed=' + speedMultiplier +
-                    ' colonies=' + this.colonizedStars?.length +
-                    ' targets=' + availableTargets +
-                    ' fleets=' + this.probeFleets?.length);
-            }
-
-            // Pure probabilistic launch system (exponential random variable)
-            // Each star has independent probability of launching each tick
-            // This spreads launches naturally and prevents bunching
-            for (const star of this.colonizedStars) {
-                const productionUnits = star.productionUnits || 0;
-                const dysonUnits = star.dysonUnits || 0;
-                const totalUnits = productionUnits + dysonUnits;
-
-                // Skip undeveloped stars
-                if (totalUnits < 5) continue;
-
-                // Probes per year based on development:
-                // Production: 100 units = 1.5 probes/year (Sol at 70 units ≈ 1 probe/year)
-                // Dyson: 100 units = 0.1 probes/year (minimal contribution)
-                const probesPerYear = (productionUnits / 100) * 1.5 * productionBonus +
-                                      (dysonUnits / 100) * 0.1 * launchBonus;
-
-                // Probability of launching this tick (exponential random variable)
-                // P(launch) = λ * dt where λ = probesPerYear, dt = gameYearsPerCall
-                const launchProbability = probesPerYear * gameYearsPerCall * expansionRate;
-
-                // DEBUG: Log Sol's launch probability on first few calls
-                if (star.index === 0 && this._expansionDebugCount <= 5) {
-                    console.log('[EXPANSION] Sol: prod=' + productionUnits + ' dyson=' + dysonUnits +
-                        ' probesPerYear=' + probesPerYear.toFixed(2) +
-                        ' launchProb=' + launchProbability.toFixed(4) +
-                        ' expansionRate=' + expansionRate.toFixed(2));
+                // Initialize nextLaunchTime if not set (for existing stars after code update)
+                if (star.nextLaunchTime === undefined) {
+                    star.nextLaunchTime = this.time + this.getExponentialDelay(star.productionUnits || 0, isSol);
                 }
 
-                // Roll for launch (pure probability, no accumulation)
-                if (Math.random() < launchProbability && this.probeFleets.length < 100) {
+                // Check if it's time to launch
+                if (this.time >= star.nextLaunchTime && this.probeFleets.length < 100) {
+                    // Find target within hop distance
                     const launchGalaxyX = this.solPosition.x + star.position.x;
                     const launchGalaxyY = this.solPosition.y + star.position.y;
                     const launchGalaxyZ = this.solPosition.z + star.position.z;
 
-                    const target = this.findNearestUncolonizedStar(launchGalaxyX, launchGalaxyY, launchGalaxyZ, 200);
+                    const target = this.findNearestUncolonizedStar(launchGalaxyX, launchGalaxyY, launchGalaxyZ, hopDistanceUnits * 2);
 
                     if (target) {
                         const targetX = target.x - this.solPosition.x;
@@ -474,22 +415,24 @@ Object.assign(StarMapVisualization.prototype, {
                             star.lastLaunchTime = this.time;
                             star.probesLaunched = (star.probesLaunched || 0) + 1;
                             this.recordProbeLaunch();
+
+                            // DEBUG: Log launches from Sol
+                            if (isSol && this._expansionCallCount <= 10) {
+                                console.log('[EXPANSION] Sol launched probe! nextLaunch in',
+                                    ((star.nextLaunchTime - this.time) / 365).toFixed(2), 'years');
+                            }
                         } else {
                             // Mark target to skip it
                             target.status = 'fleet_sent';
                             target.colonized = true;
                         }
                     }
+
+                    // Schedule next launch using exponential random delay
+                    star.nextLaunchTime = this.time + this.getExponentialDelay(star.productionUnits || 0, isSol);
                 }
             }
         }
-
-        // Sol is already fully developed - no need to sync from game state
-        // Its dysonUnits/productionUnits are set at initialization
-
-        // NOTE: Outpost wave system disabled - all probe launches now come from
-        // regular star-based production above, spread evenly across all colonies
-        // this.updateOutpostWaves();
 
         // Dynamic POA generation - refresh frontier targets as empire expands
         // Check every 5 new colonies

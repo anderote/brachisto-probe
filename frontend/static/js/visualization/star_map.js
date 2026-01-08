@@ -365,6 +365,8 @@ class StarMapVisualization {
         if (solStar) {
             solStar.dysonUnits = 30;       // Some for Dyson/research
             solStar.productionUnits = 70;  // Most for probe production
+            // Sol is special: always 1/year launch rate regardless of production
+            solStar.nextLaunchTime = this.time + this.getExponentialDelay(70, true);  // isSol=true
 
             // Update Sol's color to match its G-type star
             const colorHex = this.getStarColor(100, 50, 'G');
@@ -478,7 +480,8 @@ class StarMapVisualization {
             productionUnits: initialProduction, // 0-100: Probe production units
             addedTime: this.time,
             lastLaunchTime: this.time - 10,  // Slight head start on cooldown - ready to launch soon
-            probesLaunched: 0   // Total probes launched from this star
+            probesLaunched: 0,  // Total probes launched from this star
+            nextLaunchTime: this.time + this.getExponentialDelay(initialProduction)  // When next probe launches
         };
 
         this.colonizedStars.push(starData);
@@ -2139,11 +2142,12 @@ class StarMapVisualization {
      * @returns {Object} Travel data with travelTime and visualSpeedLYperYr
      */
     calculateFleetTravel(distanceLY, driveTier) {
-        const drive = this.getStarshipDrive(driveTier);
-
-        // Get effective velocity (ly/year) - reduced by 90% for better visual pacing
-        const baseVelocity = drive.effective_velocity_ly_per_year || 8700;
-        const velocityLYperYear = baseVelocity * 0.10;  // 10% of base speed
+        // Speed formula: Tier 1 = 100kly in 60 real minutes at 1x game speed
+        // At 1x speed: 60 real min = 3600 sec × 7 days/sec = 25,200 game days = 69.04 years
+        // Tier 1 speed = 100,000 ly / 69.04 years ≈ 1,449 ly/year
+        // Each tier doubles the speed
+        const tier1SpeedLYperYear = 100000 / 69.04;  // ~1,449 ly/year
+        const velocityLYperYear = tier1SpeedLYperYear * Math.pow(2, driveTier - 1);
 
         // Simple: time = distance / velocity
         const travelTime = distanceLY / velocityLYperYear;
@@ -2152,6 +2156,34 @@ class StarMapVisualization {
             travelTime: travelTime,
             visualSpeedLYperYr: velocityLYperYear
         };
+    }
+
+    /**
+     * Calculate exponential random delay for probe launch (in game days)
+     * Rate depends on production/dyson split:
+     * - 100% production (productionUnits=100) → rate = 1 probe/year
+     * - 100% dyson (productionUnits=0) → rate = 0.01 probe/year (1 per 100 years)
+     * @param {number} productionUnits - Production units (0-100)
+     * @param {boolean} isSol - Whether this is Sol (always 1/year rate)
+     * @returns {number} Delay in game days until next launch
+     */
+    getExponentialDelay(productionUnits, isSol = false) {
+        // Sol is special: always 1 probe/year regardless of development
+        let ratePerYear;
+        if (isSol) {
+            ratePerYear = 1.0;
+        } else {
+            // Rate = lerp(0.01, 1, productionUnits/100)
+            // 100% production = 1/year, 100% dyson = 0.01/year
+            ratePerYear = 0.01 + (productionUnits / 100) * 0.99;
+        }
+
+        // Exponential random: delay = -ln(random) / rate
+        // This gives memoryless inter-arrival times
+        const delayYears = -Math.log(Math.random()) / ratePerYear;
+        const delayDays = delayYears * 365;
+
+        return delayDays;
     }
 
     /**
@@ -2187,9 +2219,9 @@ class StarMapVisualization {
                 }
             }
 
-            // Spacebar - colonize selected POA (handle before other checks)
+            // Spacebar - colonize selected POA (only when galaxy view is active)
             // This needs to work even when buttons are focused in the POA panel
-            if (e.key === ' ' && this.selectedPOA) {
+            if (e.key === ' ' && this.isActive && this.selectedPOA) {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('[StarMap] Spacebar: adding POA to queue:', this.selectedPOA);
