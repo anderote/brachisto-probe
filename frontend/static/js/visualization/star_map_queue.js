@@ -94,13 +94,15 @@ Object.assign(StarMapVisualization.prototype, {
         // Add click handler to navigate camera to this location
         notification.style.cursor = 'pointer';
         notification.addEventListener('click', () => {
-            // Find the POA marker and navigate to it
-            const marker = this.poaMarkers?.find(m => m.userData?.poaId === poa.id);
-            if (marker) {
-                const worldPos = new THREE.Vector3();
-                marker.getWorldPosition(worldPos);
-                this.goToPositionAndFollow(worldPos, marker, 5);
+            // Navigate to POA position (calculate from POA data)
+            const localX = poa.position.x - this.solPosition.x;
+            const localY = poa.position.y - this.solPosition.y;
+            const localZ = poa.position.z - this.solPosition.z;
+            const worldPos = new THREE.Vector3(localX, localY, localZ);
+            if (this.colonizationGroup) {
+                worldPos.applyMatrix4(this.colonizationGroup.matrixWorld);
             }
+            this.goToPosition(worldPos, 5);
             // Dismiss notification on click
             notification.classList.remove('visible');
             setTimeout(() => notification.remove(), 300);
@@ -150,12 +152,15 @@ Object.assign(StarMapVisualization.prototype, {
         // Click to navigate
         notification.style.cursor = 'pointer';
         notification.addEventListener('click', () => {
-            const marker = this.poaMarkers?.find(m => m.userData?.poaId === poa.id);
-            if (marker) {
-                const worldPos = new THREE.Vector3();
-                marker.getWorldPosition(worldPos);
-                this.goToPositionAndFollow(worldPos, marker, 5);
+            // Navigate to POA position (calculate from POA data)
+            const localX = poa.position.x - this.solPosition.x;
+            const localY = poa.position.y - this.solPosition.y;
+            const localZ = poa.position.z - this.solPosition.z;
+            const worldPos = new THREE.Vector3(localX, localY, localZ);
+            if (this.colonizationGroup) {
+                worldPos.applyMatrix4(this.colonizationGroup.matrixWorld);
             }
+            this.goToPosition(worldPos, 5);
             notification.classList.remove('visible');
             setTimeout(() => notification.remove(), 300);
         });

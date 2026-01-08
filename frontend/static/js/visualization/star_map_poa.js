@@ -884,104 +884,15 @@ Object.assign(StarMapVisualization.prototype, {
     },
 
     /**
-     * Create visual markers for POAs (distinct from regular stars)
+     * Initialize POA markers array
+     * Note: We no longer create visual markers for all POAs upfront (performance optimization)
+     * Markers are only created when a POA is selected or added to colonization queue
+     * POA labels (created separately) handle visibility and interaction
      */
     createPOAMarkers() {
-        // Safety check - ensure colonizationGroup exists
-        if (!this.colonizationGroup) {
-            console.warn('[StarMap] createPOAMarkers called before colonizationGroup initialized');
-            return;
-        }
-
         this.poaMarkers = [];
-
-        // Color mapping for different object types
-        const typeColors = {
-            // Nearby stars use spectral colors
-            'G2V': 0xfff4ea, 'M4V': 0xffcc6f, 'M6V': 0xffaa44,
-            'A1V': 0xcad7ff, 'K2V': 0xffd2a1, 'F5V': 0xf8f7ff, 'G8V': 0xfff4ea,
-            // Deep sky objects - Nebulae
-            'nebula': 0xff66aa,             // Pink/magenta for nebulae
-            'supernova_remnant': 0x66ffff,  // Cyan for remnants
-            'planetary_nebula': 0x00ffaa,   // Teal for planetary nebulae
-            'halo_nebula': 0xaa88ff,        // Lavender for halo nebulae
-            // Star clusters
-            'open_cluster': 0xffffaa,       // Yellow for open clusters
-            'globular_cluster': 0xffaa66,   // Orange for globular clusters
-            'cluster': 0xffcc66,            // Golden for generic clusters
-            // Compact objects
-            'black_hole': 0x8844ff,         // Purple for black holes
-            'pulsar': 0x00ffff,             // Bright cyan for pulsars
-            'magnetar': 0xff00ff,           // Magenta for magnetars
-            // Stars
-            'supergiant': 0xff6644,         // Red-orange for supergiants
-            'hypergiant': 0xff4488,         // Pink for hypergiants
-            'giant': 0xffaa44,              // Orange for giants
-            'star': 0xffffff,               // White default
-            // Satellite galaxies and dwarfs
-            'satellite_galaxy': 0xaaddff,   // Light blue for dwarf galaxies
-            'dwarf_galaxy': 0x88ccff,       // Pale blue for dwarf galaxies
-            'galaxy': 0x99ddff,             // Light cyan for galaxies
-            // Galactic structures
-            'arm': 0x66ff99,                // Green for spiral arms
-            'dark_region': 0x666688,        // Dim grey-blue for dark regions
-            'gas_stream': 0x88ccff,         // Pale blue for gas streams
-            'high_velocity_cloud': 0x66aaff, // Blue for HVCs
-            'gamma_structure': 0xff8800,    // Orange for Fermi bubbles
-            'cavity': 0x444488,             // Dark blue for voids/bubbles
-            'spiral_arm': 0xccccff,         // Pale violet for spiral arms
-            'bar_structure': 0xffcc88,      // Golden for galactic bar
-            // Franchise systems (use POA's color property)
-            'franchise_system': 0x00ffff    // Default cyan, overridden by POA color
-        };
-
-        for (const poa of this.pointsOfAttraction) {
-            // Skip hidden franchise POAs (not yet discovered)
-            if (poa.hidden) continue;
-
-            // Use franchise color if available, otherwise type color
-            const color = poa.color || typeColors[poa.spectralType] || typeColors[poa.spectralType?.[0]] || 0xffffff;
-            const isDeepSky = poa.isDeepSky;
-
-            // Position relative to Sol
-            const posX = poa.position.x - this.solPosition.x;
-            const posY = poa.position.y - this.solPosition.y;
-            const posZ = poa.position.z - this.solPosition.z;
-
-            if (isDeepSky) {
-                // Deep sky objects get special markers based on type
-                this.createDeepSkyMarker(poa, color, posX, posY, posZ);
-            } else {
-                // Nearby stars get clickable sphere markers (much easier to click)
-                const sphereGeometry = new THREE.SphereGeometry(0.08, 12, 12);
-                const sphereMaterial = new THREE.MeshBasicMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: 0.6
-                });
-                const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-                sphere.position.set(posX, posY, posZ);
-                sphere.userData = { poaId: poa.id, poa: poa };
-                this.colonizationGroup.add(sphere);
-                this.poaMarkers.push(sphere);
-
-                // Ring around it for visibility
-                const ringGeometry = new THREE.RingGeometry(0.1, 0.12, 32);
-                const ringMaterial = new THREE.MeshBasicMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: 0.5,
-                    side: THREE.DoubleSide
-                });
-                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-                ring.position.set(posX, posY, posZ);
-                ring.userData = { poaId: poa.id, poa: poa };
-                this.colonizationGroup.add(ring);
-                this.poaMarkers.push(ring);
-            }
-        }
-
-        // Create floating labels for all POAs
+        // Labels are created separately and provide all needed interaction
+        // Queue markers are created when POAs are added to target queue
         this.createPOALabels();
     },
 
@@ -1047,10 +958,10 @@ Object.assign(StarMapVisualization.prototype, {
     },
 
     /**
-     * Refresh POA markers (rebuild after franchise discovery)
+     * Refresh POA markers and labels (rebuild after franchise discovery)
      */
     refreshPOAMarkers() {
-        // Remove existing markers
+        // Remove any existing markers (should be empty now, but cleanup just in case)
         if (this.poaMarkers) {
             for (const marker of this.poaMarkers) {
                 if (marker.parent) marker.parent.remove(marker);
@@ -1068,9 +979,8 @@ Object.assign(StarMapVisualization.prototype, {
             }
         }
 
-        // Recreate markers and labels
+        // Recreate (createPOAMarkers now handles labels too)
         this.createPOAMarkers();
-        this.createPOALabels();
     },
 
     /**
