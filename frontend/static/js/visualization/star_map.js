@@ -2510,15 +2510,49 @@ class StarMapVisualization {
                 break;
 
             case 'globular_cluster':
-                // Globular clusters: dense sphere of points
-                const globGeo = new THREE.SphereGeometry(0.12 * distScale, 8, 8);
-                const globMat = new THREE.MeshBasicMaterial({
+                // Globular clusters: dense cluster of dots
+                const globGeo = new THREE.BufferGeometry();
+                const globPoints = [];
+                for (let i = 0; i < 25; i++) {
+                    const r = Math.random() * 0.12 * distScale;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    globPoints.push(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta),
+                        r * Math.cos(phi)
+                    );
+                }
+                globGeo.setAttribute('position', new THREE.Float32BufferAttribute(globPoints, 3));
+                const globMat = new THREE.PointsMaterial({
                     color: color,
+                    size: 0.025 * distScale,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: true
+                    opacity: 0.9
                 });
-                marker = new THREE.Mesh(globGeo, globMat);
+                marker = new THREE.Points(globGeo, globMat);
+                break;
+
+            case 'halo_nebula':
+                // Halo nebulae: spread out cluster of dots
+                const haloGeo = new THREE.BufferGeometry();
+                const haloPoints = [];
+                for (let i = 0; i < 20; i++) {
+                    const spread = 0.15 * distScale;
+                    haloPoints.push(
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread
+                    );
+                }
+                haloGeo.setAttribute('position', new THREE.Float32BufferAttribute(haloPoints, 3));
+                const haloMat = new THREE.PointsMaterial({
+                    color: color,
+                    size: 0.03 * distScale,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                marker = new THREE.Points(haloGeo, haloMat);
                 break;
 
             case 'black_hole':
@@ -2595,11 +2629,10 @@ class StarMapVisualization {
         this.poaMarkers.push(marker);
 
         // === ALWAYS ADD A CENTRAL STAR AT EXACT POA POSITION ===
-        // This ensures every POA has a visible, clickable star
         const starSize = Math.max(0.04, 0.06 * distScale);
         const starGeo = new THREE.SphereGeometry(starSize, 8, 8);
         const starMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff,  // Bright white core
+            color: 0xffffff,
             transparent: true,
             opacity: 0.95
         });
@@ -2608,21 +2641,6 @@ class StarMapVisualization {
         centralStar.userData = { poaId: poa.id, poa: poa, isDeepSky: true, isCentralStar: true };
         this.colonizationGroup.add(centralStar);
         this.poaMarkers.push(centralStar);
-
-        // Add colored glow around the central star
-        const glowSize = starSize * 2.5;
-        const glowGeo = new THREE.SphereGeometry(glowSize, 8, 8);
-        const glowMat = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.35,
-            depthWrite: false
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.position.set(x, y, z);
-        glow.userData = { poaId: poa.id, poa: poa };
-        this.colonizationGroup.add(glow);
-        this.poaMarkers.push(glow);
 
         // Add a subtle label ring around the marker
         const labelRingGeo = new THREE.RingGeometry(0.18 * distScale, 0.2 * distScale, 32);
@@ -10346,9 +10364,11 @@ class StarMapVisualization {
             const key = e.key.toLowerCase();
             if (['w', 'a', 's', 'd'].includes(key)) {
                 this.keysPressed.add(key);
-                // Break camera focus when WASD is pressed
+                // Break camera focus when WASD is pressed - detach from any followed target
                 if (this.isActive) {
                     this.focusedOnSol = false;
+                    this.followTarget = null;  // Stop following any mesh
+                    this.cameraAnimating = false;  // Cancel any camera animation
                 }
             }
 
@@ -10409,10 +10429,11 @@ class StarMapVisualization {
                 this.goToSol();
             }
 
-            // Spacebar - colonize selected POA
+            // Spacebar - colonize selected POA and close panel
             if (e.key === ' ' && this.selectedPOA) {
                 e.preventDefault();
                 this.addPOAToQueueAndRefresh(this.selectedPOA);
+                this.closePOAInfo();
             }
 
             // Left/Right arrows - cycle through fleets in fleet view
