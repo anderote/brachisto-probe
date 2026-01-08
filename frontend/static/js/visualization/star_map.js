@@ -63,6 +63,7 @@ class StarMapVisualization {
 
         // POA (Points of Attraction) System
         this.pointsOfAttraction = [];       // Named stars with bonuses
+        this.selectedPOA = null;            // Currently selected POA (for spacebar shortcut)
         this.empireBonuses = {              // Empire-wide bonuses from colonized POAs
             production: 1.0,                // Multiplier for production rate
             dyson_efficiency: 1.0,          // Multiplier for Dyson energy
@@ -736,8 +737,8 @@ class StarMapVisualization {
 
         console.log(`[StarMap] buildColonizationTargets: ${totalStars} stars from galaxy`);
 
-        // Minimum distance from Sol (10 ly = 10/326 units)
-        const minDistFromSol = 10 / 326;
+        // Minimum distance from Sol (100 ly = 100/326 units)
+        const minDistFromSol = 100 / 326;
         const solX = this.solPosition?.x || 0;
         const solY = this.solPosition?.y || 0;
         const solZ = this.solPosition?.z || 0;
@@ -762,7 +763,7 @@ class StarMapVisualization {
                 continue;
             }
 
-            // Skip stars too close to Sol (within 10 ly)
+            // Skip stars too close to Sol (within 100 ly)
             const dx = x - solX;
             const dy = y - solY;
             const dz = z - solZ;
@@ -1406,9 +1407,9 @@ class StarMapVisualization {
      */
     initializeNearbyPOAs() {
         // Minimum distance from Sol - Sol should be isolated
-        const minDistanceLY = 10;
+        const minDistanceLY = 100;
 
-        // Nearby stars - only those beyond 10 ly from Sol
+        // Nearby stars - only those beyond 100 ly from Sol
         const nearbyStars = [
             {
                 id: 'tau_ceti',
@@ -3694,7 +3695,7 @@ class StarMapVisualization {
                     <span class="poa-name">${poa.name}</span>
                     <span class="poa-type">${poa.spectralType || poa.type || ''}</span>
                 </div>
-                <button class="poa-close" onclick="window.starMapVisualization?.closePOAInfo()">×</button>
+                <button class="poa-close" tabindex="-1" onclick="window.starMapVisualization?.closePOAInfo()">×</button>
             </div>
             <div class="poa-body">
                 <div class="poa-stats">
@@ -7151,13 +7152,10 @@ class StarMapVisualization {
         hotkeysBar.innerHTML = `
             <span class="hotkey"><kbd>WASD</kbd> Fly</span>
             <span class="hotkey"><kbd>F</kbd> Fleet</span>
-            <span class="hotkey"><kbd>H</kbd> Home</span>
+            <span class="hotkey"><kbd>1</kbd> Sol</span>
             <span class="hotkey"><kbd>O</kbd> Strategy</span>
-            <span class="hotkey"><kbd>P</kbd> Debug</span>
             <span class="hotkey"><kbd>L</kbd> Census</span>
             <span class="hotkey"><kbd>K</kbd> Drives</span>
-            <span class="hotkey"><kbd>Tab</kbd> Lines</span>
-            <span class="hotkey"><kbd>Space</kbd> Colonize</span>
         `;
         this.container.appendChild(hotkeysBar);
 
@@ -9013,24 +9011,21 @@ class StarMapVisualization {
      * @param {string} panelId - 'drive-research', 'stellar-census', 'strategy', 'policy', or 'research'
      */
     togglePanel(panelId) {
-        // Map panel IDs to their DOM element IDs
-        const panelDomIds = {
-            'drive-research': 'drive-research-panel',
-            'stellar-census': 'stellar-census-panel',
+        // Map panel IDs to their container DOM element IDs
+        const containerIds = {
+            'drive-research': 'drive-panel-container',
+            'stellar-census': 'census-panel-container',
             'strategy': 'strategy-panel',
-            'policy': 'policy-panel',
-            'research': 'research-panel'
+            'policy': 'policy-panel-container',
+            'research': 'research-panel-container'
         };
 
-        // Get DOM element for this panel
-        const domId = panelDomIds[panelId] || panelId;
-        const panelElement = document.getElementById(domId);
+        // Get container element for this panel
+        const containerId = containerIds[panelId];
+        const containerElement = containerId ? document.getElementById(containerId) : null;
 
-        // Also check legacy panelContainers
-        const legacyPanel = this.panelContainers[panelId];
-
-        // Hide all known panels first
-        Object.values(panelDomIds).forEach(id => {
+        // Hide all panel containers first
+        Object.values(containerIds).forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
@@ -9045,17 +9040,13 @@ class StarMapVisualization {
             return;
         }
 
-        // Show the requested panel
-        if (panelElement) {
-            panelElement.style.display = 'block';
+        // Show the requested panel container
+        if (containerElement) {
+            containerElement.style.display = 'block';
             this.activePanelId = panelId;
-            console.log('[StarMap] Opened panel:', panelId, 'element:', domId);
-        } else if (legacyPanel) {
-            legacyPanel.style.display = 'block';
-            this.activePanelId = panelId;
-            console.log('[StarMap] Opened legacy panel:', panelId);
+            console.log('[StarMap] Opened panel:', panelId, 'container:', containerId);
         } else {
-            console.warn('[StarMap] Panel not found:', panelId);
+            console.warn('[StarMap] Panel container not found:', panelId, containerId);
         }
 
         // Update panel content when opening
@@ -9063,6 +9054,10 @@ class StarMapVisualization {
             this.updatePolicyPanel();
         } else if (panelId === 'research') {
             this.updateResearchPanel();
+        } else if (panelId === 'stellar-census' && this.stellarCensusPanel) {
+            this.stellarCensusPanel.update(this.galaxySimulation);
+        } else if (panelId === 'drive-research' && this.driveResearchPanel) {
+            this.driveResearchPanel.update(this.galaxySimulation);
         }
     }
 
@@ -10500,6 +10495,16 @@ class StarMapVisualization {
                 }
             }
 
+            // Spacebar - colonize selected POA (handle before other checks)
+            // This needs to work even when buttons are focused in the POA panel
+            if (e.key === ' ' && this.selectedPOA) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[StarMap] Spacebar: adding POA to queue:', this.selectedPOA);
+                this.addPOAToQueueAndRefresh(this.selectedPOA);
+                return;
+            }
+
             // Only handle shortcuts when galaxy view is active
             if (!this.isActive) return;
 
@@ -10525,18 +10530,10 @@ class StarMapVisualization {
                 this.toggleFleetView();
             }
 
-            // O key - Strategy panel
+            // O key - Strategy panel (with H-R diagram and histogram)
             if (e.key === 'o' || e.key === 'O') {
                 e.preventDefault();
-                this.togglePanel('strategy');
-            }
-
-            // P key - Debug panel
-            if (e.key === 'p' || e.key === 'P') {
-                e.preventDefault();
-                if (window.debugPanel) {
-                    window.debugPanel.toggle();
-                }
+                this.toggleStrategyPanel();
             }
 
             // L key - Stellar Census panel
@@ -10551,16 +10548,10 @@ class StarMapVisualization {
                 this.togglePanel('drive-research');
             }
 
-            // H key - go to Sol (home)
-            if (e.key === 'h' || e.key === 'H') {
+            // 1 key - go to Sol (home)
+            if (e.key === '1') {
                 e.preventDefault();
                 this.goToSol();
-            }
-
-            // Spacebar - colonize selected POA (addPOAToQueueAndRefresh also closes panel)
-            if (e.key === ' ' && this.selectedPOA) {
-                e.preventDefault();
-                this.addPOAToQueueAndRefresh(this.selectedPOA);
             }
 
             // Left/Right arrows - cycle through fleets in fleet view

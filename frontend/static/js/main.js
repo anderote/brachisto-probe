@@ -2036,8 +2036,13 @@ class App {
     animate() {
         requestAnimationFrame(() => this.animate());
 
+        // Skip Sol system animation when galaxy view is active
+        if (this.starMapVisualization?.isActive) {
+            return;
+        }
+
         const baseDeltaTime = 0.016; // ~60fps base
-        
+
         // Get time speed from game engine to make planets move faster
         const timeSpeed = (typeof window.gameEngine !== 'undefined' && window.gameEngine.timeSpeed) ? window.gameEngine.timeSpeed : 1;
         const deltaTime = baseDeltaTime * timeSpeed;
@@ -2053,13 +2058,6 @@ class App {
             this.solarSystem.update(deltaTime);
         }
 
-        // Probe visualization removed - focusing on mechanics first
-        // Probe visualization removed - focusing on mechanics first
-        // Update probe visualization orbital positions
-        // if (this.probeViz) {
-        //     this.probeViz.update(deltaTime);
-        // }
-
         // Update Dyson sphere visualization orbital positions
         if (this.dysonViz) {
             this.dysonViz.update(deltaTime);
@@ -2070,7 +2068,7 @@ class App {
             const gameState = window.gameEngine?.getGameState();
             this.structuresViz.update(baseDeltaTime, gameState); // Pass gameState for depletion checking
         }
-        
+
         // Animate transfer dots smoothly every frame (60fps)
         // This provides smooth motion between game state updates
         if (this.transferViz) {
