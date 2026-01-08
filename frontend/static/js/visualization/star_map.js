@@ -1588,129 +1588,129 @@ class StarMapVisualization {
               bonusType: 'production', bonusValue: 0.0045, bonusDescription: 'Distant Globular: +0.45% Production', icon: '✸',
               farSide: true, yOffset: 50000 },
 
-            // === HALO GLOBULAR CLUSTERS (real NGC/Palomar objects above/below disc) ===
+            // === HALO GLOBULAR CLUSTERS (real NGC/Palomar objects - EXOTIC BONUSES) ===
             { id: 'ngc_2419', name: 'NGC 2419 (Intergalactic Wanderer)', type: 'globular_cluster', distance: 275000,
-              bonusType: 'frontier_beacon', bonusValue: 40, bonusDescription: 'Distant Wanderer: Reveals 40 POAs', icon: '✸',
+              bonusType: 'wormhole_network', bonusValue: 3, bonusDescription: 'Intergalactic Wanderer: +3 Wormhole Connections', icon: '⬡',
               yOffset: 50000 },
             { id: 'ngc_5466', name: 'NGC 5466', type: 'globular_cluster', distance: 51800,
-              bonusType: 'research', bonusValue: 0.25, bonusDescription: 'Sparse Halo Cluster: +0.25 Research', icon: '✸',
+              bonusType: 'probe_velocity', bonusValue: 0.15, bonusDescription: 'Tidal Streamers: +15% Probe Speed', icon: '⚡',
               yOffset: 42000 },
             { id: 'ngc_6229', name: 'NGC 6229', type: 'globular_cluster', distance: 99400,
-              bonusType: 'production', bonusValue: 0.0032, bonusDescription: 'Dense Core: +0.32% Production', icon: '✸',
+              bonusType: 'stellar_forge', bonusValue: 0.08, bonusDescription: 'Ancient Forge: +8% All Bonuses Multiplier', icon: '⚙',
               yOffset: 35000 },
             { id: 'ngc_7006', name: 'NGC 7006', type: 'globular_cluster', distance: 135000,
-              bonusType: 'dyson_efficiency', bonusValue: 0.0028, bonusDescription: 'Outer Halo Jewel: +0.28% Dyson', icon: '✸',
+              bonusType: 'expansion_radius', bonusValue: 0.20, bonusDescription: 'Outer Sentinel: +20% Probe Range', icon: '◎',
               yOffset: -38000 },
             { id: 'pal_3', name: 'Palomar 3', type: 'globular_cluster', distance: 302000,
-              bonusType: 'frontier_beacon', bonusValue: 35, bonusDescription: 'Ghostly Cluster: Reveals 35 POAs', icon: '✸',
+              bonusType: 'time_dilation', bonusValue: 0.10, bonusDescription: 'Temporal Anomaly: +10% Time Flow', icon: '⏱',
               yOffset: -52000 },
             { id: 'pal_4', name: 'Palomar 4', type: 'globular_cluster', distance: 357000,
-              bonusType: 'research', bonusValue: 0.35, bonusDescription: 'Extreme Halo: +0.35 Research', icon: '✸',
+              bonusType: 'exotic_matter', bonusValue: 100, bonusDescription: 'Exotic Matter Cache: +100 Exotic Matter', icon: '✧',
               yOffset: 60000 },
             { id: 'pal_15', name: 'Palomar 15', type: 'globular_cluster', distance: 145000,
-              bonusType: 'production', bonusValue: 0.0030, bonusDescription: 'Faint Outlier: +0.3% Production', icon: '✸',
+              bonusType: 'auto_develop', bonusValue: 0.05, bonusDescription: 'Self-Replicators: +5% Auto-Develop Chance', icon: '∞',
               yOffset: -45000 },
             { id: 'am_1', name: 'AM 1 (Madore\'s Object)', type: 'globular_cluster', distance: 398000,
-              bonusType: 'frontier_beacon', bonusValue: 50, bonusDescription: 'Edge of Galaxy: Reveals 50 POAs', icon: '✸',
+              bonusType: 'all_bonuses', bonusValue: 0.15, bonusDescription: 'ULTIMATE: +15% ALL Empire Bonuses!', icon: '★',
               yOffset: -70000 },
             { id: 'eridanus_cluster', name: 'Eridanus Cluster', type: 'globular_cluster', distance: 295000,
-              bonusType: 'research', bonusValue: 0.38, bonusDescription: 'River\'s End: +0.38 Research', icon: '✸',
+              bonusType: 'dark_energy_tap', bonusValue: 50, bonusDescription: 'Dark Energy Nexus: +50 Energy/tick', icon: '◈',
               yOffset: 55000 },
             { id: 'pyxis_globular', name: 'Pyxis Globular', type: 'globular_cluster', distance: 130000,
-              bonusType: 'production', bonusValue: 0.0035, bonusDescription: 'Compass Cluster: +0.35% Production', icon: '✸',
+              bonusType: 'wormhole_network', bonusValue: 2, bonusDescription: 'Navigation Beacon: +2 Wormhole Links', icon: '⬡',
               yOffset: -30000 },
             { id: 'ko_1', name: 'Ko 1 (Koposov 1)', type: 'globular_cluster', distance: 160000,
-              bonusType: 'research', bonusValue: 0.28, bonusDescription: 'Faint Discovery: +0.28 Research', icon: '✸',
+              bonusType: 'probe_velocity', bonusValue: 0.12, bonusDescription: 'Velocity Amplifier: +12% Probe Speed', icon: '⚡',
               yOffset: 48000 },
             { id: 'ko_2', name: 'Ko 2 (Koposov 2)', type: 'globular_cluster', distance: 115000,
-              bonusType: 'production', bonusValue: 0.0025, bonusDescription: 'Tidal Remnant: +0.25% Production', icon: '✸',
+              bonusType: 'auto_develop', bonusValue: 0.03, bonusDescription: 'Tidal Nursery: +3% Auto-Develop', icon: '∞',
               yOffset: -40000 },
 
-            // === MORE HALO NEBULAE (above galactic disc - north) ===
+            // === NORTHERN HALO NEBULAE (exotic bonuses for distant objects) ===
             { id: 'northern_crown_nebula', name: 'Northern Crown Nebula', type: 'halo_nebula', distance: 32000,
-              bonusType: 'research', bonusValue: 0.18, bonusDescription: 'Corona Borealis: +0.18 Research', icon: '☁',
+              bonusType: 'probe_velocity', bonusValue: 0.08, bonusDescription: 'Crown Boost: +8% Probe Speed', icon: '⚡',
               yOffset: 20000 },
             { id: 'apex_cloud', name: 'Apex Cloud', type: 'halo_nebula', distance: 42000,
-              bonusType: 'production', bonusValue: 0.0018, bonusDescription: 'Stellar Apex: +0.18% Production', icon: '☁',
+              bonusType: 'expansion_radius', bonusValue: 0.10, bonusDescription: 'Zenith View: +10% Probe Range', icon: '◎',
               yOffset: 28000 },
             { id: 'high_chimneys', name: 'High Chimneys', type: 'halo_nebula', distance: 38000,
-              bonusType: 'dyson_efficiency', bonusValue: 0.0014, bonusDescription: 'Galactic Vents: +0.14% Dyson', icon: '☁',
+              bonusType: 'dark_energy_tap', bonusValue: 20, bonusDescription: 'Energy Vents: +20 Energy/tick', icon: '◈',
               yOffset: 22000 },
             { id: 'boreal_drift', name: 'Boreal Drift', type: 'halo_nebula', distance: 48000,
-              bonusType: 'research', bonusValue: 0.24, bonusDescription: 'Northern Wisps: +0.24 Research', icon: '☁',
+              bonusType: 'time_dilation', bonusValue: 0.05, bonusDescription: 'Temporal Current: +5% Time Flow', icon: '⏱',
               yOffset: 35000 },
             { id: 'celestial_fountain', name: 'Celestial Fountain', type: 'halo_nebula', distance: 52000,
-              bonusType: 'production', bonusValue: 0.0022, bonusDescription: 'Upwelling Gas: +0.22% Production', icon: '☁',
+              bonusType: 'exotic_matter', bonusValue: 30, bonusDescription: 'Exotic Springs: +30 Exotic Matter', icon: '✧',
               yOffset: 38000 },
             { id: 'circumpolar_veil', name: 'Circumpolar Veil', type: 'halo_nebula', distance: 58000,
-              bonusType: 'frontier_beacon', bonusValue: 20, bonusDescription: 'Polar Shroud: Reveals 20 POAs', icon: '☁',
+              bonusType: 'stellar_forge', bonusValue: 0.05, bonusDescription: 'Polar Forge: +5% All Bonuses', icon: '⚙',
               yOffset: 45000 },
             { id: 'hyperboreal_mist', name: 'Hyperboreal Mist', type: 'halo_nebula', distance: 65000,
-              bonusType: 'research', bonusValue: 0.32, bonusDescription: 'Far North Fog: +0.32 Research', icon: '☁',
+              bonusType: 'wormhole_network', bonusValue: 1, bonusDescription: 'Hyperspace Rift: +1 Wormhole Link', icon: '⬡',
               yOffset: 52000 },
             { id: 'north_galactic_plume', name: 'North Galactic Plume', type: 'halo_nebula', distance: 72000,
-              bonusType: 'production', bonusValue: 0.0028, bonusDescription: 'Rising Column: +0.28% Production', icon: '☁',
+              bonusType: 'auto_develop', bonusValue: 0.04, bonusDescription: 'Genesis Plume: +4% Auto-Develop', icon: '∞',
               yOffset: 58000 },
             { id: 'aurora_superior', name: 'Aurora Superior', type: 'halo_nebula', distance: 80000,
-              bonusType: 'dyson_efficiency', bonusValue: 0.0020, bonusDescription: 'Upper Glow: +0.2% Dyson', icon: '☁',
+              bonusType: 'all_bonuses', bonusValue: 0.08, bonusDescription: 'Superior Light: +8% ALL Bonuses!', icon: '★',
               yOffset: 65000 },
 
-            // === MORE HALO NEBULAE (below galactic disc - south) ===
+            // === SOUTHERN HALO NEBULAE (exotic bonuses) ===
             { id: 'southern_abyss', name: 'Southern Abyss', type: 'halo_nebula', distance: 30000,
-              bonusType: 'research', bonusValue: 0.16, bonusDescription: 'Deep South Cloud: +0.16 Research', icon: '☁',
+              bonusType: 'dark_energy_tap', bonusValue: 25, bonusDescription: 'Void Energy: +25 Energy/tick', icon: '◈',
               yOffset: -18000 },
             { id: 'keel_cloud', name: 'Keel Cloud', type: 'halo_nebula', distance: 36000,
-              bonusType: 'production', bonusValue: 0.0016, bonusDescription: 'Carina Region: +0.16% Production', icon: '☁',
+              bonusType: 'probe_velocity', bonusValue: 0.10, bonusDescription: 'Keel Winds: +10% Probe Speed', icon: '⚡',
               yOffset: -22000 },
             { id: 'antipodal_drift', name: 'Antipodal Drift', type: 'halo_nebula', distance: 44000,
-              bonusType: 'dyson_efficiency', bonusValue: 0.0016, bonusDescription: 'Opposite Wisps: +0.16% Dyson', icon: '☁',
+              bonusType: 'expansion_radius', bonusValue: 0.12, bonusDescription: 'Far Reach: +12% Probe Range', icon: '◎',
               yOffset: -28000 },
             { id: 'austral_veil', name: 'Austral Veil', type: 'halo_nebula', distance: 50000,
-              bonusType: 'research', bonusValue: 0.26, bonusDescription: 'Southern Curtain: +0.26 Research', icon: '☁',
+              bonusType: 'time_dilation', bonusValue: 0.06, bonusDescription: 'Southern Flux: +6% Time Flow', icon: '⏱',
               yOffset: -35000 },
             { id: 'sub_galactic_plume', name: 'Sub-Galactic Plume', type: 'halo_nebula', distance: 56000,
-              bonusType: 'production', bonusValue: 0.0024, bonusDescription: 'Descending Column: +0.24% Production', icon: '☁',
+              bonusType: 'exotic_matter', bonusValue: 40, bonusDescription: 'Exotic Depths: +40 Exotic Matter', icon: '✧',
               yOffset: -42000 },
             { id: 'magellanic_bridge_remnant', name: 'Magellanic Bridge Remnant', type: 'halo_nebula', distance: 62000,
-              bonusType: 'frontier_beacon', bonusValue: 22, bonusDescription: 'Tidal Stream: Reveals 22 POAs', icon: '☁',
+              bonusType: 'wormhole_network', bonusValue: 2, bonusDescription: 'Bridge Fragment: +2 Wormhole Links', icon: '⬡',
               yOffset: -48000 },
             { id: 'southern_chimney', name: 'Southern Chimney', type: 'halo_nebula', distance: 68000,
-              bonusType: 'research', bonusValue: 0.28, bonusDescription: 'Galactic Vent: +0.28 Research', icon: '☁',
+              bonusType: 'stellar_forge', bonusValue: 0.06, bonusDescription: 'Deep Forge: +6% All Bonuses', icon: '⚙',
               yOffset: -55000 },
             { id: 'deep_south_fog', name: 'Deep South Fog', type: 'halo_nebula', distance: 75000,
-              bonusType: 'production', bonusValue: 0.0026, bonusDescription: 'Furthest Mist: +0.26% Production', icon: '☁',
+              bonusType: 'auto_develop', bonusValue: 0.05, bonusDescription: 'Genesis Fog: +5% Auto-Develop', icon: '∞',
               yOffset: -62000 },
             { id: 'aurora_inferior', name: 'Aurora Inferior', type: 'halo_nebula', distance: 82000,
-              bonusType: 'dyson_efficiency', bonusValue: 0.0022, bonusDescription: 'Lower Glow: +0.22% Dyson', icon: '☁',
+              bonusType: 'all_bonuses', bonusValue: 0.10, bonusDescription: 'Inferior Light: +10% ALL Bonuses!', icon: '★',
               yOffset: -68000 },
 
-            // === SCATTERED HALO NEBULAE (mixed positions) ===
+            // === SCATTERED HALO OBJECTS (special exotic bonuses) ===
             { id: 'galactic_corona_east', name: 'Galactic Corona East', type: 'halo_nebula', distance: 40000,
-              bonusType: 'research', bonusValue: 0.20, bonusDescription: 'Eastern Halo: +0.2 Research', icon: '☁',
+              bonusType: 'expansion_radius', bonusValue: 0.08, bonusDescription: 'Eastern Reach: +8% Probe Range', icon: '◎',
               yOffset: 18000 },
             { id: 'galactic_corona_west', name: 'Galactic Corona West', type: 'halo_nebula', distance: 42000,
-              bonusType: 'research', bonusValue: 0.20, bonusDescription: 'Western Halo: +0.2 Research', icon: '☁',
+              bonusType: 'probe_velocity', bonusValue: 0.08, bonusDescription: 'Western Winds: +8% Probe Speed', icon: '⚡',
               yOffset: -16000 },
             { id: 'tidal_stream_alpha', name: 'Tidal Stream Alpha', type: 'halo_nebula', distance: 55000,
-              bonusType: 'production', bonusValue: 0.0020, bonusDescription: 'Stripped Gas: +0.2% Production', icon: '☁',
+              bonusType: 'time_dilation', bonusValue: 0.07, bonusDescription: 'Time Stream A: +7% Time Flow', icon: '⏱',
               yOffset: 30000 },
             { id: 'tidal_stream_beta', name: 'Tidal Stream Beta', type: 'halo_nebula', distance: 58000,
-              bonusType: 'production', bonusValue: 0.0020, bonusDescription: 'Merger Remnant: +0.2% Production', icon: '☁',
+              bonusType: 'time_dilation', bonusValue: 0.07, bonusDescription: 'Time Stream B: +7% Time Flow', icon: '⏱',
               yOffset: -32000 },
             { id: 'hvc_complex_a', name: 'High Velocity Cloud A', type: 'halo_nebula', distance: 45000,
-              bonusType: 'frontier_beacon', bonusValue: 18, bonusDescription: 'Infalling Gas: Reveals 18 POAs', icon: '☁',
+              bonusType: 'probe_velocity', bonusValue: 0.15, bonusDescription: 'HVC Boost A: +15% Probe Speed', icon: '⚡',
               yOffset: 25000 },
             { id: 'hvc_complex_c', name: 'High Velocity Cloud C', type: 'halo_nebula', distance: 48000,
-              bonusType: 'frontier_beacon', bonusValue: 18, bonusDescription: 'Halo Stream: Reveals 18 POAs', icon: '☁',
+              bonusType: 'probe_velocity', bonusValue: 0.15, bonusDescription: 'HVC Boost C: +15% Probe Speed', icon: '⚡',
               yOffset: -27000 },
             { id: 'smith_cloud', name: 'Smith Cloud', type: 'halo_nebula', distance: 40000,
-              bonusType: 'production', bonusValue: 0.0025, bonusDescription: 'Incoming Gas: +0.25% Production', icon: '☁',
+              bonusType: 'exotic_matter', bonusValue: 50, bonusDescription: 'Exotic Infall: +50 Exotic Matter', icon: '✧',
               yOffset: -8000 },
             { id: 'fermi_bubbles_north', name: 'Fermi Bubble North', type: 'halo_nebula', distance: 25000,
-              bonusType: 'research', bonusValue: 0.30, bonusDescription: 'Core Outflow: +0.3 Research', icon: '☁',
+              bonusType: 'dark_energy_tap', bonusValue: 75, bonusDescription: 'Core Energy N: +75 Energy/tick', icon: '◈',
               yOffset: 25000 },
             { id: 'fermi_bubbles_south', name: 'Fermi Bubble South', type: 'halo_nebula', distance: 25000,
-              bonusType: 'research', bonusValue: 0.30, bonusDescription: 'Core Outflow: +0.3 Research', icon: '☁',
+              bonusType: 'dark_energy_tap', bonusValue: 75, bonusDescription: 'Core Energy S: +75 Energy/tick', icon: '◈',
               yOffset: -25000 }
         ];
 
@@ -2842,6 +2842,7 @@ class StarMapVisualization {
      */
     applyPOABonus(poa) {
         switch (poa.bonusType) {
+            // === STANDARD BONUSES ===
             case 'production':
                 this.empireBonuses.production += poa.bonusValue;
                 break;
@@ -2864,6 +2865,58 @@ class StarMapVisualization {
             case 'habitable':
                 // Track habitable worlds (to be implemented)
                 console.log(`[StarMap] Habitable world discovered!`);
+                break;
+
+            // === EXOTIC BONUSES (far halo objects) ===
+            case 'probe_velocity':
+                // Increase probe travel speed
+                this.empireBonuses.probe_velocity += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Probe velocity +${(poa.bonusValue * 100).toFixed(0)}%`);
+                break;
+            case 'expansion_radius':
+                // Increase maximum probe range
+                this.empireBonuses.expansion_radius += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Expansion radius +${(poa.bonusValue * 100).toFixed(0)}%`);
+                break;
+            case 'auto_develop':
+                // Chance for new colonies to auto-develop
+                this.empireBonuses.auto_develop_chance = Math.min(1.0, this.empireBonuses.auto_develop_chance + poa.bonusValue);
+                console.log(`[StarMap] EXOTIC: Auto-develop chance now ${(this.empireBonuses.auto_develop_chance * 100).toFixed(0)}%`);
+                break;
+            case 'stellar_forge':
+                // Multiplier for ALL bonuses (meta-bonus)
+                this.empireBonuses.stellar_forge_mult += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Stellar Forge multiplier now ${this.empireBonuses.stellar_forge_mult.toFixed(2)}x`);
+                break;
+            case 'dark_energy_tap':
+                // Flat energy bonus per tick
+                this.empireBonuses.dark_energy_tap += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Dark Energy Tap +${poa.bonusValue} energy/tick`);
+                break;
+            case 'wormhole_network':
+                // Unlock wormhole connections
+                this.empireBonuses.wormhole_network += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Wormhole Network +${poa.bonusValue} connections`);
+                break;
+            case 'time_dilation':
+                // Speed up time locally
+                this.empireBonuses.time_dilation += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Time Dilation now ${this.empireBonuses.time_dilation.toFixed(2)}x`);
+                break;
+            case 'exotic_matter':
+                // Exotic matter for special builds
+                this.empireBonuses.exotic_matter += poa.bonusValue;
+                console.log(`[StarMap] EXOTIC: Exotic Matter +${poa.bonusValue} units`);
+                break;
+            case 'all_bonuses':
+                // Boost ALL empire bonuses by percentage
+                const mult = 1 + poa.bonusValue;
+                this.empireBonuses.production *= mult;
+                this.empireBonuses.dyson_efficiency *= mult;
+                this.empireBonuses.development_speed *= mult;
+                this.empireBonuses.probe_velocity *= mult;
+                this.empireBonuses.expansion_radius *= mult;
+                console.log(`[StarMap] EXOTIC: ALL BONUSES +${(poa.bonusValue * 100).toFixed(0)}%`);
                 break;
         }
 
@@ -4284,14 +4337,20 @@ class StarMapVisualization {
             return null;
         }
 
-        // Create probe fleet visual - bright neon green solid dot
-        const probeGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+        // Create probe fleet visual - bright neon green cone pointing in travel direction
+        const probeGeometry = new THREE.ConeGeometry(0.2, 0.6, 6);
         const probeMaterial = new THREE.MeshBasicMaterial({
             color: 0x00ff00,
             transparent: false
         });
         const probe = new THREE.Mesh(probeGeometry, probeMaterial);
         probe.position.copy(launchStar.position);
+
+        // Orient cone to point toward target
+        // ConeGeometry points along +Y by default, rotate it to point along +Z first
+        probe.geometry.rotateX(Math.PI / 2);
+        // Now make it look at the target
+        probe.lookAt(targetPos);
 
         // Trail effect - green line from origin to probe
         const trailGeometry = new THREE.BufferGeometry();
@@ -10730,7 +10789,16 @@ class StarMapVisualization {
             dyson_efficiency: 1.0,
             launch_efficiency: 1.0,
             development_speed: 1.0,
-            research: 0
+            research: 0,
+            // Exotic bonuses
+            probe_velocity: 1.0,
+            expansion_radius: 1.0,
+            auto_develop_chance: 0,
+            stellar_forge_mult: 1.0,
+            dark_energy_tap: 0,
+            wormhole_network: 0,
+            time_dilation: 1.0,
+            exotic_matter: 0
         };
 
         // Reset build queue state
