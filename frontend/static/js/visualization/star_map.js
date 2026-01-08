@@ -2594,6 +2594,36 @@ class StarMapVisualization {
         this.colonizationGroup.add(marker);
         this.poaMarkers.push(marker);
 
+        // === ALWAYS ADD A CENTRAL STAR AT EXACT POA POSITION ===
+        // This ensures every POA has a visible, clickable star
+        const starSize = Math.max(0.04, 0.06 * distScale);
+        const starGeo = new THREE.SphereGeometry(starSize, 8, 8);
+        const starMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,  // Bright white core
+            transparent: true,
+            opacity: 0.95
+        });
+        const centralStar = new THREE.Mesh(starGeo, starMat);
+        centralStar.position.set(x, y, z);
+        centralStar.userData = { poaId: poa.id, poa: poa, isDeepSky: true, isCentralStar: true };
+        this.colonizationGroup.add(centralStar);
+        this.poaMarkers.push(centralStar);
+
+        // Add colored glow around the central star
+        const glowSize = starSize * 2.5;
+        const glowGeo = new THREE.SphereGeometry(glowSize, 8, 8);
+        const glowMat = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false
+        });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.position.set(x, y, z);
+        glow.userData = { poaId: poa.id, poa: poa };
+        this.colonizationGroup.add(glow);
+        this.poaMarkers.push(glow);
+
         // Add a subtle label ring around the marker
         const labelRingGeo = new THREE.RingGeometry(0.18 * distScale, 0.2 * distScale, 32);
         const labelRingMat = new THREE.MeshBasicMaterial({
@@ -8835,14 +8865,32 @@ class StarMapVisualization {
 
     /**
      * Toggle a strategy panel
-     * @param {string} panelId - 'drive', 'census', 'policy', or 'research'
+     * @param {string} panelId - 'drive-research', 'stellar-census', 'strategy', 'policy', or 'research'
      */
     togglePanel(panelId) {
-        // Hide all panels first
-        Object.keys(this.panelContainers).forEach(id => {
-            if (this.panelContainers[id]) {
-                this.panelContainers[id].style.display = 'none';
-            }
+        // Map panel IDs to their DOM element IDs
+        const panelDomIds = {
+            'drive-research': 'drive-research-panel',
+            'stellar-census': 'stellar-census-panel',
+            'strategy': 'strategy-panel',
+            'policy': 'policy-panel',
+            'research': 'research-panel'
+        };
+
+        // Get DOM element for this panel
+        const domId = panelDomIds[panelId] || panelId;
+        const panelElement = document.getElementById(domId);
+
+        // Also check legacy panelContainers
+        const legacyPanel = this.panelContainers[panelId];
+
+        // Hide all known panels first
+        Object.values(panelDomIds).forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        Object.values(this.panelContainers).forEach(container => {
+            if (container) container.style.display = 'none';
         });
 
         // If same panel was active, just close it
@@ -8853,17 +8901,23 @@ class StarMapVisualization {
         }
 
         // Show the requested panel
-        if (this.panelContainers[panelId]) {
-            this.panelContainers[panelId].style.display = 'block';
+        if (panelElement) {
+            panelElement.style.display = 'block';
             this.activePanelId = panelId;
-            console.log('[StarMap] Opened panel:', panelId);
+            console.log('[StarMap] Opened panel:', panelId, 'element:', domId);
+        } else if (legacyPanel) {
+            legacyPanel.style.display = 'block';
+            this.activePanelId = panelId;
+            console.log('[StarMap] Opened legacy panel:', panelId);
+        } else {
+            console.warn('[StarMap] Panel not found:', panelId);
+        }
 
-            // Update panel content when opening
-            if (panelId === 'policy') {
-                this.updatePolicyPanel();
-            } else if (panelId === 'research') {
-                this.updateResearchPanel();
-            }
+        // Update panel content when opening
+        if (panelId === 'policy') {
+            this.updatePolicyPanel();
+        } else if (panelId === 'research') {
+            this.updateResearchPanel();
         }
     }
 
