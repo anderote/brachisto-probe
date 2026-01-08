@@ -71,7 +71,10 @@ Object.assign(StarMapVisualization.prototype, {
         probe.lookAt(targetPos);
 
         // Trail effect - green line from origin to probe
+        // Pre-allocate buffer for 2 points to avoid per-frame allocations
         const trailGeometry = new THREE.BufferGeometry();
+        const trailPositions = new Float32Array(6); // 2 points * 3 components (x,y,z)
+        trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
         const trailMaterial = new THREE.LineBasicMaterial({
             color: 0x00ff44,
             transparent: true,
@@ -207,14 +210,16 @@ Object.assign(StarMapVisualization.prototype, {
                 // Animate probe position
                 fleet.probe.position.lerpVectors(fleet.start, fleet.target, fleet.progress);
 
-                // Update trail
+                // Update trail - reuse pre-allocated buffer (no allocations)
                 if (fleet.trail) {
-                    const trailGeom = new THREE.BufferGeometry().setFromPoints([
-                        fleet.start.clone(),
-                        fleet.probe.position.clone()
-                    ]);
-                    fleet.trail.geometry.dispose();
-                    fleet.trail.geometry = trailGeom;
+                    const positions = fleet.trail.geometry.attributes.position.array;
+                    positions[0] = fleet.start.x;
+                    positions[1] = fleet.start.y;
+                    positions[2] = fleet.start.z;
+                    positions[3] = fleet.probe.position.x;
+                    positions[4] = fleet.probe.position.y;
+                    positions[5] = fleet.probe.position.z;
+                    fleet.trail.geometry.attributes.position.needsUpdate = true;
                 }
             }
         }
@@ -263,8 +268,8 @@ Object.assign(StarMapVisualization.prototype, {
         this.colonizationGroup.add(remnantLine);
         this.trailRemnants.push(remnant);
 
-        // Limit total remnants to avoid memory issues
-        if (this.trailRemnants.length > 300) {
+        // Limit total remnants to avoid memory issues (reduced from 300 for better performance)
+        if (this.trailRemnants.length > 150) {
             const oldRemnant = this.trailRemnants.shift();
             this.colonizationGroup.remove(oldRemnant.line);
             oldRemnant.line.geometry.dispose();

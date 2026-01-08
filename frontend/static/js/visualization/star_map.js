@@ -61,6 +61,16 @@ class StarMapVisualization {
         this.keysPressed = new Set();       // Currently held keys
         this.flySpeed = 2.0;                // Base flying speed (units per frame)
 
+        // Reusable raycaster for click detection (avoid per-click allocations)
+        this.raycaster = new THREE.Raycaster();
+        this.raycasterMouse = new THREE.Vector2();
+
+        // Reusable vectors for WASD flying (avoid per-frame allocations)
+        this._flyForward = new THREE.Vector3();
+        this._flyRight = new THREE.Vector3();
+        this._flyMovement = new THREE.Vector3();
+        this._flyTemp = new THREE.Vector3();
+
         // POA (Points of Attraction) System
         this.pointsOfAttraction = [];       // Named stars with bonuses
         this.selectedPOA = null;            // Currently selected POA (for spacebar shortcut)
@@ -1768,24 +1778,22 @@ class StarMapVisualization {
      */
     onStarClick(event) {
         console.log('[StarMap] Click detected');
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
+        // Reuse class-level raycaster to avoid per-click allocations
+        this.raycasterMouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.raycasterMouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-        raycaster.setFromCamera(mouse, this.camera);
+        this.raycaster.setFromCamera(this.raycasterMouse, this.camera);
 
         // Increase raycaster threshold for better hit detection on small objects
-        raycaster.params.Line = { threshold: 0.5 };
-        raycaster.params.Points = { threshold: 0.5 };
+        this.raycaster.params.Line = { threshold: 0.5 };
+        this.raycaster.params.Points = { threshold: 0.5 };
 
         // POA clicks are handled by floating labels only (not 3D markers)
         // Click label to focus camera and show colonization menu
 
         // Check regular star clicks
         const starMeshes = Object.values(this.stars);
-        const intersects = raycaster.intersectObjects(starMeshes, true);
+        const intersects = this.raycaster.intersectObjects(starMeshes, true);
 
         if (intersects.length > 0) {
             let obj = intersects[0].object;
@@ -2277,33 +2285,35 @@ class StarMapVisualization {
         const zoomDistance = this.camera.position.distanceTo(this.controls.target);
         const speed = this.flySpeed * Math.max(0.5, zoomDistance * 0.05);
 
-        // Get camera's forward direction (from camera to target)
-        const forward = new THREE.Vector3();
-        forward.subVectors(this.controls.target, this.camera.position).normalize();
+        // Get camera's forward direction (from camera to target) - reuse vectors
+        this._flyForward.subVectors(this.controls.target, this.camera.position).normalize();
 
         // Get right direction (perpendicular to forward, in XZ plane)
-        const right = new THREE.Vector3();
-        right.crossVectors(forward, this.camera.up).normalize();
+        this._flyRight.crossVectors(this._flyForward, this.camera.up).normalize();
 
-        // Calculate movement vector
-        const movement = new THREE.Vector3(0, 0, 0);
+        // Calculate movement vector - reset to zero
+        this._flyMovement.set(0, 0, 0);
 
         if (this.keysPressed.has('w')) {
-            movement.add(forward.clone().multiplyScalar(speed));
+            this._flyTemp.copy(this._flyForward).multiplyScalar(speed);
+            this._flyMovement.add(this._flyTemp);
         }
         if (this.keysPressed.has('s')) {
-            movement.add(forward.clone().multiplyScalar(-speed));
+            this._flyTemp.copy(this._flyForward).multiplyScalar(-speed);
+            this._flyMovement.add(this._flyTemp);
         }
         if (this.keysPressed.has('a')) {
-            movement.add(right.clone().multiplyScalar(-speed));
+            this._flyTemp.copy(this._flyRight).multiplyScalar(-speed);
+            this._flyMovement.add(this._flyTemp);
         }
         if (this.keysPressed.has('d')) {
-            movement.add(right.clone().multiplyScalar(speed));
+            this._flyTemp.copy(this._flyRight).multiplyScalar(speed);
+            this._flyMovement.add(this._flyTemp);
         }
 
         // Move both camera and target together (maintains orbit distance)
-        this.camera.position.add(movement);
-        this.controls.target.add(movement);
+        this.camera.position.add(this._flyMovement);
+        this.controls.target.add(this._flyMovement);
     }
 
     /**
