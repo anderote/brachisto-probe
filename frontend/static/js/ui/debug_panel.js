@@ -100,16 +100,8 @@ class DebugPanel {
     }
     
     setupKeyBinding() {
-        document.addEventListener('keydown', (e) => {
-            // D to toggle debug panel (only when not typing in an input)
-            if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                const tagName = e.target.tagName.toLowerCase();
-                if (tagName !== 'input' && tagName !== 'textarea') {
-                    e.preventDefault();
-                    this.toggle();
-                }
-            }
-        });
+        // Keyboard binding disabled - handled by star_map.js with P key
+        // This prevents conflict with WASD flying controls
     }
     
     toggleZone(zoneId) {

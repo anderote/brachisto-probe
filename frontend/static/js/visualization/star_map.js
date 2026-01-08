@@ -68,7 +68,16 @@ class StarMapVisualization {
             dyson_efficiency: 1.0,          // Multiplier for Dyson energy
             launch_efficiency: 1.0,         // Multiplier for launch cooldown (lower = faster)
             development_speed: 1.0,         // Multiplier for star development
-            research: 0                     // Accumulated research points
+            research: 0,                    // Accumulated research points
+            // === EXOTIC BONUSES (from far halo objects) ===
+            probe_velocity: 1.0,            // Multiplier for probe travel speed
+            expansion_radius: 1.0,          // Multiplier for max probe range
+            auto_develop_chance: 0,         // Chance new colonies auto-develop (0-1)
+            stellar_forge_mult: 1.0,        // Multiplier applied to ALL other bonuses
+            dark_energy_tap: 0,             // Flat energy bonus per tick
+            wormhole_network: 0,            // Number of wormhole connections unlocked
+            time_dilation: 1.0,             // Local time speed multiplier
+            exotic_matter: 0                // Exotic matter reserves for special builds
         };
         this.targetQueue = [];              // Queue of up to 5 priority targets
         this.queueMarkers = [];             // Visual markers for queued targets
@@ -1577,7 +1586,132 @@ class StarMapVisualization {
               farSide: true },
             { id: 'far_halo_cluster', name: 'Palomar 14', type: 'cluster', distance: 240000,
               bonusType: 'production', bonusValue: 0.0045, bonusDescription: 'Distant Globular: +0.45% Production', icon: '✸',
-              farSide: true, yOffset: 50000 }
+              farSide: true, yOffset: 50000 },
+
+            // === HALO GLOBULAR CLUSTERS (real NGC/Palomar objects above/below disc) ===
+            { id: 'ngc_2419', name: 'NGC 2419 (Intergalactic Wanderer)', type: 'globular_cluster', distance: 275000,
+              bonusType: 'frontier_beacon', bonusValue: 40, bonusDescription: 'Distant Wanderer: Reveals 40 POAs', icon: '✸',
+              yOffset: 50000 },
+            { id: 'ngc_5466', name: 'NGC 5466', type: 'globular_cluster', distance: 51800,
+              bonusType: 'research', bonusValue: 0.25, bonusDescription: 'Sparse Halo Cluster: +0.25 Research', icon: '✸',
+              yOffset: 42000 },
+            { id: 'ngc_6229', name: 'NGC 6229', type: 'globular_cluster', distance: 99400,
+              bonusType: 'production', bonusValue: 0.0032, bonusDescription: 'Dense Core: +0.32% Production', icon: '✸',
+              yOffset: 35000 },
+            { id: 'ngc_7006', name: 'NGC 7006', type: 'globular_cluster', distance: 135000,
+              bonusType: 'dyson_efficiency', bonusValue: 0.0028, bonusDescription: 'Outer Halo Jewel: +0.28% Dyson', icon: '✸',
+              yOffset: -38000 },
+            { id: 'pal_3', name: 'Palomar 3', type: 'globular_cluster', distance: 302000,
+              bonusType: 'frontier_beacon', bonusValue: 35, bonusDescription: 'Ghostly Cluster: Reveals 35 POAs', icon: '✸',
+              yOffset: -52000 },
+            { id: 'pal_4', name: 'Palomar 4', type: 'globular_cluster', distance: 357000,
+              bonusType: 'research', bonusValue: 0.35, bonusDescription: 'Extreme Halo: +0.35 Research', icon: '✸',
+              yOffset: 60000 },
+            { id: 'pal_15', name: 'Palomar 15', type: 'globular_cluster', distance: 145000,
+              bonusType: 'production', bonusValue: 0.0030, bonusDescription: 'Faint Outlier: +0.3% Production', icon: '✸',
+              yOffset: -45000 },
+            { id: 'am_1', name: 'AM 1 (Madore\'s Object)', type: 'globular_cluster', distance: 398000,
+              bonusType: 'frontier_beacon', bonusValue: 50, bonusDescription: 'Edge of Galaxy: Reveals 50 POAs', icon: '✸',
+              yOffset: -70000 },
+            { id: 'eridanus_cluster', name: 'Eridanus Cluster', type: 'globular_cluster', distance: 295000,
+              bonusType: 'research', bonusValue: 0.38, bonusDescription: 'River\'s End: +0.38 Research', icon: '✸',
+              yOffset: 55000 },
+            { id: 'pyxis_globular', name: 'Pyxis Globular', type: 'globular_cluster', distance: 130000,
+              bonusType: 'production', bonusValue: 0.0035, bonusDescription: 'Compass Cluster: +0.35% Production', icon: '✸',
+              yOffset: -30000 },
+            { id: 'ko_1', name: 'Ko 1 (Koposov 1)', type: 'globular_cluster', distance: 160000,
+              bonusType: 'research', bonusValue: 0.28, bonusDescription: 'Faint Discovery: +0.28 Research', icon: '✸',
+              yOffset: 48000 },
+            { id: 'ko_2', name: 'Ko 2 (Koposov 2)', type: 'globular_cluster', distance: 115000,
+              bonusType: 'production', bonusValue: 0.0025, bonusDescription: 'Tidal Remnant: +0.25% Production', icon: '✸',
+              yOffset: -40000 },
+
+            // === MORE HALO NEBULAE (above galactic disc - north) ===
+            { id: 'northern_crown_nebula', name: 'Northern Crown Nebula', type: 'halo_nebula', distance: 32000,
+              bonusType: 'research', bonusValue: 0.18, bonusDescription: 'Corona Borealis: +0.18 Research', icon: '☁',
+              yOffset: 20000 },
+            { id: 'apex_cloud', name: 'Apex Cloud', type: 'halo_nebula', distance: 42000,
+              bonusType: 'production', bonusValue: 0.0018, bonusDescription: 'Stellar Apex: +0.18% Production', icon: '☁',
+              yOffset: 28000 },
+            { id: 'high_chimneys', name: 'High Chimneys', type: 'halo_nebula', distance: 38000,
+              bonusType: 'dyson_efficiency', bonusValue: 0.0014, bonusDescription: 'Galactic Vents: +0.14% Dyson', icon: '☁',
+              yOffset: 22000 },
+            { id: 'boreal_drift', name: 'Boreal Drift', type: 'halo_nebula', distance: 48000,
+              bonusType: 'research', bonusValue: 0.24, bonusDescription: 'Northern Wisps: +0.24 Research', icon: '☁',
+              yOffset: 35000 },
+            { id: 'celestial_fountain', name: 'Celestial Fountain', type: 'halo_nebula', distance: 52000,
+              bonusType: 'production', bonusValue: 0.0022, bonusDescription: 'Upwelling Gas: +0.22% Production', icon: '☁',
+              yOffset: 38000 },
+            { id: 'circumpolar_veil', name: 'Circumpolar Veil', type: 'halo_nebula', distance: 58000,
+              bonusType: 'frontier_beacon', bonusValue: 20, bonusDescription: 'Polar Shroud: Reveals 20 POAs', icon: '☁',
+              yOffset: 45000 },
+            { id: 'hyperboreal_mist', name: 'Hyperboreal Mist', type: 'halo_nebula', distance: 65000,
+              bonusType: 'research', bonusValue: 0.32, bonusDescription: 'Far North Fog: +0.32 Research', icon: '☁',
+              yOffset: 52000 },
+            { id: 'north_galactic_plume', name: 'North Galactic Plume', type: 'halo_nebula', distance: 72000,
+              bonusType: 'production', bonusValue: 0.0028, bonusDescription: 'Rising Column: +0.28% Production', icon: '☁',
+              yOffset: 58000 },
+            { id: 'aurora_superior', name: 'Aurora Superior', type: 'halo_nebula', distance: 80000,
+              bonusType: 'dyson_efficiency', bonusValue: 0.0020, bonusDescription: 'Upper Glow: +0.2% Dyson', icon: '☁',
+              yOffset: 65000 },
+
+            // === MORE HALO NEBULAE (below galactic disc - south) ===
+            { id: 'southern_abyss', name: 'Southern Abyss', type: 'halo_nebula', distance: 30000,
+              bonusType: 'research', bonusValue: 0.16, bonusDescription: 'Deep South Cloud: +0.16 Research', icon: '☁',
+              yOffset: -18000 },
+            { id: 'keel_cloud', name: 'Keel Cloud', type: 'halo_nebula', distance: 36000,
+              bonusType: 'production', bonusValue: 0.0016, bonusDescription: 'Carina Region: +0.16% Production', icon: '☁',
+              yOffset: -22000 },
+            { id: 'antipodal_drift', name: 'Antipodal Drift', type: 'halo_nebula', distance: 44000,
+              bonusType: 'dyson_efficiency', bonusValue: 0.0016, bonusDescription: 'Opposite Wisps: +0.16% Dyson', icon: '☁',
+              yOffset: -28000 },
+            { id: 'austral_veil', name: 'Austral Veil', type: 'halo_nebula', distance: 50000,
+              bonusType: 'research', bonusValue: 0.26, bonusDescription: 'Southern Curtain: +0.26 Research', icon: '☁',
+              yOffset: -35000 },
+            { id: 'sub_galactic_plume', name: 'Sub-Galactic Plume', type: 'halo_nebula', distance: 56000,
+              bonusType: 'production', bonusValue: 0.0024, bonusDescription: 'Descending Column: +0.24% Production', icon: '☁',
+              yOffset: -42000 },
+            { id: 'magellanic_bridge_remnant', name: 'Magellanic Bridge Remnant', type: 'halo_nebula', distance: 62000,
+              bonusType: 'frontier_beacon', bonusValue: 22, bonusDescription: 'Tidal Stream: Reveals 22 POAs', icon: '☁',
+              yOffset: -48000 },
+            { id: 'southern_chimney', name: 'Southern Chimney', type: 'halo_nebula', distance: 68000,
+              bonusType: 'research', bonusValue: 0.28, bonusDescription: 'Galactic Vent: +0.28 Research', icon: '☁',
+              yOffset: -55000 },
+            { id: 'deep_south_fog', name: 'Deep South Fog', type: 'halo_nebula', distance: 75000,
+              bonusType: 'production', bonusValue: 0.0026, bonusDescription: 'Furthest Mist: +0.26% Production', icon: '☁',
+              yOffset: -62000 },
+            { id: 'aurora_inferior', name: 'Aurora Inferior', type: 'halo_nebula', distance: 82000,
+              bonusType: 'dyson_efficiency', bonusValue: 0.0022, bonusDescription: 'Lower Glow: +0.22% Dyson', icon: '☁',
+              yOffset: -68000 },
+
+            // === SCATTERED HALO NEBULAE (mixed positions) ===
+            { id: 'galactic_corona_east', name: 'Galactic Corona East', type: 'halo_nebula', distance: 40000,
+              bonusType: 'research', bonusValue: 0.20, bonusDescription: 'Eastern Halo: +0.2 Research', icon: '☁',
+              yOffset: 18000 },
+            { id: 'galactic_corona_west', name: 'Galactic Corona West', type: 'halo_nebula', distance: 42000,
+              bonusType: 'research', bonusValue: 0.20, bonusDescription: 'Western Halo: +0.2 Research', icon: '☁',
+              yOffset: -16000 },
+            { id: 'tidal_stream_alpha', name: 'Tidal Stream Alpha', type: 'halo_nebula', distance: 55000,
+              bonusType: 'production', bonusValue: 0.0020, bonusDescription: 'Stripped Gas: +0.2% Production', icon: '☁',
+              yOffset: 30000 },
+            { id: 'tidal_stream_beta', name: 'Tidal Stream Beta', type: 'halo_nebula', distance: 58000,
+              bonusType: 'production', bonusValue: 0.0020, bonusDescription: 'Merger Remnant: +0.2% Production', icon: '☁',
+              yOffset: -32000 },
+            { id: 'hvc_complex_a', name: 'High Velocity Cloud A', type: 'halo_nebula', distance: 45000,
+              bonusType: 'frontier_beacon', bonusValue: 18, bonusDescription: 'Infalling Gas: Reveals 18 POAs', icon: '☁',
+              yOffset: 25000 },
+            { id: 'hvc_complex_c', name: 'High Velocity Cloud C', type: 'halo_nebula', distance: 48000,
+              bonusType: 'frontier_beacon', bonusValue: 18, bonusDescription: 'Halo Stream: Reveals 18 POAs', icon: '☁',
+              yOffset: -27000 },
+            { id: 'smith_cloud', name: 'Smith Cloud', type: 'halo_nebula', distance: 40000,
+              bonusType: 'production', bonusValue: 0.0025, bonusDescription: 'Incoming Gas: +0.25% Production', icon: '☁',
+              yOffset: -8000 },
+            { id: 'fermi_bubbles_north', name: 'Fermi Bubble North', type: 'halo_nebula', distance: 25000,
+              bonusType: 'research', bonusValue: 0.30, bonusDescription: 'Core Outflow: +0.3 Research', icon: '☁',
+              yOffset: 25000 },
+            { id: 'fermi_bubbles_south', name: 'Fermi Bubble South', type: 'halo_nebula', distance: 25000,
+              bonusType: 'research', bonusValue: 0.30, bonusDescription: 'Core Outflow: +0.3 Research', icon: '☁',
+              yOffset: -25000 }
         ];
 
         // Position deep sky objects in the galaxy
@@ -6831,12 +6965,22 @@ class StarMapVisualization {
         `;
         this.container.appendChild(bar);
 
-        // Create shortcuts hint in bottom right corner
-        const shortcuts = document.createElement('div');
-        shortcuts.id = 'galaxy-shortcuts-hint';
-        shortcuts.className = 'galaxy-shortcuts-hint';
-        shortcuts.innerHTML = `<span>S Strategy • F Fleet • 1 Sol • D Drive • Alt+1/2 Views</span>`;
-        this.container.appendChild(shortcuts);
+        // Create hotkeys bar at bottom center
+        const hotkeysBar = document.createElement('div');
+        hotkeysBar.id = 'galaxy-hotkeys-bar';
+        hotkeysBar.className = 'galaxy-hotkeys-bar';
+        hotkeysBar.innerHTML = `
+            <span class="hotkey"><kbd>WASD</kbd> Fly</span>
+            <span class="hotkey"><kbd>F</kbd> Fleet</span>
+            <span class="hotkey"><kbd>H</kbd> Home</span>
+            <span class="hotkey"><kbd>O</kbd> Strategy</span>
+            <span class="hotkey"><kbd>P</kbd> Debug</span>
+            <span class="hotkey"><kbd>L</kbd> Census</span>
+            <span class="hotkey"><kbd>K</kbd> Drives</span>
+            <span class="hotkey"><kbd>Tab</kbd> Lines</span>
+            <span class="hotkey"><kbd>Space</kbd> Colonize</span>
+        `;
+        this.container.appendChild(hotkeysBar);
 
         // Create centered scale bar (appears when zooming)
         const scaleBar = document.createElement('div');
@@ -10089,6 +10233,10 @@ class StarMapVisualization {
             const key = e.key.toLowerCase();
             if (['w', 'a', 's', 'd'].includes(key)) {
                 this.keysPressed.add(key);
+                // Break camera focus when WASD is pressed
+                if (this.isActive) {
+                    this.focusedOnSol = false;
+                }
             }
 
             // Only handle shortcuts when galaxy view is active
@@ -10116,22 +10264,30 @@ class StarMapVisualization {
                 this.toggleFleetView();
             }
 
-            // Shift+D - Drive Research panel (changed from D to allow WASD flying)
-            if ((e.key === 'd' || e.key === 'D') && e.shiftKey) {
+            // O key - Strategy panel
+            if (e.key === 'o' || e.key === 'O') {
                 e.preventDefault();
-                this.togglePanel('drive-research');
+                this.togglePanel('strategy');
             }
 
-            // Shift+C - Stellar Census panel
-            if ((e.key === 'c' || e.key === 'C') && e.shiftKey) {
+            // P key - Debug panel
+            if (e.key === 'p' || e.key === 'P') {
+                e.preventDefault();
+                if (window.debugPanel) {
+                    window.debugPanel.toggle();
+                }
+            }
+
+            // L key - Stellar Census panel
+            if (e.key === 'l' || e.key === 'L') {
                 e.preventDefault();
                 this.togglePanel('stellar-census');
             }
 
-            // Shift+S - Strategy panel (changed from S to allow WASD flying)
-            if ((e.key === 's' || e.key === 'S') && e.shiftKey) {
+            // K key - Drive Research panel
+            if (e.key === 'k' || e.key === 'K') {
                 e.preventDefault();
-                this.togglePanel('strategy');
+                this.togglePanel('drive-research');
             }
 
             // H key - go to Sol (home)

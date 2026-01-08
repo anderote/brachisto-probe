@@ -8355,20 +8355,38 @@ button:disabled {
     letter-spacing: 0.5px;
 }
 
-/* Galaxy shortcuts hint - bottom right corner */
-.galaxy-shortcuts-hint {
+/* Galaxy hotkeys bar - bottom center */
+.galaxy-hotkeys-bar {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 100;
     pointer-events: none;
+    display: flex;
+    gap: 16px;
+    padding: 6px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
 }
 
-.galaxy-shortcuts-hint span {
-    font-size: 10px;
-    color: rgba(150, 180, 200, 0.35);
-    letter-spacing: 0.5px;
+.galaxy-hotkeys-bar .hotkey {
+    font-size: 11px;
+    color: rgba(200, 220, 240, 0.5);
+    letter-spacing: 0.3px;
     font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+}
+
+.galaxy-hotkeys-bar .hotkey kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: rgba(150, 200, 255, 0.7);
+    background: rgba(100, 150, 200, 0.15);
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 1px solid rgba(100, 150, 200, 0.25);
+    margin-right: 3px;
 }
 
 /* Sol System prompt - appears when focused on Sol */
