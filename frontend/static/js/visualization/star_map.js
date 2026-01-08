@@ -444,7 +444,7 @@ class StarMapVisualization {
      * Stars density falls off gracefully using Gaussian function
      */
     createCentralBulge() {
-        const bulgeStars = 25000;  // Reduced for better visibility of probes/colonization
+        const bulgeStars = 8000;  // Reduced significantly for performance
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(bulgeStars * 3);
         const colors = new Float32Array(bulgeStars * 3);
@@ -571,6 +571,60 @@ class StarMapVisualization {
 
         const coreDust = new THREE.Points(geometry, material);
         this.galaxyGroup.add(coreDust);
+
+        // Add additional dust layers at different radii
+        this.createDustLayer(5, 15, 20000, 0.6);   // Inner dust ring
+        this.createDustLayer(15, 30, 25000, 0.5);  // Middle dust ring
+        this.createDustLayer(30, 50, 20000, 0.4);  // Outer dust ring
+    }
+
+    /**
+     * Create a dust layer at specified radius range
+     */
+    createDustLayer(innerRadius, outerRadius, particleCount, opacity) {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const color = new THREE.Color();
+
+        for (let i = 0; i < particleCount; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const r = innerRadius + Math.random() * (outerRadius - innerRadius);
+
+            // Add some structure with spiral influence
+            const spiralOffset = Math.sin(theta * 2 + r * 0.1) * 3;
+            const finalR = r + spiralOffset;
+
+            const x = finalR * Math.cos(theta);
+            const z = finalR * Math.sin(theta);
+            const y = (Math.random() - 0.5) * (Math.random() - 0.5) * 3;
+
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = z;
+
+            // Dark reddish-brown dust
+            color.setHSL(0.05 + Math.random() * 0.05, 0.2, 0.02 + Math.random() * 0.02);
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 1.5,
+            sizeAttenuation: true,
+            vertexColors: true,
+            transparent: true,
+            opacity: opacity,
+            blending: THREE.NormalBlending,
+            depthWrite: false
+        });
+
+        const dustLayer = new THREE.Points(geometry, material);
+        this.galaxyGroup.add(dustLayer);
     }
 
     /**
@@ -1864,8 +1918,9 @@ class StarMapVisualization {
                 description: 'Where physics changes with galactic position',
                 color: 0x8844ff,
                 icon: '◎',
-                baseY: -150,
+                baseY: 0,
                 baseRadius: 130,
+                spreadY: 5,
                 systems: [
                     // Human Civilizations
                     { id: 'straumli_realm', name: 'Straumli Realm', bonus: 'research', value: 100, desc: 'Archive World: +100 Research' },
@@ -1902,8 +1957,9 @@ class StarMapVisualization {
                 description: 'Infinite diversity in infinite combinations',
                 color: 0x4488ff,
                 icon: '✧',
-                baseY: 180,
+                baseY: 5,
                 baseRadius: 90,
+                spreadY: 5,
                 systems: [
                     { id: 'vulcan', name: 'Vulcan', bonus: 'research', value: 60, desc: 'Logic World: +60 Research' },
                     { id: 'qonos', name: "Qo'noS", bonus: 'production', value: 0.45, desc: 'Warrior World: +45% Production' },
@@ -1923,8 +1979,9 @@ class StarMapVisualization {
                 description: 'A long time ago in a galaxy far, far away',
                 color: 0xff4444,
                 icon: '⬡',
-                baseY: -200,
+                baseY: -5,
                 baseRadius: 110,
+                spreadY: 5,
                 systems: [
                     { id: 'coruscant', name: 'Coruscant', bonus: 'production', value: 0.6, desc: 'Ecumenopolis: +60% Production' },
                     { id: 'alderaan', name: 'Alderaan', bonus: 'research', value: 45, desc: 'Culture World: +45 Research' },
@@ -1944,8 +2001,9 @@ class StarMapVisualization {
                 description: 'The galactic community united',
                 color: 0x44ff88,
                 icon: '◇',
-                baseY: 160,
+                baseY: 3,
                 baseRadius: 70,
+                spreadY: 5,
                 systems: [
                     { id: 'citadel_station', name: 'Citadel', bonus: 'research', value: 70, desc: 'Council Hub: +70 Research' },
                     { id: 'thessia', name: 'Thessia', bonus: 'research', value: 50, desc: 'Asari World: +50 Research' },
@@ -1963,8 +2021,9 @@ class StarMapVisualization {
                 description: 'The spice must flow',
                 color: 0xffcc00,
                 icon: '◈',
-                baseY: -180,
+                baseY: -3,
                 baseRadius: 85,
+                spreadY: 5,
                 systems: [
                     { id: 'arrakis', name: 'Arrakis', bonus: 'production', value: 0.8, desc: 'Spice World: +80% Production' },
                     { id: 'caladan', name: 'Caladan', bonus: 'research', value: 35, desc: 'Atreides Home: +35 Research' },
@@ -3226,7 +3285,7 @@ class StarMapVisualization {
      * probe directions towards stars along this corridor until the target is reached.
      */
     addToTargetQueue(starId) {
-        const MAX_QUEUE = 10;  // Up to 10 colonization corridors
+        const MAX_QUEUE = 20;  // Up to 20 colonization corridors
 
         // Find the star data
         const star = this.starData?.stars?.find(s => s.id === starId);
@@ -3523,17 +3582,29 @@ class StarMapVisualization {
         }
 
         panel.style.display = 'flex';
+
+        // Scale down tiles when queue is large
+        const queueSize = this.targetQueue.length;
+        const isCompact = queueSize > 8;
+        const isVeryCompact = queueSize > 14;
+        tilesContainer.className = 'queue-tiles' +
+            (isVeryCompact ? ' very-compact' : isCompact ? ' compact' : '');
+
         tilesContainer.innerHTML = this.targetQueue.map((t, i) => {
             // Find the POA data for bonus info
             const poa = this.pointsOfAttraction?.find(p => p.id === t.id);
             const bonusText = poa?.bonusDescription || t.bonusDescription || '';
             const shortBonus = bonusText.split(':')[0] || 'Target';  // Just the title part
 
+            // For compact mode, just show number and abbreviated name
+            const displayName = isVeryCompact ? (t.name?.substring(0, 3) || '?') :
+                               isCompact ? (t.name?.substring(0, 6) || t.name) : t.name;
+
             return `
-                <div class="queue-tile" data-target-id="${t.id}" onclick="window.starMapVisualization?.navigateAndShowPOA('${t.id}')">
+                <div class="queue-tile" data-target-id="${t.id}" onclick="window.starMapVisualization?.navigateAndShowPOA('${t.id}')" title="${t.name}: ${shortBonus}">
                     <div class="tile-number">${i + 1}</div>
-                    <div class="tile-name">${t.name}</div>
-                    <div class="tile-bonus">${shortBonus}</div>
+                    ${isVeryCompact ? '' : `<div class="tile-name">${displayName}</div>`}
+                    ${isCompact ? '' : `<div class="tile-bonus">${shortBonus}</div>`}
                     <button class="tile-remove" onclick="event.stopPropagation(); window.starMapVisualization?.removeFromTargetQueue('${t.id}')">×</button>
                 </div>
             `;
@@ -3593,7 +3664,7 @@ class StarMapVisualization {
 
         // Check queue status
         const isQueued = this.targetQueue.some(t => t.id === poaId);
-        const queueFull = this.targetQueue.length >= 10;
+        const queueFull = this.targetQueue.length >= 20;
         const hasFleetEnRoute = poa.status === 'fleet_sent';
 
         // Determine status display
@@ -3695,7 +3766,7 @@ class StarMapVisualization {
         const poa = this.pointsOfAttraction?.find(p => p.id === poaId);
         if (!poa || poa.colonized) return false;
 
-        const MAX_QUEUE = 10;
+        const MAX_QUEUE = 20;
 
         // Check if already in queue
         if (this.targetQueue.some(t => t.id === poaId)) {

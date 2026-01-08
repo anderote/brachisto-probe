@@ -11774,7 +11774,7 @@ button:disabled {
 /* Target Queue Bottom Bar */
 .target-queue-bottom-bar {
     position: fixed;
-    bottom: 20px;
+    bottom: 35px;  /* Moved up 15px */
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -11790,6 +11790,19 @@ button:disabled {
     border: 1px solid rgba(100, 150, 255, 0.3);
     border-radius: 8px;
     backdrop-filter: blur(10px);
+    transition: gap 0.2s;
+}
+
+/* Compact mode (9-14 items) */
+.queue-tiles.compact {
+    gap: 5px;
+    padding: 6px;
+}
+
+/* Very compact mode (15+ items) */
+.queue-tiles.very-compact {
+    gap: 3px;
+    padding: 5px;
 }
 
 .queue-tile {
@@ -11801,6 +11814,42 @@ button:disabled {
     cursor: pointer;
     min-width: 100px;
     transition: all 0.2s;
+}
+
+/* Compact tile style */
+.queue-tiles.compact .queue-tile {
+    padding: 8px 10px;
+    min-width: 70px;
+}
+
+/* Very compact tile style - small squares */
+.queue-tiles.very-compact .queue-tile {
+    padding: 6px 8px;
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.queue-tiles.very-compact .tile-number {
+    position: static;
+    width: auto;
+    height: auto;
+    background: transparent;
+    font-size: 14px;
+    color: #ff8800;
+}
+
+.queue-tiles.very-compact .tile-remove {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+    padding: 0;
 }
 
 .queue-tile:hover {
@@ -11873,7 +11922,7 @@ button:disabled {
 /* Development Histogram Bar */
 .development-histogram-bar {
     position: fixed;
-    bottom: 55px;  /* Moved up 15px */
+    bottom: 40px;
     left: calc(50% + 280px);  /* Shifted 40px left */
     transform: translateX(-50%);
     display: flex;
