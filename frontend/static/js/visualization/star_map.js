@@ -3718,6 +3718,7 @@ class StarMapVisualization {
             <div class="poa-actions">
                 ${!poa.colonized ? `
                     <button class="poa-btn target-btn" onclick="window.starMapVisualization?.addPOAToQueueAndRefresh('${poaId}')"
+                            tabindex="-1"
                             ${isQueued || queueFull || hasFleetEnRoute ? 'disabled' : ''}>
                         ${isQueued ? 'In Queue' : queueFull ? 'Queue Full' : hasFleetEnRoute ? 'Fleet Sent' : 'Set as Colony Target [Space]'}
                     </button>
@@ -10556,11 +10557,10 @@ class StarMapVisualization {
                 this.goToSol();
             }
 
-            // Spacebar - colonize selected POA and close panel
+            // Spacebar - colonize selected POA (addPOAToQueueAndRefresh also closes panel)
             if (e.key === ' ' && this.selectedPOA) {
                 e.preventDefault();
                 this.addPOAToQueueAndRefresh(this.selectedPOA);
-                this.closePOAInfo();
             }
 
             // Left/Right arrows - cycle through fleets in fleet view
