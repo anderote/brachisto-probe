@@ -624,34 +624,9 @@ class App {
                 }
             }
 
-            // Strategy panel shortcuts (when in star map view)
-            // S = Strategy (main panel), D = Drive Research, C = Stellar Census, F = Fleet View
-            if (this.starMapVisualization && this.starMapVisualization.isActive && !isInputFocused) {
-                if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
-                    this.starMapVisualization.toggleStrategyPanel();
-                }
-                if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey) {
-                    this.starMapVisualization.togglePanel('drive');
-                }
-                if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) {
-                    this.starMapVisualization.togglePanel('census');
-                }
-                // F = Fleet View - follow a probe fleet
-                if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey) {
-                    this.starMapVisualization.toggleFleetView();
-                }
-                // Arrow keys - navigate between fleets when in fleet view
-                if (this.starMapVisualization.fleetViewMode) {
-                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        this.starMapVisualization.nextFleet();
-                    }
-                    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        this.starMapVisualization.prevFleet();
-                    }
-                }
-            }
+            // Star map keyboard shortcuts are handled in star_map.js setupKeyboardShortcuts()
+            // O = Strategy, K = Drive Research, L = Stellar Census, F = Fleet View
+            // WASD = Fly camera, H = Home (Sol), P = Debug panel
         });
 
         // Game menu button
