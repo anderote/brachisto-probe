@@ -9,6 +9,20 @@
 
 Object.assign(StarMapVisualization.prototype, {
 
+    // Pre-allocated vectors for POA label updates (avoid per-frame allocations)
+    _poaTempVec1: null,
+    _poaTempVec2: null,
+
+    /**
+     * Initialize pre-allocated POA vectors (called lazily on first use)
+     */
+    _initPOAVectors() {
+        if (!this._poaTempVec1) {
+            this._poaTempVec1 = new THREE.Vector3();
+            this._poaTempVec2 = new THREE.Vector3();
+        }
+    },
+
     /**
      * Initialize the nearby star POAs (Points of Attraction) around Sol
      * These are real stars with bonuses when colonized
@@ -989,6 +1003,13 @@ Object.assign(StarMapVisualization.prototype, {
     updatePOALabels() {
         if (!this.poaLabels || !this.camera) return;
 
+        // Initialize pre-allocated vectors if needed
+        this._initPOAVectors();
+
+        // Cache window dimensions (avoid property lookup per label)
+        const winWidth = window.innerWidth;
+        const winHeight = window.innerHeight;
+
         for (const labelData of this.poaLabels) {
             const { element, poa, localPosition } = labelData;
 
@@ -998,29 +1019,33 @@ Object.assign(StarMapVisualization.prototype, {
                 continue;
             }
 
-            // Calculate world position from local position
-            const worldPos = localPosition.clone();
+            // Calculate world position from local position (reuse vector)
+            const worldPos = this._poaTempVec1.copy(localPosition);
             if (this.colonizationGroup) {
                 worldPos.applyMatrix4(this.colonizationGroup.matrixWorld);
             }
 
-            // Project to screen coordinates
-            const screenPos = worldPos.clone().project(this.camera);
-
-            // Convert to CSS coordinates
-            const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
-            const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
+            // Project to screen coordinates (reuse vector)
+            const screenPos = this._poaTempVec2.copy(worldPos).project(this.camera);
 
             // Check if visible (z < 1 means in front of camera)
             if (screenPos.z < 1 && screenPos.z > -1) {
-                element.style.display = 'block';
-                element.style.left = `${x}px`;
-                element.style.top = `${y}px`;
+                // Convert to CSS coordinates
+                const x = (screenPos.x * 0.5 + 0.5) * winWidth;
+                const y = (-screenPos.y * 0.5 + 0.5) * winHeight;
 
-                // Fade based on distance
-                const dist = this.camera.position.distanceTo(worldPos);
+                // Use transform for better performance than left/top
+                element.style.display = 'block';
+                element.style.transform = `translate(${x}px, ${y}px)`;
+
+                // Fade based on distance (use squared distance to avoid sqrt)
+                const dx = this.camera.position.x - worldPos.x;
+                const dy = this.camera.position.y - worldPos.y;
+                const dz = this.camera.position.z - worldPos.z;
+                const distSq = dx * dx + dy * dy + dz * dz;
+                const dist = Math.sqrt(distSq);
                 const opacity = Math.max(0.3, Math.min(1, 1 - dist / 500));
-                element.style.opacity = opacity.toString();
+                element.style.opacity = opacity;
 
                 // Update colonized/queued status
                 if (poa.colonized) {

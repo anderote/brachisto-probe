@@ -8,6 +8,22 @@
 
 Object.assign(StarMapVisualization.prototype, {
 
+    // Pre-allocated vectors for camera updates (avoid per-frame allocations)
+    _camTempVec1: null,
+    _camTempVec2: null,
+    _camTempVec3: null,
+
+    /**
+     * Initialize pre-allocated camera vectors (called lazily on first use)
+     */
+    _initCameraVectors() {
+        if (!this._camTempVec1) {
+            this._camTempVec1 = new THREE.Vector3();
+            this._camTempVec2 = new THREE.Vector3();
+            this._camTempVec3 = new THREE.Vector3();
+        }
+    },
+
     /**
      * Focus camera on Sol system - hotkey "1"
      * Smoothly animates camera to Sol's position
@@ -170,13 +186,16 @@ Object.assign(StarMapVisualization.prototype, {
         if (!this.followTarget) return;
         if (!this.camera || !this.controls) return;
 
-        // Get world position of target mesh
-        const targetWorldPos = new THREE.Vector3();
+        // Initialize pre-allocated vectors if needed
+        this._initCameraVectors();
+
+        // Get world position of target mesh (reuse vector)
+        const targetWorldPos = this._camTempVec1;
         this.followTarget.getWorldPosition(targetWorldPos);
 
-        // Calculate how much the target moved since last frame
-        const oldTarget = this.controls.target.clone();
-        const delta = targetWorldPos.clone().sub(oldTarget);
+        // Calculate how much the target moved since last frame (reuse vectors)
+        const oldTarget = this._camTempVec2.copy(this.controls.target);
+        const delta = this._camTempVec3.copy(targetWorldPos).sub(oldTarget);
 
         // Move both target AND camera by the same delta
         // This keeps the camera in the same relative position while allowing OrbitControls to work
@@ -395,12 +414,17 @@ Object.assign(StarMapVisualization.prototype, {
     updateFleetViewCamera() {
         if (!this.fleetViewMode) return;
 
-        let targetPos;
+        // Initialize pre-allocated vectors if needed
+        this._initCameraVectors();
+
+        let targetPos = null;
+        let hasTarget = false;
 
         // Check if our tracked fleet is still valid
         if (this.trackedFleet && this.probeFleets.includes(this.trackedFleet)) {
-            // Fleet still in transit - follow its current position
-            targetPos = this.trackedFleet.probe.position.clone();
+            // Fleet still in transit - follow its current position (reuse vector)
+            targetPos = this._camTempVec1.copy(this.trackedFleet.probe.position);
+            hasTarget = true;
             this._fleetViewExitDelay = null;  // Reset exit delay when tracking valid fleet
 
             // Convert to world coordinates
@@ -408,8 +432,9 @@ Object.assign(StarMapVisualization.prototype, {
                 targetPos.applyMatrix4(this.colonizationGroup.matrixWorld);
             }
         } else if (this.lastArrivedStar) {
-            // Fleet arrived - stay at the colonized star
-            targetPos = this.lastArrivedStar.position.clone();
+            // Fleet arrived - stay at the colonized star (reuse vector)
+            targetPos = this._camTempVec1.copy(this.lastArrivedStar.position);
+            hasTarget = true;
             this._fleetViewExitDelay = null;  // Reset exit delay when at arrived star
             if (this.colonizationGroup) {
                 targetPos.applyMatrix4(this.colonizationGroup.matrixWorld);
@@ -438,15 +463,15 @@ Object.assign(StarMapVisualization.prototype, {
         }
 
         // Smoothly follow the target - update both target AND camera position
-        if (targetPos && this.controls) {
-            // Calculate current offset from target to camera
-            const currentOffset = this.camera.position.clone().sub(this.controls.target);
+        if (hasTarget && this.controls) {
+            // Calculate current offset from target to camera (reuse vector)
+            const currentOffset = this._camTempVec2.copy(this.camera.position).sub(this.controls.target);
 
             // Smoothly move the target
             this.controls.target.lerp(targetPos, 0.05);
 
-            // Move camera to maintain the same relative offset
-            const newCameraPos = this.controls.target.clone().add(currentOffset);
+            // Move camera to maintain the same relative offset (reuse vector)
+            const newCameraPos = this._camTempVec3.copy(this.controls.target).add(currentOffset);
             this.camera.position.lerp(newCameraPos, 0.05);
         }
     },

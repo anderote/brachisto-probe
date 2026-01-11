@@ -43,8 +43,6 @@ class StarMapVisualization {
         this.colonizedConnections = [];     // Lines between colonized stars
         this.probeFleets = [];              // Active probe fleet animations
         this.trailRemnants = [];            // Fading trail remnants from completed probes
-        this.outposts = [];                 // Auto-generated strategic outposts
-        this.outpostCapacities = {};        // outpostId -> accumulated launch capacity
 
         // Fleet View Mode
         this.fleetViewMode = false;         // Whether fleet view is active
@@ -503,25 +501,30 @@ class StarMapVisualization {
     }
 
     /**
-     * Rebuild the colonized stars Points geometry
-     * Called after adding stars or updating colors
+     * Initialize dynamic geometry for colonized stars
+     * Pre-allocates buffers for performance - no rebuilds needed when adding stars
      */
-    rebuildColonizedStarsGeometry() {
-        // Remove old Points if exists
-        if (this.colonizedStarsPoints) {
-            this.colonizationGroup.remove(this.colonizedStarsPoints);
-            this.colonizedStarsPoints.geometry.dispose();
-            this.colonizedStarsPoints.material.dispose();
-        }
+    initColonizedStarsGeometry() {
+        if (this._colonizedGeometryInitialized) return;
 
-        if (this.colonizedStarsPositions.length === 0) return;
+        // Pre-allocate for up to 10,000 colonized stars
+        this._maxColonizedStars = 10000;
+        this._colonizedPositions = new Float32Array(this._maxColonizedStars * 3);
+        this._colonizedColors = new Float32Array(this._maxColonizedStars * 3);
 
-        // Create new geometry
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position',
-            new THREE.Float32BufferAttribute(this.colonizedStarsPositions, 3));
-        geometry.setAttribute('color',
-            new THREE.Float32BufferAttribute(this.colonizedStarsColors, 3));
+
+        // Create buffer attributes with DynamicDrawUsage for efficient updates
+        const posAttr = new THREE.BufferAttribute(this._colonizedPositions, 3);
+        const colorAttr = new THREE.BufferAttribute(this._colonizedColors, 3);
+        posAttr.setUsage(THREE.DynamicDrawUsage);
+        colorAttr.setUsage(THREE.DynamicDrawUsage);
+
+        geometry.setAttribute('position', posAttr);
+        geometry.setAttribute('color', colorAttr);
+
+        // Initially draw nothing
+        geometry.setDrawRange(0, 0);
 
         const material = new THREE.PointsMaterial({
             size: 0.6,              // Larger than galaxy stars (0.4) to dominate
@@ -537,6 +540,50 @@ class StarMapVisualization {
         if (this.colonizationGroup) {
             this.colonizationGroup.add(this.colonizedStarsPoints);
         }
+
+        this._colonizedGeometryInitialized = true;
+    }
+
+    /**
+     * Update colonized stars geometry after adding a star or changing colors
+     * Uses dynamic buffer updates instead of full rebuild
+     */
+    rebuildColonizedStarsGeometry() {
+        // Initialize dynamic geometry if needed
+        if (!this._colonizedGeometryInitialized) {
+            this.initColonizedStarsGeometry();
+        }
+
+        if (!this.colonizedStarsPoints) return;
+
+        const starCount = this.colonizedStars.length;
+        if (starCount === 0) {
+            this.colonizedStarsPoints.geometry.setDrawRange(0, 0);
+            return;
+        }
+
+        // Copy data to pre-allocated buffers
+        const positions = this._colonizedPositions;
+        const colors = this._colonizedColors;
+
+        for (let i = 0; i < starCount && i < this._maxColonizedStars; i++) {
+            const idx = i * 3;
+            // Positions from colonizedStarsPositions array
+            positions[idx] = this.colonizedStarsPositions[idx];
+            positions[idx + 1] = this.colonizedStarsPositions[idx + 1];
+            positions[idx + 2] = this.colonizedStarsPositions[idx + 2];
+            // Colors from colonizedStarsColors array
+            colors[idx] = this.colonizedStarsColors[idx];
+            colors[idx + 1] = this.colonizedStarsColors[idx + 1];
+            colors[idx + 2] = this.colonizedStarsColors[idx + 2];
+        }
+
+        // Mark buffers as needing update
+        this.colonizedStarsPoints.geometry.attributes.position.needsUpdate = true;
+        this.colonizedStarsPoints.geometry.attributes.color.needsUpdate = true;
+
+        // Update draw range to only render existing stars
+        this.colonizedStarsPoints.geometry.setDrawRange(0, Math.min(starCount, this._maxColonizedStars));
     }
 
     /**
@@ -709,179 +756,6 @@ class StarMapVisualization {
 
             this.colonizedConnections.push(line);
             this.colonizationGroup.add(line);
-        }
-    }
-
-    /**
-     * Create an outpost at a colonized star
-     * Outposts serve as strategic launch points for colonization waves
-     */
-    createOutpost(star) {
-        const outpostId = `outpost_${this.outposts.length + 1}`;
-
-        // Create visual marker - larger, distinct from regular stars
-        const markerGeometry = new THREE.OctahedronGeometry(0.4, 0);
-        const markerMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.9
-        });
-        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-        marker.position.copy(star.position);
-
-        // Add rotating ring around outpost
-        const ringGeometry = new THREE.RingGeometry(0.5, 0.55, 16);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.6,
-            side: THREE.DoubleSide
-        });
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        ring.rotation.x = Math.PI / 2;
-        marker.add(ring);
-
-        // Add glow halo
-        const glowGeometry = new THREE.SphereGeometry(0.7, 8, 8);
-        const glowMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.15,
-            side: THREE.BackSide
-        });
-        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-        marker.add(glow);
-
-        this.colonizationGroup.add(marker);
-
-        const outpost = {
-            id: outpostId,
-            position: star.position.clone(),
-            starMesh: star,
-            marker: marker,
-            createdAt: this.time,
-            waveRadius: 80,  // Range for wave colonization
-            isActive: true,
-            lastWaveTime: this.time
-        };
-
-        this.outposts.push(outpost);
-        console.log(`[StarMap] Created ${outpostId} at star #${this.colonizedStars.indexOf(star)} - Total outposts: ${this.outposts.length}`);
-
-        return outpost;
-    }
-
-    /**
-     * Check if a new outpost should be created at a milestone
-     * Creates outpost every 100 colonized stars
-     */
-    checkOutpostMilestone() {
-        const colonizedCount = this.colonizedStars.length;
-        const milestonesReached = Math.floor(colonizedCount / 100);
-        const currentOutposts = this.outposts.length;
-
-        if (milestonesReached > currentOutposts) {
-            // Find the best star for an outpost - closest to galactic center
-            // among recently colonized stars (frontier)
-            const recentStars = this.colonizedStars.slice(-50);  // Last 50 colonized
-            let bestStar = null;
-            let bestScore = -Infinity;
-
-            for (const star of recentStars) {
-                // Score: prefer stars closer to center, away from existing outposts
-                const distFromCenter = star.position.length();
-                const centerScore = 100 - distFromCenter;  // Closer to center = higher score
-
-                // Penalty for being too close to existing outposts
-                let outpostPenalty = 0;
-                for (const outpost of this.outposts) {
-                    const distToOutpost = star.position.distanceTo(outpost.position);
-                    if (distToOutpost < 30) {
-                        outpostPenalty += (30 - distToOutpost);
-                    }
-                }
-
-                const score = centerScore - outpostPenalty;
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestStar = star;
-                }
-            }
-
-            if (bestStar) {
-                this.createOutpost(bestStar);
-            }
-        }
-    }
-
-    /**
-     * Update colonization waves from outposts
-     * Uses capacity-based system: outposts accumulate launch capacity based on expansion allocation
-     */
-    updateOutpostWaves() {
-        // Capacity rate based on expansion allocation (0-100)
-        // Higher expansion = faster capacity accumulation
-        const expansionRate = this.expansionAllocation / 100;
-        const capacityPerTick = 10 * expansionRate;  // 0-10 per tick
-        const waveLaunchCost = 100;  // Capacity required to launch a wave
-
-        // Use hop distance policy for wave radius (respects player's hop setting)
-        // Convert target hop distance (ly) to units
-        const targetHopLY = this.getAverageHopDistanceLY();
-        const hopRangeUnits = targetHopLY / 326;
-        // Use 2x hop distance as max wave range (gives some flexibility)
-        const maxWaveRadius = Math.max(hopRangeUnits * 2, 10);  // Min 10 units
-
-        for (const outpost of this.outposts) {
-            if (!outpost.isActive) continue;
-
-            // Initialize capacity if not exists
-            if (this.outpostCapacities[outpost.id] === undefined) {
-                this.outpostCapacities[outpost.id] = 0;
-            }
-
-            // Accumulate capacity (more outposts = parallel accumulation benefit)
-            this.outpostCapacities[outpost.id] += capacityPerTick;
-
-            // Check if we have enough capacity to launch a wave
-            if (this.outpostCapacities[outpost.id] >= waveLaunchCost) {
-                // Find nearby uncolonized targets within hop range
-                const nearbyTargets = this.findUncolonizedInRadius(
-                    outpost.position.x,
-                    outpost.position.y,
-                    outpost.position.z,
-                    Math.min(outpost.waveRadius, maxWaveRadius)  // Respect hop policy
-                );
-
-                if (nearbyTargets.length > 0) {
-                    // Consume capacity
-                    this.outpostCapacities[outpost.id] -= waveLaunchCost;
-
-                    // Launch wave to nearest 1-3 targets based on remaining capacity
-                    const maxTargets = Math.min(
-                        3,
-                        nearbyTargets.length,
-                        1 + Math.floor(this.outpostCapacities[outpost.id] / waveLaunchCost)
-                    );
-
-                    for (let i = 0; i < maxTargets; i++) {
-                        const target = nearbyTargets[i];
-                        this.launchProbeFleet(target.x, target.y, target.z, target.targetData);
-                    }
-
-                    outpost.lastWaveTime = this.time;
-
-                    // Animate outpost ring pulse to show wave launched
-                    if (outpost.marker && outpost.marker.children[0]) {
-                        outpost.marker.children[0].scale.setScalar(1.5);
-                        setTimeout(() => {
-                            if (outpost.marker && outpost.marker.children[0]) {
-                                outpost.marker.children[0].scale.setScalar(1);
-                            }
-                        }, 500);
-                    }
-                }
-            }
         }
     }
 
@@ -1898,19 +1772,6 @@ class StarMapVisualization {
             }
         }
 
-        // Animate outposts - rotate marker and ring
-        if (this.outposts) {
-            for (const outpost of this.outposts) {
-                if (outpost.marker) {
-                    outpost.marker.rotation.y += 0.01;  // Slow spin
-                    // Ring rotates faster
-                    if (outpost.marker.children[0]) {
-                        outpost.marker.children[0].rotation.z += 0.02;
-                    }
-                }
-            }
-        }
-
         // Animate probe fleets - show them traveling to new stars
         this.updateProbeFleets();
 
@@ -1964,66 +1825,82 @@ class StarMapVisualization {
     /**
      * Update colonization-specific stats in the UI
      */
+    /**
+     * Cache DOM element references to avoid repeated getElementById calls
+     * Called once on first update, elements are reused thereafter
+     */
+    cacheStatElements() {
+        if (this._statElementsCached) return;
+        this._statElements = {
+            driveAccel: document.getElementById('stat-drive-accel'),
+            fleetsTransit: document.getElementById('stat-fleets-transit'),
+            hopDistance: document.getElementById('stat-hop-distance'),
+            starsCount: document.getElementById('stat-stars-count'),
+            sectors: document.getElementById('stat-sectors'),
+            totalMass: document.getElementById('stat-total-mass'),
+            totalPower: document.getElementById('stat-total-power'),
+            dysonAvg: document.getElementById('stat-dyson-avg'),
+            galacticTime: document.getElementById('galactic-time')
+        };
+        this._statElementsCached = true;
+    }
+
     updateColonizationStats() {
+        // Cache DOM elements on first call (avoids getElementById every frame)
+        this.cacheStatElements();
+        const els = this._statElements;
+
         const actualColonizedCount = this.colonizedStars ? this.colonizedStars.length : 1;
 
         // Update drive acceleration (in g's)
-        const driveAccelEl = document.getElementById('stat-drive-accel');
-        if (driveAccelEl) {
+        if (els.driveAccel) {
             const accel = this.getDriveAcceleration();
             if (accel < 1) {
-                driveAccelEl.textContent = `${accel.toFixed(2)} g`;
+                els.driveAccel.textContent = `${accel.toFixed(2)} g`;
             } else if (accel < 100) {
-                driveAccelEl.textContent = `${accel.toFixed(1)} g`;
+                els.driveAccel.textContent = `${accel.toFixed(1)} g`;
             } else {
-                driveAccelEl.textContent = `${accel.toFixed(0)} g`;
+                els.driveAccel.textContent = `${accel.toFixed(0)} g`;
             }
         }
 
         // Update fleets in transit
-        const fleetsEl = document.getElementById('stat-fleets-transit');
-        if (fleetsEl) {
-            fleetsEl.textContent = this.probeFleets.length.toString();
+        if (els.fleetsTransit) {
+            els.fleetsTransit.textContent = this.probeFleets.length.toString();
         }
 
         // Update hop distance (from strategy slider)
-        const hopEl = document.getElementById('stat-hop-distance');
-        if (hopEl) {
-            hopEl.textContent = `${this.getAverageHopDistanceDisplay()} ly`;
+        if (els.hopDistance) {
+            els.hopDistance.textContent = `${this.getAverageHopDistanceDisplay()} ly`;
         }
 
         // Update stars count
-        const starsEl = document.getElementById('stat-stars-count');
-        if (starsEl) {
-            starsEl.textContent = actualColonizedCount.toLocaleString();
+        if (els.starsCount) {
+            els.starsCount.textContent = actualColonizedCount.toLocaleString();
         }
 
         // Update sectors (colonized regions/clusters)
-        const sectorsEl = document.getElementById('stat-sectors');
-        if (sectorsEl) {
+        if (els.sectors) {
             // Count unique sectors based on spatial clustering
             const sectors = this.countColonizedSectors();
-            sectorsEl.textContent = sectors.toString();
+            els.sectors.textContent = sectors.toString();
         }
 
         // Update total mass in solar masses
-        const massEl = document.getElementById('stat-total-mass');
-        if (massEl) {
+        if (els.totalMass) {
             const totals = this.getTotalStarUnits ? this.getTotalStarUnits() : { total: actualColonizedCount * 100 };
             const totalSolarMasses = totals.total / 100;
-            massEl.textContent = this.formatSolarMasses(totalSolarMasses);
+            els.totalMass.textContent = this.formatSolarMasses(totalSolarMasses);
         }
 
         // Update total power in solar luminosity
-        const powerEl = document.getElementById('stat-total-power');
-        if (powerEl) {
+        if (els.totalPower) {
             const totalPower = this.starsWithDyson * this.AVG_STAR_LUMINOSITY * 3.828e26;
-            powerEl.textContent = this.formatPowerSolar(totalPower);
+            els.totalPower.textContent = this.formatPowerSolar(totalPower);
         }
 
         // Update weighted Dyson completion across all stars
-        const dysonEl = document.getElementById('stat-dyson-avg');
-        if (dysonEl) {
+        if (els.dysonAvg) {
             let totalDyson = 0;
             let totalWeight = 0;
             for (const star of this.colonizedStars) {
@@ -2033,22 +1910,21 @@ class StarMapVisualization {
                 totalWeight += weight;
             }
             const avgDyson = totalWeight > 0 ? (totalDyson / totalWeight) : 0;
-            dysonEl.textContent = `${avgDyson.toFixed(1)}%`;
+            els.dysonAvg.textContent = `${avgDyson.toFixed(1)}%`;
         }
 
         // Update top bar clock
-        const galacticTimeEl = document.getElementById('galactic-time');
-        if (galacticTimeEl) {
+        if (els.galacticTime) {
             const years = Math.floor(this.time / 365);
             const months = Math.floor((this.time % 365) / 30);
             if (years >= 1000000) {
-                galacticTimeEl.textContent = `Year ${(years / 1000000).toFixed(2)}M`;
+                els.galacticTime.textContent = `Year ${(years / 1000000).toFixed(2)}M`;
             } else if (years >= 1000) {
-                galacticTimeEl.textContent = `Year ${(years / 1000).toFixed(1)}k`;
+                els.galacticTime.textContent = `Year ${(years / 1000).toFixed(1)}k`;
             } else if (years > 0) {
-                galacticTimeEl.textContent = `Year ${years}, Month ${months + 1}`;
+                els.galacticTime.textContent = `Year ${years}, Month ${months + 1}`;
             } else {
-                galacticTimeEl.textContent = `Month ${months + 1}`;
+                els.galacticTime.textContent = `Month ${months + 1}`;
             }
         }
     }
@@ -2411,31 +2287,14 @@ class StarMapVisualization {
             });
         }
 
-        // Save outposts data
-        const outpostsData = [];
-        for (const outpost of this.outposts) {
-            outpostsData.push({
-                id: outpost.id,
-                x: outpost.position.x,
-                y: outpost.position.y,
-                z: outpost.position.z,
-                createdAt: outpost.createdAt,
-                waveRadius: outpost.waveRadius,
-                isActive: outpost.isActive,
-                lastWaveTime: outpost.lastWaveTime
-            });
-        }
-
         return {
             colonizedStars: colonizedStarsData,
-            outposts: outpostsData,
             starsInfluenced: this.starsInfluenced || 1,
             dotsColonized: this.dotsColonized || 1,
             starsWithDyson: this.starsWithDyson || 0,
             influenceRadius: this.influenceRadius || 0,
             time: this.time || 0,
-            expansionAllocation: this.expansionAllocation || 50,
-            outpostCapacities: this.outpostCapacities || {}
+            expansionAllocation: this.expansionAllocation || 50
         };
     }
 
@@ -2549,46 +2408,6 @@ class StarMapVisualization {
         this.influenceRadius = galaxyState.influenceRadius || 0;
         this.time = galaxyState.time || 0;
 
-        // Clear existing outposts
-        if (this.outposts) {
-            for (const outpost of this.outposts) {
-                if (outpost.marker && this.colonizationGroup) {
-                    this.colonizationGroup.remove(outpost.marker);
-                }
-            }
-            this.outposts = [];
-        }
-
-        // Restore outposts from saved data
-        if (galaxyState.outposts && galaxyState.outposts.length > 0) {
-            for (const outpostData of galaxyState.outposts) {
-                // Find the corresponding colonized star near the outpost position
-                let nearestStar = null;
-                let nearestDist = Infinity;
-                const outpostPos = new THREE.Vector3(outpostData.x, outpostData.y, outpostData.z);
-
-                for (const star of this.colonizedStars) {
-                    const dist = star.position.distanceTo(outpostPos);
-                    if (dist < nearestDist) {
-                        nearestDist = dist;
-                        nearestStar = star;
-                    }
-                }
-
-                if (nearestStar && nearestDist < 1) {
-                    // Recreate the outpost
-                    const outpost = this.createOutpost(nearestStar);
-                    // Restore saved properties
-                    outpost.id = outpostData.id;
-                    outpost.createdAt = outpostData.createdAt;
-                    outpost.waveRadius = outpostData.waveRadius;
-                    outpost.isActive = outpostData.isActive;
-                    outpost.lastWaveTime = outpostData.lastWaveTime;
-                }
-            }
-            console.log(`[StarMap] Restored ${this.outposts.length} outposts`);
-        }
-
         // Restore expansion allocation
         if (galaxyState.expansionAllocation !== undefined) {
             this.expansionAllocation = galaxyState.expansionAllocation;
@@ -2597,11 +2416,6 @@ class StarMapVisualization {
                 slider.value = this.expansionAllocation;
                 this.updateExpansionDisplay(this.expansionAllocation);
             }
-        }
-
-        // Restore outpost capacities
-        if (galaxyState.outpostCapacities) {
-            this.outpostCapacities = galaxyState.outpostCapacities;
         }
 
         // Update display
@@ -2672,18 +2486,6 @@ class StarMapVisualization {
             this.colonizedStarsPositions = [];
             this.colonizedStarsColors = [];
             this.rebuildColonizedStarsGeometry();
-        }
-
-        // Clear outposts
-        if (this.outposts) {
-            for (const outpost of this.outposts) {
-                if (outpost.ring) {
-                    this.colonizationGroup.remove(outpost.ring);
-                    outpost.ring.geometry?.dispose();
-                    outpost.ring.material?.dispose();
-                }
-            }
-            this.outposts = [];
         }
 
         // Reset POAs - mark all as not colonized
