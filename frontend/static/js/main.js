@@ -703,7 +703,8 @@ class App {
 
     /**
      * Initialize the 3D star map visualization
-     * Loads nearby stars data and creates the GalaxySystem
+     * Loads nearby stars data (POAs) for the galaxy map
+     * NOTE: GalaxySystem is deprecated - StarMapVisualization manages all galaxy state
      */
     async initializeStarMap() {
         if (!this.starMapVisualization) {
@@ -712,27 +713,21 @@ class App {
         }
 
         try {
-            console.log('[App] Loading nearby stars data...');
-            // Load nearby stars data
+            console.log('[App] Loading nearby stars data (POAs)...');
+            // Load nearby stars data (used as Points of Attraction in galaxy)
             const response = await fetch('/game_data/nearby_stars.json');
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             const starData = await response.json();
-            console.log('[App] Loaded', starData?.stars?.length || 0, 'stars');
+            console.log('[App] Loaded', starData?.stars?.length || 0, 'POA stars');
 
-            // Create or reuse GalaxySystem
-            let galaxySystem = null;
-            if (typeof GalaxySystem !== 'undefined') {
-                galaxySystem = new GalaxySystem();
-                galaxySystem.loadNearbyStars(starData);
-                console.log('[App] GalaxySystem initialized with', starData?.stars?.length || 0, 'stars');
-            } else {
-                console.log('[App] GalaxySystem not available');
-            }
+            // NOTE: GalaxySystem is deprecated
+            // StarMapVisualization now manages all galaxy state internally via POAs
+            // The galaxySystem parameter is kept for backwards compatibility but ignored
 
-            // Initialize the star map with data
-            this.starMapVisualization.init(starData, galaxySystem);
+            // Initialize the star map with data (no galaxySystem)
+            this.starMapVisualization.init(starData);
             console.log('[App] Star map visualization initialized successfully');
 
             // Load starship drives data for relativistic travel calculations
@@ -746,9 +741,6 @@ class App {
             } catch (driveErr) {
                 console.warn('[App] Could not load starship drives:', driveErr);
             }
-
-            // Store reference to galaxySystem for universe unlock check
-            this.galaxySystem = galaxySystem;
 
         } catch (error) {
             console.error('[App] Failed to initialize star map:', error);
@@ -776,8 +768,9 @@ class App {
             console.log('[App] Loaded universe data with', universeData?.superclusters?.length || 0, 'superclusters');
 
             // Initialize universe system
+            // NOTE: GalaxySystem deprecated - pass null, universe system will check starMap for completion
             if (this.universeSystem) {
-                this.universeSystem.init(universeData, this.galaxySystem);
+                this.universeSystem.init(universeData, null);
                 console.log('[App] UniverseSystem initialized');
             }
 
@@ -806,23 +799,30 @@ class App {
     /**
      * Check and update universe unlock status
      * Called periodically to check galaxy completion
+     * NOTE: GalaxySystem is deprecated - check StarMapVisualization for completion
      */
     checkUniverseUnlock() {
         if (this.universeUnlocked) return true;
 
-        if (this.galaxySystem && this.galaxySystem.isUniverseUnlockable()) {
-            this.universeUnlocked = true;
-            console.log('[App] Universe view unlocked! Galaxy at 99% completion.');
+        // Check galaxy completion via StarMapVisualization
+        // Universe unlocks at 99% galaxy colonization
+        const starMap = this.starMapVisualization;
+        if (starMap && starMap.getGalaxyCompletionPercent) {
+            const completion = starMap.getGalaxyCompletionPercent();
+            if (completion >= 0.99) {
+                this.universeUnlocked = true;
+                console.log('[App] Universe view unlocked! Galaxy at 99% completion.');
 
-            // Show notification
-            if (typeof showToast === 'function') {
-                showToast('Universe View Unlocked! Press U in Galaxy view.', 'success');
+                // Show notification
+                if (typeof showToast === 'function') {
+                    showToast('Universe View Unlocked! Press U in Galaxy view.', 'success');
+                }
+
+                // Dispatch event
+                window.dispatchEvent(new CustomEvent('universe-unlocked'));
+
+                return true;
             }
-
-            // Dispatch event
-            window.dispatchEvent(new CustomEvent('universe-unlocked'));
-
-            return true;
         }
 
         return false;

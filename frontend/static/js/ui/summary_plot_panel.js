@@ -89,12 +89,12 @@ class SummaryPlotPanel {
             });
         });
         
-        // Keyboard shortcut (H key to toggle)
+        // Keyboard shortcut (G key to toggle - G for Graph)
         document.addEventListener('keydown', (e) => {
             const activeElement = document.activeElement;
             const isInputFocused = activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA';
-            
-            if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey && !isInputFocused) {
+
+            if (e.key.toLowerCase() === 'g' && !e.ctrlKey && !e.metaKey && !isInputFocused) {
                 this.toggle();
             }
         });
@@ -137,77 +137,71 @@ class SummaryPlotPanel {
     
     drawChart() {
         if (!this.ctx || !this.canvas || !this.gameState) return;
-        
+
         const history = this.gameState.stats_history || [];
         if (history.length < 2) {
             this.drawEmptyState();
             return;
         }
-        
+
         const width = this.canvas.width;
         const height = this.canvas.height;
         const ctx = this.ctx;
-        
+
         // Clear canvas
         ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
         ctx.fillRect(0, 0, width, height);
-        
-        // Chart area padding
-        const padding = { top: 40, right: 20, bottom: 50, left: 80 };
+
+        // Chart area padding - extra space on right for Y-axis labels
+        const padding = { top: 40, right: 100, bottom: 50, left: 80 };
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
-        
+
         // Find data ranges
         const timeMin = history[0].time;
         const timeMax = history[history.length - 1].time;
         const timeRange = timeMax - timeMin || 1;
-        
-        // Calculate max values for each series
+
+        // Calculate max values for each series (for independent Y-axes)
         const maxValues = {
-            metal: 0,
-            energy: 0,
-            flops: 0,
-            probes: 0
+            metal: 1,
+            energy: 1,
+            flops: 1,
+            probes: 1
         };
-        
+
         for (const point of history) {
-            maxValues.metal = Math.max(maxValues.metal, point.metal_spent || 0);
-            maxValues.energy = Math.max(maxValues.energy, point.energy_spent || 0);
-            maxValues.flops = Math.max(maxValues.flops, point.flops_spent || 0);
-            maxValues.probes = Math.max(maxValues.probes, point.probes_built || 0);
+            maxValues.metal = Math.max(maxValues.metal, point.metal_spent || 1);
+            maxValues.energy = Math.max(maxValues.energy, point.energy_spent || 1);
+            maxValues.flops = Math.max(maxValues.flops, point.flops_spent || 1);
+            maxValues.probes = Math.max(maxValues.probes, point.probes_built || 1);
         }
-        
-        // Find overall max for normalization (only for enabled series)
-        let overallMax = 0;
-        if (this.seriesEnabled.metal) overallMax = Math.max(overallMax, maxValues.metal);
-        if (this.seriesEnabled.energy) overallMax = Math.max(overallMax, maxValues.energy);
-        if (this.seriesEnabled.flops) overallMax = Math.max(overallMax, maxValues.flops);
-        if (this.seriesEnabled.probes) overallMax = Math.max(overallMax, maxValues.probes);
-        
-        if (overallMax === 0) overallMax = 1;
-        
-        // Draw grid
-        this.drawGrid(ctx, padding, chartWidth, chartHeight, timeMin, timeMax, overallMax);
-        
-        // Draw each series
+
+        // Draw grid (log scale)
+        this.drawLogGrid(ctx, padding, chartWidth, chartHeight, timeMin, timeMax);
+
+        // Draw each series with its own scale (log scale, normalized 0-1)
         const series = [
-            { key: 'metal', field: 'metal_spent', color: this.chartColors.metal },
-            { key: 'energy', field: 'energy_spent', color: this.chartColors.energy },
-            { key: 'flops', field: 'flops_spent', color: this.chartColors.flops },
-            { key: 'probes', field: 'probes_built', color: this.chartColors.probes }
+            { key: 'metal', field: 'metal_spent', color: this.chartColors.metal, max: maxValues.metal },
+            { key: 'energy', field: 'energy_spent', color: this.chartColors.energy, max: maxValues.energy },
+            { key: 'flops', field: 'flops_spent', color: this.chartColors.flops, max: maxValues.flops },
+            { key: 'probes', field: 'probes_built', color: this.chartColors.probes, max: maxValues.probes }
         ];
-        
+
         for (const s of series) {
             if (this.seriesEnabled[s.key]) {
-                this.drawSeries(ctx, history, s.field, s.color, padding, chartWidth, chartHeight, timeMin, timeRange, overallMax);
+                this.drawLogSeries(ctx, history, s.field, s.color, padding, chartWidth, chartHeight, timeMin, timeRange, s.max);
             }
         }
-        
+
+        // Draw Y-axis labels for enabled series (on right side)
+        this.drawMultiAxisLabels(ctx, padding, chartWidth, chartHeight, maxValues);
+
         // Draw title
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.font = 'bold 14px "Courier New", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Cumulative Statistics Over Time', width / 2, 20);
+        ctx.fillText('Cumulative Statistics (Log Scale)', width / 2, 20);
     }
     
     drawEmptyState() {
@@ -224,27 +218,27 @@ class SummaryPlotPanel {
         ctx.fillText('Collecting data... (need at least 2 data points)', width / 2, height / 2);
     }
     
-    drawGrid(ctx, padding, chartWidth, chartHeight, timeMin, timeMax, maxValue) {
+    drawLogGrid(ctx, padding, chartWidth, chartHeight, timeMin, timeMax) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.lineWidth = 1;
-        
-        // Horizontal grid lines (5 lines)
-        const ySteps = 5;
+
+        // Horizontal grid lines - log scale divisions (0%, 25%, 50%, 75%, 100% of log range)
+        const ySteps = 4;
         for (let i = 0; i <= ySteps; i++) {
             const y = padding.top + (chartHeight * i / ySteps);
             ctx.beginPath();
             ctx.moveTo(padding.left, y);
             ctx.lineTo(padding.left + chartWidth, y);
             ctx.stroke();
-            
-            // Y-axis labels
-            const value = maxValue * (1 - i / ySteps);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.font = '10px "Courier New", monospace';
+
+            // Left axis label (percentage of range)
+            const pct = 100 - (i * 100 / ySteps);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.font = '9px "Courier New", monospace';
             ctx.textAlign = 'right';
-            ctx.fillText(this.formatNumber(value), padding.left - 10, y + 4);
+            ctx.fillText(`${pct}%`, padding.left - 10, y + 4);
         }
-        
+
         // Vertical grid lines (time axis, 5 lines)
         const xSteps = 5;
         const timeRange = timeMax - timeMin;
@@ -254,7 +248,7 @@ class SummaryPlotPanel {
             ctx.moveTo(x, padding.top);
             ctx.lineTo(x, padding.top + chartHeight);
             ctx.stroke();
-            
+
             // X-axis labels (time in days)
             const time = timeMin + (timeRange * i / xSteps);
             ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
@@ -262,34 +256,40 @@ class SummaryPlotPanel {
             ctx.textAlign = 'center';
             ctx.fillText(this.formatTime(time), x, padding.top + chartHeight + 20);
         }
-        
+
         // Axis labels
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
         ctx.font = '11px "Courier New", monospace';
         ctx.textAlign = 'center';
         ctx.fillText('Time (days)', padding.left + chartWidth / 2, padding.top + chartHeight + 40);
-        
-        // Y-axis label (rotated)
+
+        // Left Y-axis label (rotated)
         ctx.save();
         ctx.translate(15, padding.top + chartHeight / 2);
         ctx.rotate(-Math.PI / 2);
-        ctx.fillText('Value (normalized)', 0, 0);
+        ctx.fillText('Log Scale (% of max)', 0, 0);
         ctx.restore();
     }
-    
-    drawSeries(ctx, history, field, color, padding, chartWidth, chartHeight, timeMin, timeRange, maxValue) {
-        if (history.length < 2) return;
-        
+
+    drawLogSeries(ctx, history, field, color, padding, chartWidth, chartHeight, timeMin, timeRange, maxValue) {
+        if (history.length < 2 || maxValue <= 1) return;
+
+        // Use log scale: map value to 0-1 range using log
+        const logMax = Math.log10(maxValue);
+        const logMin = 0; // log10(1) = 0
+
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        
+
         let started = false;
         for (const point of history) {
             const x = padding.left + ((point.time - timeMin) / timeRange) * chartWidth;
-            const value = point[field] || 0;
-            const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
-            
+            const value = Math.max(1, point[field] || 1); // Minimum 1 to avoid log(0)
+            const logValue = Math.log10(value);
+            const normalizedY = logMax > logMin ? (logValue - logMin) / (logMax - logMin) : 0;
+            const y = padding.top + chartHeight - (normalizedY * chartHeight);
+
             if (!started) {
                 ctx.moveTo(x, y);
                 started = true;
@@ -297,15 +297,44 @@ class SummaryPlotPanel {
                 ctx.lineTo(x, y);
             }
         }
-        
+
         ctx.stroke();
-        
-        // Draw fill (semi-transparent)
-        ctx.fillStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba');
-        ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
+
+        // Draw subtle fill (semi-transparent)
+        const lastPoint = history[history.length - 1];
+        const lastX = padding.left + ((lastPoint.time - timeMin) / timeRange) * chartWidth;
+        ctx.lineTo(lastX, padding.top + chartHeight);
         ctx.lineTo(padding.left, padding.top + chartHeight);
         ctx.closePath();
+        ctx.fillStyle = color + '15'; // 15 = ~8% opacity in hex
         ctx.fill();
+    }
+
+    drawMultiAxisLabels(ctx, padding, chartWidth, chartHeight, maxValues) {
+        // Draw max value labels on the right side for each enabled series
+        const enabledSeries = [];
+        if (this.seriesEnabled.metal) enabledSeries.push({ key: 'metal', color: this.chartColors.metal, max: maxValues.metal, label: 'Metal' });
+        if (this.seriesEnabled.energy) enabledSeries.push({ key: 'energy', color: this.chartColors.energy, max: maxValues.energy, label: 'Energy' });
+        if (this.seriesEnabled.flops) enabledSeries.push({ key: 'flops', color: this.chartColors.flops, max: maxValues.flops, label: 'FLOPS' });
+        if (this.seriesEnabled.probes) enabledSeries.push({ key: 'probes', color: this.chartColors.probes, max: maxValues.probes, label: 'Probes' });
+
+        const rightX = padding.left + chartWidth + 10;
+        const spacing = chartHeight / Math.max(enabledSeries.length, 1);
+
+        enabledSeries.forEach((series, index) => {
+            const y = padding.top + spacing * (index + 0.5);
+
+            // Draw colored indicator
+            ctx.fillStyle = series.color;
+            ctx.fillRect(rightX, y - 4, 8, 8);
+
+            // Draw label and max value
+            ctx.fillStyle = series.color;
+            ctx.font = '9px "Courier New", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${series.label}`, rightX + 12, y);
+            ctx.fillText(`max: ${this.formatNumber(series.max)}`, rightX + 12, y + 10);
+        });
     }
     
     updateLegend() {

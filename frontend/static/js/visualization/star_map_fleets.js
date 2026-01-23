@@ -55,6 +55,39 @@ Object.assign(StarMapVisualization.prototype, {
             return null;
         }
 
+        // Performance optimization: skip probe animation for short hops when empire is large
+        // Over 1000 stars and hops under 500ly colonize instantly without visual
+        const distanceLY = nearestDist * 326;
+        if (this.colonizedStars.length > 1000 && distanceLY < 500) {
+            // Instant colonization - no animation, same logic as probe arrival
+            const initialUnits = 15;
+            const newStar = this.addColonizedStar(
+                targetPos.x, targetPos.y, targetPos.z,
+                initialUnits,
+                targetData?.spectralClass
+            );
+
+            // Link data and handle POAs
+            if (targetData && newStar) {
+                newStar.targetData = targetData;
+                targetData.starData = newStar;
+            }
+            if (targetData?.isPOA && targetData?.poaData) {
+                this.onPOAColonized(targetData.poaData);
+            } else if (newStar) {
+                this.checkPioneerColony(newStar, targetPos);
+            }
+            if (targetData?.isQueuedTarget || targetData?.id) {
+                this.removeFromTargetQueue(targetData?.id);
+            }
+
+            this.dotsColonized++;
+            this.starsInfluenced += this.STARS_PER_DOT;
+
+            console.log(`[StarMap] Instant colonization (${distanceLY.toFixed(0)} ly, ${this.colonizedStars.length} stars)`);
+            return { instant: true };  // Return truthy value to indicate success
+        }
+
         // Create probe fleet visual - bright neon green cone pointing in travel direction
         const probeGeometry = new THREE.ConeGeometry(0.2, 0.6, 6);
         const probeMaterial = new THREE.MeshBasicMaterial({
@@ -84,7 +117,7 @@ Object.assign(StarMapVisualization.prototype, {
 
         // Calculate travel time using simple constant velocity
         const distanceUnits = launchStar.position.distanceTo(targetPos);
-        const distanceLY = distanceUnits * 326;  // 1 unit = 326 light-years
+        // distanceLY already calculated above for instant colonization check
         const driveTier = this.getDriveResearchTier();
 
         // Simple velocity-based travel (no relativistic complexity)
@@ -195,9 +228,6 @@ Object.assign(StarMapVisualization.prototype, {
                 // Each dot represents ~3.33 million actual stars
                 this.dotsColonized++;
                 this.starsInfluenced += this.STARS_PER_DOT;
-
-                // Check if we've hit an outpost milestone (every 100 stars)
-                this.checkOutpostMilestone();
 
                 // Remove probe but keep trail as a fading remnant
                 this.colonizationGroup.remove(fleet.probe);
@@ -376,7 +406,7 @@ Object.assign(StarMapVisualization.prototype, {
         // - 100% dyson = 1 probe/100 years
         // Sol is special: always 1 probe/year regardless of development
         // ========================================================================
-        if (this.probeFleets.length < 100) {
+        if (this.probeFleets.length < 300) {
             // Get hop distance from slider (for target selection)
             const hopDistanceLY = this.getAverageHopDistanceLY();
             const hopDistanceUnits = hopDistanceLY / 326;
@@ -391,7 +421,7 @@ Object.assign(StarMapVisualization.prototype, {
                 }
 
                 // Check if it's time to launch
-                if (this.time >= star.nextLaunchTime && this.probeFleets.length < 100) {
+                if (this.time >= star.nextLaunchTime && this.probeFleets.length < 300) {
                     // Find target within hop distance
                     const launchGalaxyX = this.solPosition.x + star.position.x;
                     const launchGalaxyY = this.solPosition.y + star.position.y;

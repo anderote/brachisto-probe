@@ -836,7 +836,8 @@ class OrbitalZoneSelector {
             
             // Handle spacebar for transfer menu
             // Only handle if a zone is selected (otherwise let pause/resume handle it)
-            if ((e.key === ' ' || e.key === 'Spacebar') && this.selectedZone) {
+            // Don't capture if galaxy view is active (let star map handle it for POA selection)
+            if ((e.key === ' ' || e.key === 'Spacebar') && this.selectedZone && !window.starMapVisualization?.isActive) {
                 e.preventDefault();
                 e.stopPropagation();
                 
