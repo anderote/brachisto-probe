@@ -45,11 +45,10 @@ Object.assign(StarMapVisualization.prototype, {
         this.galaxyGroup = new THREE.Group();
 
         // Build galaxy components - order matters for rendering
-        this.createCentralBar();
+        // this.createCentralBar();  // Disabled - central bar removed
         this.createCentralBulge();
         this.createSpiralArms();
         this.createDustLanes();           // Dark dust lanes in spiral arms
-        this.createVolumetricNebulae();   // Glowing emission nebulae
         this.createInterarmStars();
         this.createOuterHalo();
 
@@ -327,7 +326,7 @@ Object.assign(StarMapVisualization.prototype, {
             { start: -Math.PI / 2, pitch: 14, strength: 0.6, name: 'Norma' },       // Minor
         ];
 
-        const starsPerArm = 100000;  // ~400k total dots spread across 4 arms - larger galaxy
+        const starsPerArm = 50000;  // ~200k total dots spread across 4 arms
         const totalStars = starsPerArm * arms.length;
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(totalStars * 3);
@@ -470,6 +469,49 @@ Object.assign(StarMapVisualization.prototype, {
         }
 
         console.log(`[StarMap] ${this.colonizationTargets.length} colonizable stars (skipped ${nanCount} NaN, ${zeroCount} zero, ${tooCloseCount} too close to Sol)`);
+
+        // Build spatial hash for efficient proximity queries (cell size ~10 units = ~3200 ly)
+        this.rebuildTargetsSpatialHash();
+    },
+
+    /**
+     * Rebuild the spatial hash for colonization targets
+     * Called after initial build and when targets are colonized
+     */
+    rebuildTargetsSpatialHash() {
+        if (typeof SpatialHash === 'undefined') {
+            console.warn('[StarMap] SpatialHash not loaded, using brute force');
+            return;
+        }
+
+        // Create spatial hash with cell size of 10 units (~3200 ly)
+        // This balances cell count vs items per cell
+        if (!this._targetsSpatialHash) {
+            this._targetsSpatialHash = new SpatialHash(10);
+        } else {
+            this._targetsSpatialHash.clear();
+        }
+
+        // Insert all uncolonized targets
+        for (const target of this.colonizationTargets) {
+            if (!target.colonized && target.status !== 'fleet_sent') {
+                target._spatialHandle = this._targetsSpatialHash.insert(
+                    target.x, target.y, target.z, target
+                );
+            }
+        }
+
+        console.log(`[StarMap] Spatial hash built with ${this._targetsSpatialHash.size} targets`);
+    },
+
+    /**
+     * Remove a target from the spatial hash (when colonized)
+     */
+    removeTargetFromSpatialHash(target) {
+        if (this._targetsSpatialHash && target._spatialHandle) {
+            this._targetsSpatialHash.remove(target._spatialHandle);
+            target._spatialHandle = null;
+        }
     },
 
     /**
@@ -524,12 +566,25 @@ Object.assign(StarMapVisualization.prototype, {
     /**
      * Generate new POAs near the exploration frontier
      * Called periodically as empire expands
+     * Optimized with spatial hash for O(1) proximity checks
      */
     generateFrontierPOAs() {
         if (!this.allStarPositions || !this.solPosition) return;
 
-        // Remove colonized targets from the list
-        this.colonizationTargets = this.colonizationTargets.filter(t => !t.colonized);
+        // Remove colonized targets from the list and update spatial hash
+        const previousCount = this.colonizationTargets.length;
+        this.colonizationTargets = this.colonizationTargets.filter(t => {
+            if (t.colonized) {
+                this.removeTargetFromSpatialHash(t);
+                return false;
+            }
+            return true;
+        });
+
+        // Rebuild spatial hash if we removed many targets (more efficient than incremental)
+        if (previousCount - this.colonizationTargets.length > 100) {
+            this.rebuildTargetsSpatialHash();
+        }
 
         // Count how many we need to add
         const spotsAvailable = this.maxVisiblePOAs - this.colonizationTargets.length;
@@ -540,12 +595,23 @@ Object.assign(StarMapVisualization.prototype, {
         const frontierMax = this.explorationRadius * 2.0;
         const solPos = this.solPosition;
 
-        // Get all existing POA positions for distance checking
-        // This ensures new POAs fill gaps rather than clustering
-        const existingPOAPositions = [
-            ...this.pointsOfAttraction.map(p => p.position),
-            ...this.colonizationTargets.map(t => ({ x: t.x, y: t.y, z: t.z }))
-        ];
+        // Build a temporary spatial hash for existing POA positions (for gap detection)
+        // This replaces O(n) loops with O(1) queries
+        const poaHash = new SpatialHash(5);  // 5 unit cells for fine-grained proximity
+
+        // Insert POAs
+        if (this.pointsOfAttraction) {
+            for (const poa of this.pointsOfAttraction) {
+                if (poa.position) {
+                    poaHash.insert(poa.position.x, poa.position.y, poa.position.z, poa);
+                }
+            }
+        }
+
+        // Insert existing targets
+        for (const t of this.colonizationTargets) {
+            poaHash.insert(t.x, t.y, t.z, t);
+        }
 
         // Minimum distance from any existing POA (in units, ~5 units = 1600 ly)
         const minPOADistance = 5;
@@ -573,57 +639,37 @@ Object.assign(StarMapVisualization.prototype, {
 
             // Only add if in frontier zone (from Sol's perspective)
             if (distFromSol >= frontierMin && distFromSol <= frontierMax) {
-                // Check distance to nearest existing POA - fills gaps in coverage
-                let minDistToPOA = Infinity;
-                for (const pos of existingPOAPositions) {
-                    const pdx = x - pos.x;
-                    const pdy = y - pos.y;
-                    const pdz = z - pos.z;
-                    const distToPOA = Math.sqrt(pdx * pdx + pdy * pdy + pdz * pdz);
-                    if (distToPOA < minDistToPOA) {
-                        minDistToPOA = distToPOA;
-                    }
-                }
-
-                // Also check distance to already-selected new targets
-                for (const t of newTargets) {
-                    const tdx = x - t.x;
-                    const tdy = y - t.y;
-                    const tdz = z - t.z;
-                    const distToNew = Math.sqrt(tdx * tdx + tdy * tdy + tdz * tdz);
-                    if (distToNew < minDistToPOA) {
-                        minDistToPOA = distToNew;
-                    }
-                }
+                // Use spatial hash to check if too close to existing POAs - O(1) instead of O(n)
+                const nearbyPOAs = poaHash.query(x, y, z, minPOADistance);
 
                 // Only add if sufficiently far from other POAs (prevents clustering)
-                if (minDistToPOA >= minPOADistance) {
-                    // Check not already in targets (exact duplicate)
-                    const alreadyExists = this.colonizationTargets.some(t =>
-                        Math.abs(t.x - x) < 0.1 && Math.abs(t.y - y) < 0.1 && Math.abs(t.z - z) < 0.1
-                    );
+                if (nearbyPOAs.length === 0) {
+                    const newTarget = {
+                        x: x,
+                        y: y,
+                        z: z,
+                        colonized: false,
+                        dysonProgress: 0,
+                        spectralClass: this.getRandomSpectralType(),
+                        frontierGenerated: true  // Mark as dynamically generated
+                    };
 
-                    if (!alreadyExists) {
-                        newTargets.push({
-                            x: x,
-                            y: y,
-                            z: z,
-                            colonized: false,
-                            dysonProgress: 0,
-                            spectralClass: this.getRandomSpectralType(),
-                            frontierGenerated: true  // Mark as dynamically generated
-                        });
+                    newTargets.push(newTarget);
 
-                        // Add to existing positions for next iteration's distance check
-                        existingPOAPositions.push({ x, y, z });
-                    }
+                    // Add to hash for next iteration's distance check
+                    poaHash.insert(x, y, z, newTarget);
                 }
             }
         }
 
-        // Add new targets
+        // Add new targets and update main spatial hash
         for (const target of newTargets) {
             this.colonizationTargets.push(target);
+            if (this._targetsSpatialHash) {
+                target._spatialHandle = this._targetsSpatialHash.insert(
+                    target.x, target.y, target.z, target
+                );
+            }
         }
 
         if (newTargets.length > 0) {
@@ -633,7 +679,7 @@ Object.assign(StarMapVisualization.prototype, {
 
     /**
      * Find nearest uncolonized star within hop distance.
-     * Simple algorithm: find closest available target within range.
+     * Optimized with spatial hash for O(1) average-case queries.
      */
     findNearestUncolonizedStar(fromX, fromY, fromZ, maxDistance = 200) {
         // Hop distance from slider (0-100) -> 100 ly to 10,000 ly
@@ -648,14 +694,55 @@ Object.assign(StarMapVisualization.prototype, {
         const exploreChance = (this.expandPolicy || 50) / 100;
         const isExploring = Math.random() < exploreChance;
 
+        // Target distance for explore mode: hop distance ± 10%
+        const exploreMinDist = hopDistanceUnits * 0.9;
+        const exploreMaxDist = hopDistanceUnits * 1.1;
+
+        // Use spatial hash for fast queries if available
+        if (this._targetsSpatialHash && this._targetsSpatialHash.size > 0) {
+            // Filter function to exclude colonized and fleet_sent targets
+            const filter = (data) => !data.colonized && data.status !== 'fleet_sent';
+
+            if (isExploring) {
+                // Explore mode: find targets at ideal hop distance
+                const rangeTargets = this._targetsSpatialHash.queryRange(
+                    fromX, fromY, fromZ, exploreMinDist, exploreMaxDist, filter
+                );
+
+                if (rangeTargets.length > 0) {
+                    // Find closest to ideal hop distance
+                    let bestTarget = null;
+                    let bestDiff = Infinity;
+
+                    for (const item of rangeTargets) {
+                        const diff = Math.abs(item.dist - hopDistanceUnits);
+                        if (diff < bestDiff) {
+                            bestDiff = diff;
+                            bestTarget = item.data;
+                        }
+                    }
+
+                    if (bestTarget) return bestTarget;
+                }
+            }
+
+            // Exploit mode or no explore target found: find nearest
+            const nearest = this._targetsSpatialHash.findNearest(
+                fromX, fromY, fromZ, searchRadius, filter
+            );
+
+            if (nearest && nearest.dist > 0.001) {
+                return nearest.data;
+            }
+
+            return null;
+        }
+
+        // Fallback to brute force if spatial hash not available
         let bestTarget = null;
         let bestDist = Infinity;
         let exploreTarget = null;
         let exploreBestDiff = Infinity;
-
-        // Target distance for explore mode: hop distance ± 10%
-        const exploreMinDist = hopDistanceUnits * 0.9;
-        const exploreMaxDist = hopDistanceUnits * 1.1;
 
         for (const target of this.colonizationTargets) {
             if (target.colonized || target.status === 'fleet_sent') continue;
@@ -749,7 +836,7 @@ Object.assign(StarMapVisualization.prototype, {
      * Create the inter-arm stellar population
      */
     createInterarmStars() {
-        const interarmStars = 300000;  // Large inter-arm population for bigger galaxy
+        const interarmStars = 150000;  // Inter-arm population
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(interarmStars * 3);
         const colors = new Float32Array(interarmStars * 3);
@@ -850,7 +937,7 @@ Object.assign(StarMapVisualization.prototype, {
      * These add depth and realism to the spiral arms
      */
     createDustLanes() {
-        const dustCount = 120000;  // Large dust lanes for bigger galaxy
+        const dustCount = 60000;  // Dust lanes
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(dustCount * 3);
         const colors = new Float32Array(dustCount * 3);
@@ -913,107 +1000,125 @@ Object.assign(StarMapVisualization.prototype, {
 
     /**
      * Create volumetric emission nebulae - glowing gas clouds
-     * These are the colorful star-forming regions like Orion, Carina, etc.
+     * Optimized: All nebulae combined into a single Points geometry (1 draw call)
      */
     createVolumetricNebulae() {
-        // Major nebulae scattered through spiral arms
-        const nebulaCount = 200;  // More nebulae for bigger galaxy
+        // Major nebulae scattered throughout the entire galaxy
+        // 400 nebulae × ~200 particles each = ~80k total particles
+        const nebulaCount = 400;
         this.nebulae = [];
 
         // Collect nebula center positions for colonization targets
         const nebulaCenters = new Float32Array(nebulaCount * 3);
 
+        // Pre-calculate nebula data for batched geometry
+        const nebulaData = [];
+        let totalParticles = 0;
+
+        // Realistic nebula color types - mostly dark grey/black dust clouds
+        const nebulaTypes = [
+            { h: 0.1, s: 0.05, l: 0.08 },  // Dark grey dust
+            { h: 0.1, s: 0.08, l: 0.1 },   // Slightly lighter grey
+            { h: 0.08, s: 0.1, l: 0.12 },  // Warm grey (faint)
+            { h: 0.0, s: 0.05, l: 0.06 },  // Near black
+            { h: 0.12, s: 0.12, l: 0.15 }  // Very faint warm tint
+        ];
+
         for (let i = 0; i < nebulaCount; i++) {
-            // Position in spiral arms
+            // Scatter nebulae throughout the entire galaxy disk
             const t = Math.random();
-            const r = 20 + Math.pow(t, 0.5) * (this.galaxyRadius - 20);
+            const r = 10 + Math.pow(t, 0.6) * (this.galaxyRadius - 10);
 
-            // Random arm
-            const armIndex = Math.floor(Math.random() * 4);
-            const armStart = [0, Math.PI, Math.PI / 2, -Math.PI / 2][armIndex];
-            const pitch = [12, 12, 14, 14][armIndex] * Math.PI / 180;
-            const tanPitch = Math.tan(pitch);
-
-            const spiralTheta = Math.log(r / (this.barLength * 0.4) + 0.1) / tanPitch;
-            const baseAngle = armStart + spiralTheta + (Math.random() - 0.5) * 0.3;
+            // Random angle - scattered throughout, not just along arms
+            const baseAngle = Math.random() * Math.PI * 2;
 
             const x = r * Math.cos(baseAngle);
             const z = r * Math.sin(baseAngle);
-            const y = (Math.random() - 0.5) * 3;
+            // Thin disk distribution with slight vertical scatter
+            const y = (Math.random() - 0.5) * (Math.random() - 0.5) * 8;
 
             // Store nebula center for colonization targets
             nebulaCenters[i * 3] = x;
             nebulaCenters[i * 3 + 1] = y;
             nebulaCenters[i * 3 + 2] = z;
 
-            // Create nebula as a cluster of glowing particles
             const nebulaSize = 3 + Math.random() * 8;
-            const particleCount = 200 + Math.floor(Math.random() * 300);
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            const colors = new Float32Array(particleCount * 3);
-
-            // Realistic nebula colors - mostly dark grey/black dust clouds
-            // Real nebulae appear as dark patches against star field, not glowing
-            const nebulaTypes = [
-                { h: 0.1, s: 0.05, l: 0.08 },  // Dark grey dust
-                { h: 0.1, s: 0.08, l: 0.1 },   // Slightly lighter grey
-                { h: 0.08, s: 0.1, l: 0.12 },  // Warm grey (faint)
-                { h: 0.0, s: 0.05, l: 0.06 },  // Near black
-                { h: 0.12, s: 0.12, l: 0.15 }  // Very faint warm tint
-            ];
+            const particleCount = 150 + Math.floor(Math.random() * 100);  // 150-250 avg ~200
             const nebulaType = nebulaTypes[Math.floor(Math.random() * nebulaTypes.length)];
-            const color = new THREE.Color();
 
-            for (let j = 0; j < particleCount; j++) {
+            nebulaData.push({
+                x, y, z,
+                size: nebulaSize,
+                particles: particleCount,
+                type: nebulaType
+            });
+
+            totalParticles += particleCount;
+        }
+
+        // Create single batched geometry for all nebulae
+        const positions = new Float32Array(totalParticles * 3);
+        const colors = new Float32Array(totalParticles * 3);
+        const color = new THREE.Color();
+
+        let particleIdx = 0;
+        for (const nebula of nebulaData) {
+            const { x, y, z, size, particles, type } = nebula;
+
+            for (let j = 0; j < particles; j++) {
                 // Irregular cloud shape
-                const pr = Math.pow(Math.random(), 0.5) * nebulaSize;
+                const pr = Math.pow(Math.random(), 0.5) * size;
                 const ptheta = Math.random() * Math.PI * 2;
                 const pphi = Math.acos(2 * Math.random() - 1);
 
                 // Add some turbulence
                 const turbulence = Math.sin(ptheta * 3) * Math.cos(pphi * 2) * 0.3;
 
-                positions[j * 3] = x + pr * Math.sin(pphi) * Math.cos(ptheta) * (1 + turbulence);
-                positions[j * 3 + 1] = y + pr * Math.sin(pphi) * Math.sin(ptheta) * 0.4;  // Flatten
-                positions[j * 3 + 2] = z + pr * Math.cos(pphi) * (1 + turbulence);
+                const idx = particleIdx * 3;
+                positions[idx] = x + pr * Math.sin(pphi) * Math.cos(ptheta) * (1 + turbulence);
+                positions[idx + 1] = y + pr * Math.sin(pphi) * Math.sin(ptheta) * 0.4;  // Flatten
+                positions[idx + 2] = z + pr * Math.cos(pphi) * (1 + turbulence);
 
                 // Vary color slightly within nebula
                 color.setHSL(
-                    nebulaType.h + (Math.random() - 0.5) * 0.1,
-                    nebulaType.s + (Math.random() - 0.5) * 0.2,
-                    nebulaType.l + (Math.random() - 0.5) * 0.15
+                    type.h + (Math.random() - 0.5) * 0.1,
+                    type.s + (Math.random() - 0.5) * 0.2,
+                    type.l + (Math.random() - 0.5) * 0.15
                 );
-                colors[j * 3] = color.r;
-                colors[j * 3 + 1] = color.g;
-                colors[j * 3 + 2] = color.b;
+                colors[idx] = color.r;
+                colors[idx + 1] = color.g;
+                colors[idx + 2] = color.b;
+
+                particleIdx++;
             }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-            const material = new THREE.PointsMaterial({
-                size: 1.5,
-                sizeAttenuation: true,
-                vertexColors: true,
-                transparent: true,
-                opacity: 0.5,
-                blending: THREE.NormalBlending,  // Normal blend for dark dust clouds
-                depthWrite: false
-            });
-
-            const nebula = new THREE.Points(geometry, material);
-            nebula.userData = {
-                baseOpacity: 0.5,
-                pulseSpeed: 0,  // No pulsing for realistic dust
-                pulsePhase: 0
-            };
-            this.nebulae.push(nebula);
-            this.galaxyGroup.add(nebula);
         }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 1.5,
+            sizeAttenuation: true,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.5,
+            blending: THREE.NormalBlending,  // Normal blend for dark dust clouds
+            depthWrite: false
+        });
+
+        // Single batched nebula mesh (1 draw call instead of 200)
+        this._batchedNebulae = new THREE.Points(geometry, material);
+        this._batchedNebulae.userData = {
+            baseOpacity: 0.5,
+            nebulaData: nebulaData  // Store for reference if needed
+        };
+        this.galaxyGroup.add(this._batchedNebulae);
 
         // Add nebula centers as colonization targets
         this.addColonizationTargets(nebulaCenters, nebulaCount, 'N');  // N = Nebula
+
+        console.log(`[StarMap] Batched ${nebulaCount} nebulae into single mesh (${totalParticles} particles)`);
     }
 
 });

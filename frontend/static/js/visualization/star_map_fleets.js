@@ -438,9 +438,12 @@ Object.assign(StarMapVisualization.prototype, {
                         if (fleet) {
                             target.status = 'fleet_sent';
                             target.colonized = true;
+                            // Remove from spatial hash for faster future queries
+                            this.removeTargetFromSpatialHash(target);
                             if (target.targetData) {
                                 target.targetData.status = 'fleet_sent';
                                 target.targetData.colonized = true;
+                                this.removeTargetFromSpatialHash(target.targetData);
                             }
                             star.lastLaunchTime = this.time;
                             star.probesLaunched = (star.probesLaunched || 0) + 1;
@@ -455,6 +458,7 @@ Object.assign(StarMapVisualization.prototype, {
                             // Mark target to skip it
                             target.status = 'fleet_sent';
                             target.colonized = true;
+                            this.removeTargetFromSpatialHash(target);
                         }
                     }
 

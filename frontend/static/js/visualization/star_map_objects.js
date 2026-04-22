@@ -63,13 +63,13 @@ Object.assign(StarMapVisualization.prototype, {
         const distantGalaxies = new THREE.Points(geometry, material);
         this.scene.add(distantGalaxies);  // Add to scene, not galaxyGroup (doesn't rotate with our galaxy)
 
-        // Add Magellanic Clouds - satellite galaxies of the Milky Way
-        this.createMagellanicClouds();
+        // Magellanic Clouds disabled
+        // this.createMagellanicClouds();
 
         // Add Andromeda Galaxy (M31) - visible as a small spiral
         this.createAndromedaGalaxy();
 
-        // Add Messier objects (clusters and nebulae visible from Earth)
+        // Add Messier objects as POA targets
         this.createMessierObjects();
 
         // Major star systems disabled - using POA labels instead

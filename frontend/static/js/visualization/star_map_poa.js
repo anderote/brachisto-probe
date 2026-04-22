@@ -1289,6 +1289,7 @@ Object.assign(StarMapVisualization.prototype, {
         const target = this.colonizationTargets.find(t => t.isPOA && t.poaData?.id === nearestPOA.id);
         if (target) {
             target.colonized = true;  // Reserve it
+            this.removeTargetFromSpatialHash(target);
         }
 
         // Launch visual probe from Sol to the POA

@@ -449,7 +449,6 @@ class GalaxySystem {
 
     /**
      * Get galaxy colonization completion percentage
-     * Used to determine Phase 3 (Universe) unlock
      * @returns {number} Completion percentage (0-1)
      */
     getCompletionPercentage() {
@@ -464,15 +463,6 @@ class GalaxySystem {
         const colonizedCount = this.colonizedSystems.size;
 
         return colonizedCount / totalSystems;
-    }
-
-    /**
-     * Check if galaxy is complete enough to unlock universe view
-     * Requires 99% completion (most systems colonized)
-     * @returns {boolean} True if universe should be unlockable
-     */
-    isUniverseUnlockable() {
-        return this.getCompletionPercentage() >= 0.99;
     }
 }
 

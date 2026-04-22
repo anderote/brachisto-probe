@@ -443,6 +443,17 @@ class StarMapVisualization {
      * @param {string} spectralClass - Spectral type (O/B/A/F/G/K/M)
      */
     addColonizedStar(x, y, z, initialUnits = 0, spectralClass = null) {
+        // Ensure geometry is initialized
+        if (!this._colonizedGeometryInitialized) {
+            this.initColonizedStarsGeometry();
+        }
+
+        // Check buffer capacity
+        if (this._colonizedStarCount >= this._maxColonizedStars) {
+            console.warn('[StarMap] Max colonized stars reached');
+            return null;
+        }
+
         // 100-UNIT STAR MODEL:
         // Each star has max 100 units total, split between Dyson and Production
         // dysonUnits: Power generation capability
@@ -463,15 +474,29 @@ class StarMapVisualization {
         const colorHex = this.getStarColor(totalUnits, initialDyson, starSpectralClass);
         const colorObj = new THREE.Color(colorHex);
 
-        // Add position to arrays
-        this.colonizedStarsPositions.push(x, y, z);
+        // Write directly to Float32Array buffers (Priority 3: eliminate redundant copies)
+        const starIndex = this._colonizedStarCount;
+        const bufferIdx = starIndex * 3;
 
-        // Add color to arrays (RGB normalized 0-1)
+        // Write position directly to buffer
+        this._colonizedPositions[bufferIdx] = x;
+        this._colonizedPositions[bufferIdx + 1] = y;
+        this._colonizedPositions[bufferIdx + 2] = z;
+
+        // Write color directly to buffer
+        this._colonizedColors[bufferIdx] = colorObj.r;
+        this._colonizedColors[bufferIdx + 1] = colorObj.g;
+        this._colonizedColors[bufferIdx + 2] = colorObj.b;
+
+        // Keep the legacy arrays in sync for now (for color updates in developStar)
+        this.colonizedStarsPositions.push(x, y, z);
         this.colonizedStarsColors.push(colorObj.r, colorObj.g, colorObj.b);
+
+        this._colonizedStarCount++;
 
         // Store star data object for tracking
         const starData = {
-            index: (this.colonizedStarsPositions.length / 3) - 1,
+            index: starIndex,
             position: new THREE.Vector3(x, y, z),
             spectralClass: starSpectralClass,    // Store spectral type
             dysonUnits: initialDyson,        // 0-100: Power generation units
@@ -484,10 +509,19 @@ class StarMapVisualization {
 
         this.colonizedStars.push(starData);
 
-        // Rebuild Points geometry
-        this.rebuildColonizedStarsGeometry();
+        // Add to spatial hash for fast nearest-neighbor queries
+        if (this._colonizedSpatialHash) {
+            starData._spatialHandle = this._colonizedSpatialHash.insert(x, y, z, starData);
+        }
 
-        // Connect to nearest colonized star
+        // Update GPU buffers and draw range
+        if (this.colonizedStarsPoints) {
+            this.colonizedStarsPoints.geometry.attributes.position.needsUpdate = true;
+            this.colonizedStarsPoints.geometry.attributes.color.needsUpdate = true;
+            this.colonizedStarsPoints.geometry.setDrawRange(0, this._colonizedStarCount);
+        }
+
+        // Connect to nearest colonized star using batched geometry
         if (this.colonizedStars.length > 1) {
             this.connectToNearestStar(starData);
         }
@@ -507,8 +541,9 @@ class StarMapVisualization {
     initColonizedStarsGeometry() {
         if (this._colonizedGeometryInitialized) return;
 
-        // Pre-allocate for up to 10,000 colonized stars
-        this._maxColonizedStars = 10000;
+        // Pre-allocate for up to 100,000 colonized stars
+        this._maxColonizedStars = 100000;
+        this._colonizedStarCount = 0;  // Track actual count for direct writes
         this._colonizedPositions = new Float32Array(this._maxColonizedStars * 3);
         this._colonizedColors = new Float32Array(this._maxColonizedStars * 3);
 
@@ -541,12 +576,57 @@ class StarMapVisualization {
             this.colonizationGroup.add(this.colonizedStarsPoints);
         }
 
+        // Initialize spatial hash for colonized stars (for fast nearest-neighbor queries)
+        if (typeof SpatialHash !== 'undefined') {
+            this._colonizedSpatialHash = new SpatialHash(5);  // 5 unit cells
+        }
+
+        // Initialize batched connection lines geometry
+        this.initConnectionLinesGeometry();
+
         this._colonizedGeometryInitialized = true;
     }
 
     /**
-     * Update colonized stars geometry after adding a star or changing colors
-     * Uses dynamic buffer updates instead of full rebuild
+     * Initialize batched geometry for connection lines
+     * Uses a single LineSegments object instead of one Line per connection
+     */
+    initConnectionLinesGeometry() {
+        // Pre-allocate for up to 100,000 connections (200,000 vertices)
+        this._maxConnections = 100000;
+        this._connectionCount = 0;
+        this._connectionPositions = new Float32Array(this._maxConnections * 6);  // 2 vertices * 3 coords
+        this._connectionOpacities = new Float32Array(this._maxConnections);      // Per-line opacity for fading
+        this._connectionCreatedTimes = new Float32Array(this._maxConnections);   // For fade timing
+
+        const geometry = new THREE.BufferGeometry();
+
+        const posAttr = new THREE.BufferAttribute(this._connectionPositions, 3);
+        posAttr.setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute('position', posAttr);
+
+        // Initially draw nothing
+        geometry.setDrawRange(0, 0);
+
+        const material = new THREE.LineBasicMaterial({
+            color: 0x00ff88,
+            transparent: true,
+            opacity: 0.6
+        });
+
+        this._connectionLines = new THREE.LineSegments(geometry, material);
+        this._connectionLines.renderOrder = 5;  // Below colonized stars but above galaxy
+
+        if (this.colonizationGroup) {
+            this.colonizationGroup.add(this._connectionLines);
+        }
+    }
+
+    /**
+     * Update colonized stars geometry after changing colors
+     * Syncs the legacy arrays to the GPU buffers
+     * Note: addColonizedStar() now writes directly to buffers, so this is only
+     * needed when updating existing star colors (e.g., in developStar())
      */
     rebuildColonizedStarsGeometry() {
         // Initialize dynamic geometry if needed
@@ -556,34 +636,27 @@ class StarMapVisualization {
 
         if (!this.colonizedStarsPoints) return;
 
-        const starCount = this.colonizedStars.length;
+        const starCount = this._colonizedStarCount || this.colonizedStars.length;
         if (starCount === 0) {
             this.colonizedStarsPoints.geometry.setDrawRange(0, 0);
             return;
         }
 
-        // Copy data to pre-allocated buffers
-        const positions = this._colonizedPositions;
+        // Sync colors from legacy array to buffer (for color updates in developStar)
+        // Positions are already synced by addColonizedStar()
         const colors = this._colonizedColors;
+        const legacyColors = this.colonizedStarsColors;
+        const count = Math.min(starCount, this._maxColonizedStars);
 
-        for (let i = 0; i < starCount && i < this._maxColonizedStars; i++) {
-            const idx = i * 3;
-            // Positions from colonizedStarsPositions array
-            positions[idx] = this.colonizedStarsPositions[idx];
-            positions[idx + 1] = this.colonizedStarsPositions[idx + 1];
-            positions[idx + 2] = this.colonizedStarsPositions[idx + 2];
-            // Colors from colonizedStarsColors array
-            colors[idx] = this.colonizedStarsColors[idx];
-            colors[idx + 1] = this.colonizedStarsColors[idx + 1];
-            colors[idx + 2] = this.colonizedStarsColors[idx + 2];
+        for (let i = 0; i < count * 3; i++) {
+            colors[i] = legacyColors[i];
         }
 
         // Mark buffers as needing update
-        this.colonizedStarsPoints.geometry.attributes.position.needsUpdate = true;
         this.colonizedStarsPoints.geometry.attributes.color.needsUpdate = true;
 
         // Update draw range to only render existing stars
-        this.colonizedStarsPoints.geometry.setDrawRange(0, Math.min(starCount, this._maxColonizedStars));
+        this.colonizedStarsPoints.geometry.setDrawRange(0, count);
     }
 
     /**
@@ -715,12 +788,19 @@ class StarMapVisualization {
 
     /**
      * Connect a new star to its nearest colonized neighbor
-     * Lines fade out over time to reduce visual clutter
+     * Uses batched LineSegments geometry for O(1) draw calls
      */
     connectToNearestStar(newStar) {
-        let nearestDist = Infinity;
+        // Check buffer capacity
+        if (this._connectionCount >= this._maxConnections) {
+            return;  // Silently skip if at capacity
+        }
+
         let nearestStar = null;
 
+        // Always use brute force for colonized stars - the array is small (< 10k)
+        // and spatial hash with large radius would check too many cells
+        let nearestDist = Infinity;
         for (const star of this.colonizedStars) {
             if (star === newStar) continue;
             const dist = newStar.position.distanceTo(star.position);
@@ -730,32 +810,45 @@ class StarMapVisualization {
             }
         }
 
-        if (nearestStar) {
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-                newStar.position.clone(),
-                nearestStar.position.clone()
-            ]);
-            const lineMaterial = new THREE.LineBasicMaterial({
-                color: 0x00ff88,
-                transparent: true,
-                opacity: 0.6        // Brighter lines (was 0.4)
-            });
-            const line = new THREE.Line(lineGeometry, lineMaterial);
+        if (nearestStar && this._connectionPositions) {
+            // Write directly to batched geometry buffer
+            const connIdx = this._connectionCount;
+            const bufferIdx = connIdx * 6;  // 2 vertices * 3 coords
+
+            // Start point (new star)
+            this._connectionPositions[bufferIdx] = newStar.position.x;
+            this._connectionPositions[bufferIdx + 1] = newStar.position.y;
+            this._connectionPositions[bufferIdx + 2] = newStar.position.z;
+
+            // End point (nearest star)
+            this._connectionPositions[bufferIdx + 3] = nearestStar.position.x;
+            this._connectionPositions[bufferIdx + 4] = nearestStar.position.y;
+            this._connectionPositions[bufferIdx + 5] = nearestStar.position.z;
 
             // Track creation time for fading
-            // 1 time unit ≈ 1 day, so 36500 = ~100 years
-            line.userData = {
+            this._connectionCreatedTimes[connIdx] = this.time;
+            this._connectionOpacities[connIdx] = 0.6;
+
+            this._connectionCount++;
+
+            // Update GPU buffer and draw range
+            if (this._connectionLines) {
+                this._connectionLines.geometry.attributes.position.needsUpdate = true;
+                this._connectionLines.geometry.setDrawRange(0, this._connectionCount * 2);
+
+                // Respect current lines visibility setting
+                this._connectionLines.visible = this.linesVisible !== false;
+            }
+
+            // Keep legacy array for backwards compatibility (e.g., toggleLinesVisibility)
+            // Store minimal data instead of full THREE.Line objects
+            this.colonizedConnections.push({
                 createdTime: this.time,
                 fadeStartTime: 18250,   // Start fading after ~50 years
                 fadeDuration: 18250,    // Fully faded over ~50 more years (100 years total)
-                initialOpacity: 0.6     // Match material opacity
-            };
-
-            // Respect current lines visibility setting
-            line.visible = this.linesVisible !== false;
-
-            this.colonizedConnections.push(line);
-            this.colonizationGroup.add(line);
+                initialOpacity: 0.6,
+                index: connIdx
+            });
         }
     }
 
@@ -2230,10 +2323,17 @@ class StarMapVisualization {
     toggleLinesVisibility() {
         this.linesVisible = !this.linesVisible;
 
-        // Toggle colonized star connections
+        // Toggle batched connection lines (new efficient approach)
+        if (this._connectionLines) {
+            this._connectionLines.visible = this.linesVisible;
+        }
+
+        // Toggle legacy individual line objects (for backwards compatibility)
         if (this.colonizedConnections) {
             for (const line of this.colonizedConnections) {
-                if (line) line.visible = this.linesVisible;
+                if (line && line.visible !== undefined) {
+                    line.visible = this.linesVisible;
+                }
             }
         }
 
